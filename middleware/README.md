@@ -4,6 +4,8 @@ Questo middleware **Spring Boot** è il componente che si interpone tra l'app
 Flutter e SAP : riceve le richieste REST/JSON dall'app, persiste ed espone gli
 ordini di lavoro (OdL), e (in produzione) traduce in chiamate SOAP verso SAP.
 
+
+
 ```
 [App Flutter] ◄── REST/JSON ──► [Middleware Spring Boot] ◄── SOAP/XML ──► [SAP]
 ```
