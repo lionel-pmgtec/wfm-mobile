@@ -1,78 +1,79 @@
-# Guide complet — Créer un OdL côté backend
+# Guida completa — Creare un OdL lato backend
 
-Ce middleware **Spring Boot** est le composant qui s'intercale entre ton app
-Flutter et SAP : il reçoit les requêtes REST/JSON de l'app, persiste/expose les
-ordres de travail (OdL), et (en production) traduit en appels SOAP vers SAP.
+Questo middleware **Spring Boot** è il componente che si interpone tra l'app
+Flutter e SAP : riceve le richieste REST/JSON dall'app, persiste ed espone gli
+ordini di lavoro (OdL), e (in produzione) traduce in chiamate SOAP verso SAP.
 
 ```
 [App Flutter] ◄── REST/JSON ──► [Middleware Spring Boot] ◄── SOAP/XML ──► [SAP]
 ```
 
-Pour l'instant l'étape SOAP→SAP est **stubée** (store en mémoire) : l'objectif
-est que tu puisses **créer un OdL et le voir apparaître dans l'app Flutter en
-quelques minutes**.
+Per il momento la fase SOAP→SAP è **stubbata** (store in memoria) : l'obiettivo
+è che tu possa **creare un OdL e vederlo apparire nell'app Flutter in pochi
+minuti**.
 
 ---
 
-## 1. Prérequis
+## 1. Prerequisiti
 
 - **Java 21** (`java --version`)
 - **Maven 3.9+** (`mvn -v`)
-- Le dossier `middleware/` se trouve dans la racine du projet `wfm_app`.
+- La cartella `middleware/` si trova nella radice del progetto `wfm_app`.
 
 ---
 
-## 2. Démarrer le serveur
+## 2. Avviare il server
 
-Depuis `wfm_app/middleware/` :
+Dalla cartella `wfm_app/middleware/` :
 
 ```bash
 mvn spring-boot:run
 ```
 
-Tu dois voir :
+Devi vedere :
 
 ```
 Started WfmMiddlewareApplication ... on port(s): 8080
 ```
 
-Le serveur écoute sur :
+Il server è in ascolto su :
 
 - **Base API** : `http://localhost:8080/api/v1`
 - **Swagger UI** : `http://localhost:8080/api/v1/swagger-ui.html`
 
-Le store est pré-rempli avec 3 OdL (dont le **DISA 50557262** correspondant au
-document de spec) et 1 avviso, identiques à ceux de l'app mobile en mode mock.
+Lo store è pre-popolato con 3 OdL (tra cui il **DISA 50557262** corrispondente
+al documento di specifica) e 1 avviso, identici a quelli dell'app mobile in
+modalità mock.
 
 ---
 
-## 3. Étapes pour créer un OdL côté backend
+## 3. Passaggi per creare un OdL lato backend
 
-### Étape 3.1 — Comprendre la structure d'un OdL
+### Passaggio 3.1 — Capire la struttura di un OdL
 
-Un OdL est défini par les champs du DTO `Dto.WorkOrder`
-(`middleware/src/main/java/com/wfm/middleware/dto/Dto.java`). Les noms suivent
-exactement le contrat SOAP de la spec §8.3 *et* les mappers Dart de l'app.
+Un OdL è definito dai campi del DTO `Dto.WorkOrder`
+(`middleware/src/main/java/com/wfm/middleware/dto/Dto.java`). I nomi seguono
+esattamente il contratto SOAP della specifica §8.3 *e* i mapper Dart dell'app.
 
-Champs minimaux pour créer un OdL :
+Campi minimi per creare un OdL :
 
-| Champ                   | Obligatoire | Notes                                    |
-|-------------------------|-------------|------------------------------------------|
-| `externalCode`          | non         | Si vide, le middleware en génère un      |
-| `woType`                | **oui**     | `ATTI`, `SOST`, `DISA`, `ZA02`, `PA`     |
-| `woTypeDescription`     | **oui**     | Description visible côté technicien      |
-| `status`                | non         | `RICEVUTO` par défaut                    |
-| `appointmentDate`       | **oui**     | Format ISO `yyyy-MM-dd`                  |
-| `appointmentStartTime`  | non         | `HH:mm`                                  |
-| `address`               | **oui**     | Objet `{city, street, streetNumber, …}`  |
-| `customer`              | selon type  | Obligatoire pour ATTI/SOST/DISA          |
-| `meter`                 | selon type  | Obligatoire pour DISA, SOST, ATTI        |
-| `technicianCID`         | **oui**     | CID du technicien destinataire           |
-| `accountingSector`      | recommandé  | Ex. `POT - Servizio acqua potabile`      |
+| Campo                   | Obbligatorio | Note                                     |
+|-------------------------|--------------|------------------------------------------|
+| `externalCode`          | no           | Se vuoto, il middleware ne genera uno    |
+| `woType`                | **sì**       | `ATTI`, `SOST`, `DISA`, `ZA02`, `PA`     |
+| `woTypeDescription`     | **sì**       | Descrizione visibile lato tecnico        |
+| `status`                | no           | `RICEVUTO` di default                    |
+| `appointmentDate`       | **sì**       | Formato ISO `yyyy-MM-dd`                 |
+| `appointmentStartTime`  | no           | `HH:mm`                                  |
+| `address`               | **sì**       | Oggetto `{city, street, streetNumber, …}`|
+| `customer`              | secondo tipo | Obbligatorio per ATTI/SOST/DISA          |
+| `meter`                 | secondo tipo | Obbligatorio per DISA, SOST, ATTI        |
+| `technicianCID`         | **sì**       | CID del tecnico destinatario             |
+| `accountingSector`      | consigliato  | Es. `POT - Servizio acqua potabile`      |
 
-### Étape 3.2 — Appeler `POST /work-orders`
+### Passaggio 3.2 — Chiamare `POST /work-orders`
 
-Exemple complet pour créer un **OdL DISA** (le cas du document) avec `curl` :
+Esempio completo per creare un **OdL DISA** (il caso del documento) con `curl` :
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/work-orders \
@@ -115,7 +116,7 @@ curl -X POST http://localhost:8080/api/v1/work-orders \
   }'
 ```
 
-**Réponse 201 Created** :
+**Risposta 201 Created** :
 ```json
 {
   "externalCode": "90000001",
@@ -125,35 +126,35 @@ curl -X POST http://localhost:8080/api/v1/work-orders \
 }
 ```
 
-L'OdL est désormais visible :
-- via `GET /work-orders` ;
-- depuis l'**app Flutter** une fois branchée (voir §5).
+L'OdL è ora visibile :
+- tramite `GET /work-orders` ;
+- dall'**app Flutter** una volta collegata (vedere §5).
 
-### Étape 3.3 — Notifier le tablet (push)
+### Passaggio 3.3 — Notificare il tablet (push)
 
-Pour l'MVP, l'app récupère ses OdL en *pull* (au lancement et lors d'un
-pull-to-refresh). En production, ajouter un push **Firebase Cloud Messaging
-(FCM)** dans `WorkOrderController.create(...)` :
+Per l'MVP, l'app recupera i propri OdL in *pull* (all'avvio e tramite
+pull-to-refresh). In produzione, aggiungere un push **Firebase Cloud Messaging
+(FCM)** in `WorkOrderController.create(...)` :
 
 ```java
-// pseudo-code
+// pseudo-codice
 fcm.send(token, Map.of("event","NEW_OR_UPDATED_OR_CANCELLED",
                        "externalCode", created.externalCode()));
 ```
 
-L'app peut écouter ces messages pour invalider `workOrdersProvider` et
-rafraîchir la liste sans intervention de l'utilisateur (spec EF-M13.1).
+L'app può ascoltare questi messaggi per invalidare `workOrdersProvider` e
+aggiornare la lista senza intervento dell'utente (spec EF-M13.1).
 
-### Étape 3.4 — Le technicien envoie l'esito
+### Passaggio 3.4 — Il tecnico invia l'esito
 
-Quand le technicien termine l'intervention (et la lecture finale dans le cas
-DISA), l'app appelle :
+Quando il tecnico termina l'intervento (e la lettura finale nel caso DISA),
+l'app chiama :
 
 ```
 POST /api/v1/esiti
 ```
 
-avec le payload sérialisé par `esitoToJson` (lib/data/models/mappers.dart) :
+con il payload serializzato da `esitoToJson` (lib/data/models/mappers.dart) :
 
 ```json
 {
@@ -172,113 +173,113 @@ avec le payload sérialisé par `esitoToJson` (lib/data/models/mappers.dart) :
 }
 ```
 
-Le middleware (en production) appelle `submitEsito` SOAP côté SAP, qui ferme
-techniquement l'OdL (flux S13) et enregistre l'esito (E55).
+Il middleware (in produzione) chiama `submitEsito` SOAP lato SAP, che chiude
+tecnicamente l'OdL (flusso S13) e registra l'esito (E55).
 
 ---
 
-## 4. Tous les endpoints exposés
+## 4. Tutti gli endpoint esposti
 
-| Méthode | Chemin                                          | Rôle                                      |
+| Metodo  | Percorso                                        | Ruolo                                     |
 |---------|-------------------------------------------------|-------------------------------------------|
-| POST    | `/auth/login`                                   | Connexion technicien                      |
-| POST    | `/auth/logout`                                  | Déconnexion                               |
-| GET     | `/work-orders?status=&q=&date=`                 | Liste OdL filtrée                         |
-| GET     | `/work-orders/{id}`                             | Détail OdL                                |
-| POST    | `/work-orders`                                  | **Créer un OdL** (utilisé ici)            |
-| PATCH   | `/work-orders/{id}`                             | Mise à jour générique                     |
-| PATCH   | `/work-orders/{id}/status`                      | Changer statut (Avvia/Sospendi/Concludi)  |
+| POST    | `/auth/login`                                   | Login tecnico                             |
+| POST    | `/auth/logout`                                  | Logout                                    |
+| GET     | `/work-orders?status=&q=&date=`                 | Lista OdL filtrata                        |
+| GET     | `/work-orders/{id}`                             | Dettaglio OdL                             |
+| POST    | `/work-orders`                                  | **Creare un OdL** (usato qui)             |
+| PATCH   | `/work-orders/{id}`                             | Aggiornamento generico                    |
+| PATCH   | `/work-orders/{id}/status`                      | Cambio stato (Avvia/Sospendi/Concludi)    |
 | GET     | `/work-orders/{id}/attachments`                 | Allegati                                  |
-| GET     | `/notifications`                                | Liste Avvisi                              |
-| GET     | `/notifications/{id}`                           | Détail Avviso                             |
-| POST    | `/notifications`                                | Créer un Avviso                           |
-| POST    | `/notifications/{id}/generate-work-order`       | Générer un OdL depuis un Avviso           |
-| POST    | `/esiti`                                        | Soumettre l'esito                         |
-| POST    | `/esiti/attachments`                            | Uploader une photo / firma                |
-| GET     | `/anagrafica/materials?q=`                      | Catalogue matériaux                       |
+| GET     | `/notifications`                                | Lista Avvisi                              |
+| GET     | `/notifications/{id}`                           | Dettaglio Avviso                          |
+| POST    | `/notifications`                                | Creare un Avviso                          |
+| POST    | `/notifications/{id}/generate-work-order`       | Generare un OdL da un Avviso              |
+| POST    | `/esiti`                                        | Inviare l'esito                           |
+| POST    | `/esiti/attachments`                            | Caricare una foto / firma                 |
+| GET     | `/anagrafica/materials?q=`                      | Catalogo materiali                        |
 | GET     | `/anagrafica/warehouses`                        | Magazzini                                 |
-| GET     | `/anagrafica/meter-brands`                      | Marques de compteurs                      |
-| GET     | `/anagrafica/tam-codes`                         | Codes TAM (dont `DISA`)                   |
-| GET     | `/anagrafica/causes`                            | Codes motif (dropdown Esito)              |
-| GET     | `/anagrafica/solutions`                         | Codes solution (dropdown Esito)           |
+| GET     | `/anagrafica/meter-brands`                      | Marche di contatori                       |
+| GET     | `/anagrafica/tam-codes`                         | Codici TAM (incluso `DISA`)               |
+| GET     | `/anagrafica/causes`                            | Codici causa (dropdown Esito)             |
+| GET     | `/anagrafica/solutions`                         | Codici soluzione (dropdown Esito)         |
 
-Swagger UI fournit la doc interactive de tous ces endpoints.
+Swagger UI fornisce la documentazione interattiva di tutti questi endpoint.
 
 ---
 
-## 5. Brancher l'app Flutter sur ce middleware
+## 5. Collegare l'app Flutter a questo middleware
 
-Deux changements dans `lib/core/config/app_config.dart` :
+Due modifiche in `lib/core/config/app_config.dart` :
 
 ```dart
-// Pour développement local
+// Per sviluppo locale
 const AppConfig kAppConfig = AppConfig(
   flavor: AppFlavor.dev,
-  // Android Studio emulator -> host = 10.0.2.2
-  // iOS simulator           -> host = localhost
-  // Appareil physique       -> IP de ta machine sur le réseau Wi-Fi
+  // Emulatore Android Studio -> host = 10.0.2.2
+  // Simulatore iOS           -> host = localhost
+  // Dispositivo fisico       -> IP della tua macchina sulla rete Wi-Fi
   middlewareBaseUrl: 'http://10.0.2.2:8080/api/v1',
-  useMockData: false,           // ← important : on quitte le mock
+  useMockData: false,           // ← importante : si esce dal mock
 );
 ```
 
-L'app passe automatiquement de `MockRemoteDataSource` à `HttpRemoteDataSource`
-(branchement géré par `presentation/providers/core_providers.dart`).
+L'app passa automaticamente da `MockRemoteDataSource` a `HttpRemoteDataSource`
+(gestione affidata a `presentation/providers/core_providers.dart`).
 
-Pour appareil iOS/Android sans HTTPS pendant les tests :
-- **Android** : ajouter `android:usesCleartextTraffic="true"` dans
+Per dispositivo iOS/Android senza HTTPS durante i test :
+- **Android** : aggiungere `android:usesCleartextTraffic="true"` in
   `AndroidManifest.xml`.
-- **iOS** : `NSAppTransportSecurity → NSAllowsArbitraryLoads = YES` dans
+- **iOS** : `NSAppTransportSecurity → NSAllowsArbitraryLoads = YES` in
   `Info.plist`.
 
-(à retirer en production : tout doit passer en HTTPS, spec §11.3).
+(da rimuovere in produzione : tutto deve passare in HTTPS, spec §11.3).
 
 ---
 
-## 6. Prochaines étapes pour la production
+## 6. Prossimi passi per la produzione
 
-| Étape                                 | Quoi faire                                                                 |
+| Passo                                 | Cosa fare                                                                   |
 |---------------------------------------|----------------------------------------------------------------------------|
-| Remplacer `InMemoryStore`             | PostgreSQL via Spring Data JPA + entities `WorkOrderEntity` etc.            |
-| Brancher SAP en SOAP                  | Apache CXF, générer les stubs depuis les WSDL fournis par l'équipe SAP      |
-| Authentification réelle               | JWT (ou OAuth2), filtre Spring Security, WS-Security UsernameToken vers SAP |
-| Push FCM                              | `firebase-admin-java`, envoyer un push à la création/modification d'OdL     |
-| File de messages                      | RabbitMQ ou Kafka pour l'asynchrone avec SAP (spec §7.2.2)                  |
-| Cache anagrafiche                     | Redis avec TTL 24 h (spec table §12 anagrafiche)                            |
-| Observabilité                         | Micrometer + Prometheus + Grafana (latence, taux d'erreur, file SOAP)       |
-| CI/CD                                 | Pipeline build → tests → push image Docker                                  |
-| Sécurité                              | TLS 1.2+, certificate pinning côté mobile, HSTS, audit log structuré        |
+| Sostituire `InMemoryStore`            | PostgreSQL tramite Spring Data JPA + entità `WorkOrderEntity` ecc.          |
+| Collegare SAP in SOAP                 | Apache CXF, generare gli stub dai WSDL forniti dal team SAP                 |
+| Autenticazione reale                  | JWT (o OAuth2), filtro Spring Security, WS-Security UsernameToken verso SAP |
+| Push FCM                              | `firebase-admin-java`, inviare un push alla creazione/modifica di OdL       |
+| Coda di messaggi                      | RabbitMQ o Kafka per l'asincrono con SAP (spec §7.2.2)                      |
+| Cache anagrafiche                     | Redis con TTL 24 h (spec tabella §12 anagrafiche)                           |
+| Osservabilità                         | Micrometer + Prometheus + Grafana (latenza, tasso d'errore, coda SOAP)      |
+| CI/CD                                 | Pipeline build → test → push immagine Docker                                |
+| Sicurezza                             | TLS 1.2+, certificate pinning lato mobile, HSTS, audit log strutturato      |
 
 ---
 
-## 7. Résumé visuel — Création OdL bout en bout
+## 7. Riepilogo visivo — Creazione OdL end-to-end
 
 ```
-1. Admin/CRM front-end                                   [hors scope ici]
+1. Admin/CRM front-end                                   [fuori scope qui]
         │  POST /api/v1/work-orders  { woType: DISA, customer, meter, … }
         ▼
-2. Middleware Spring Boot (ce projet)
-   • valide les champs
-   • assigne externalCode (90000001)
-   • persiste en base / store
-   • (prod) appelle SAP en SOAP : createWorkOrderFromField (I4)
-   • (prod) envoie un push FCM au tablet du technicien
+2. Middleware Spring Boot (questo progetto)
+   • valida i campi
+   • assegna externalCode (90000001)
+   • persiste in base dati / store
+   • (prod) chiama SAP in SOAP : createWorkOrderFromField (I4)
+   • (prod) invia un push FCM al tablet del tecnico
         │
         ▼
-3. App Flutter (le tablet du technicien)
-   • le push invalide workOrdersProvider, ou pull-to-refresh
-   • le nouvel OdL apparaît dans la liste
-   • le technicien ouvre le détail, voit matricola + lecture
-   • effectue l'intervention (lecture finale, photo, sigillo)
+3. App Flutter (il tablet del tecnico)
+   • il push invalida workOrdersProvider, oppure pull-to-refresh
+   • il nuovo OdL appare nella lista
+   • il tecnico apre il dettaglio, vede matricola + lettura
+   • esegue l'intervento (lettura finale, foto, sigillo)
    • POST /api/v1/esiti { result: SUCCESS, meterReadings: […] }
         │
         ▼
 4. Middleware
-   • (prod) submitEsito en SOAP vers SAP (S13 + E55)
-   • l'OdL passe à COMPLETATO
+   • (prod) submitEsito in SOAP verso SAP (S13 + E55)
+   • l'OdL passa a COMPLETATO
         │
         ▼
-5. SAP — clôture comptable et technique de l'OdL.
+5. SAP — chiusura contabile e tecnica dell'OdL.
 ```
 
-Tu peux dès aujourd'hui exécuter les étapes 2 et 3 en local (mock SOAP).
+Già da oggi puoi eseguire i passaggi 2 e 3 in locale (mock SOAP).
