@@ -1,10 +1,8 @@
 # Guida completa — Creare un OdL lato backend
 
-Questo middleware **Spring Boot** è il componente che si interpone tra l'app
-Flutter e SAP : riceve le richieste REST/JSON dall'app, persiste ed espone gli
-ordini di lavoro (OdL), e (in produzione) traduce in chiamate SOAP verso SAP.
-
-
+Ce middleware **Spring Boot** est le composant qui s'intercale entre ton app
+Flutter et SAP : il reçoit les requêtes REST/JSON de l'app, persiste/expose les
+ordres de travail (OdL), et (en production) traduit en appels SOAP vers SAP.
 
 ```
 [App Flutter] ◄── REST/JSON ──► [Middleware Spring Boot] ◄── SOAP/XML ──► [SAP]
