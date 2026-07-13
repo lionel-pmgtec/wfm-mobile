@@ -1,5 +1,5 @@
 // Dettaglio Equipment : cerca un equipment per barcode o
-// matricola e mostra i dati tecnici (mock).
+// matricola presso il Cruscotto (anagrafica/equipment) e mostra i dati tecnici.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,6 +11,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/widgets.dart';
 import '../../../domain/entities/entities.dart';
+import '../../providers/core_providers.dart';
 
 class EquipmentDetailScreen extends ConsumerStatefulWidget {
   const EquipmentDetailScreen({super.key});
@@ -67,28 +68,18 @@ class _EquipmentDetailScreenState
       return;
     }
     setState(() => _searching = true);
-    await Future<void>.delayed(const Duration(milliseconds: 350));
+    final res = await ref.read(anagraficaRepositoryProvider).getEquipment(
+          matricola: matricola.isNotEmpty ? matricola : null,
+          barcode: barcode.isNotEmpty ? barcode : null,
+        );
     if (!mounted) return;
-    // Mock — un equipment fittizio basato sull'input.
     setState(() {
       _searching = false;
-      _result = Equipment(
-        matricola: matricola.isNotEmpty ? matricola : '15${barcode}A',
-        barcode: barcode.isNotEmpty ? barcode : 'BC-${matricola}001',
-        produttore: _produttore != null && _produttore != '-NONE-'
-            ? _produttore!
-            : 'MADDALENA',
-        modello: 'MIS. ACQUA 015 5 CIF',
-        localita: _localita != null && _localita != '-NONE-'
-            ? _localita!
-            : 'Centro',
-        comune: 'ANCONA',
-        sedeTecnica: 'TS-001-ANC',
-        dataInstallazione:
-            DateTime.now().subtract(const Duration(days: 365 * 4)),
-        stato: 'ATTIVO',
-      );
+      _result = res.valueOrNull;
     });
+    if (res.valueOrNull == null && mounted) {
+      showSapToast(context, 'Nessun equipment trovato', isError: true);
+    }
   }
 
   @override

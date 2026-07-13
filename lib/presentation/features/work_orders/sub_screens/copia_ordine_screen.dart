@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/widgets.dart';
+import '../widgets/odl_actions_menu.dart';
 import '../../../../domain/entities/entities.dart';
 import '../../../providers/work_orders_provider.dart';
 
@@ -71,7 +72,7 @@ class _CopiaOrdineScreenState extends ConsumerState<CopiaOrdineScreen> {
   Widget build(BuildContext context) {
     final async = ref.watch(workOrderDetailProvider(widget.code));
     return Scaffold(
-      appBar: AppBar(title: const Text('Copia ordine')),
+      appBar: AppBar(title: const Text('Copia ordine'), actions: [OdlActionsMenu(code: widget.code)]),
       body: async.when(
         loading: () => const WfmLoading(),
         error: (e, _) => WfmErrorState(message: e.toString()),

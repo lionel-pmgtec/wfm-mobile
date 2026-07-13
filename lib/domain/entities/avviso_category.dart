@@ -111,3 +111,4 @@ class AvvisoSubType {
   static List<AvvisoSubType> get creatableFromApp =>
       all.where((t) => t.allowsCreationFromApp).toList();
 }
+

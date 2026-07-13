@@ -11,6 +11,9 @@ abstract interface class SyncRepository {
   /// Accoda una nuova operazione in uscita.
   Future<void> enqueue(SyncOperation operation);
 
+  /// Aggiorna un'operazione esistente (stato/retry/errore) e notifica il badge.
+  Future<void> update(SyncOperation operation);
+
   /// Forza un nuovo tentativo manuale di tutta la coda.
   Future<void> retryAll();
 

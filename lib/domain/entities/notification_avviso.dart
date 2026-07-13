@@ -201,6 +201,14 @@ class NotificationAvviso {
     this.localStatus = LocalSyncStatus.synced,
   });
 
+  /// Avviso minimale usato come header di fallback quando un preventivo è
+  /// collegato a un OdL (chiave = codice OdL) e non esiste come Avviso SAP.
+  factory NotificationAvviso.empty(String numero) => NotificationAvviso(
+        numeroAvviso: numero,
+        descrizione: 'Preventivo',
+        tipo: 'PA',
+      );
+
   /// Stato tipizzato, derivato da [statoEnum] se presente, altrimenti
   /// inferito dalla stringa [stato] tramite [AvvisoStato.fromRaw].
   AvvisoStato get statoTipo => statoEnum ?? AvvisoStato.fromRaw(stato);

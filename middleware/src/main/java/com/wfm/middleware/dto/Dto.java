@@ -234,4 +234,20 @@ public final class Dto {
     public record Warehouse(String code, String name) {}
 
     public record CodeLabel(String code, String label) {}
+
+    /** Equipment SAP PM/IS-U (ricerca per matricola/barcode — Standalone). */
+    public record Equipment(
+            String matricola, String barcode, String produttore, String modello,
+            String localita, String comune, String sedeTecnica,
+            String dataInstallazione, String stato) {}
+
+    /** Tecnico/operatore (Cambio CID, riassegnazione OdL). */
+    public record Technician(
+            String cid, String nome, String cognome, String email,
+            String role, String workCenter, String squadra) {}
+
+    // ─── Notifiche push (FCM) ────────────────────────────────────────────────
+
+    /** Registrazione del token FCM del dispositivo (POST /devices). */
+    public record DeviceRegistration(String cid, String fcmToken, String platform) {}
 }

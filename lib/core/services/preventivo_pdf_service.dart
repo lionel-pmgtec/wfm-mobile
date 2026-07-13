@@ -1,27 +1,25 @@
-// Generazione PDF Preventivo — stile classico.
+// Generazione PDF Preventivo — modello classico "a modulo" (form bordato),
+// in stile documento ufficiale italiano (griglia di celle etichettate).
 //
-// Layout in stile italiano sobrio :
-//   • Intestazione con dati emittente a sinistra, numero/data a destra
-//   • Riquadro "Spett.le" cliente
-//   • Tabella riferimenti / indirizzo
-//   • Tabella materiali bordata
-//   • Totali a destra
-//   • Riquadro firma
-//   • Footer con condizioni e numero pagina
+// Il preventivo NON è un documento fiscale: elenco dei materiali necessari
+// all'intervento. Nessun prezzo, nessun totale.
 //
-// Niente sfondi colorati ovunque, niente angoli arrotondati :
-// solo bordi neri/grigi sottili + un accento blu SAP per titoli e linee.
-//
-// Font Unicode (Noto Sans) per supportare correttamente €, à, è, ecc.
+// Layout:
+//   • Banda "VIVA SERVIZI" a tutta larghezza
+//   • Griglia di celle bordate con micro-etichette (emittente, cliente,
+//     intervento) — come un modulo ufficiale
+//   • Tabella materiali bordata (N., Codice, Descrizione, UM, Q.tà)
+//   • Riga firme (cliente + operatore) in celle bordate
+//   • Nota + footer
 
 import 'dart:io' show Directory, File, Platform;
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
-import 'package:printing/printing.dart';
 
 import '../../domain/entities/entities.dart';
 
@@ -29,20 +27,36 @@ class PreventivoPdfService {
   PreventivoPdfService._();
   static final instance = PreventivoPdfService._();
 
-  // Palette sobria : blu SAP per titoli, grigi per bordi e testo secondario.
   static const _primary = PdfColor.fromInt(0xFF1F4788);
+  static const _primaryDark = PdfColor.fromInt(0xFF0F2D56);
+  static const _white = PdfColor.fromInt(0xFFFFFFFF);
   static const _text = PdfColor.fromInt(0xFF1A2540);
   static const _muted = PdfColor.fromInt(0xFF5A6A85);
-  static const _border = PdfColor.fromInt(0xFF9AA5B8);
-  static const _borderSoft = PdfColor.fromInt(0xFFDDE3EC);
+  static const _border = PdfColor.fromInt(0xFF6B7686);
+  static const _headerBg = PdfColor.fromInt(0xFFEDF1F6);
 
-  // Dati emittente (placeholder modificabile).
-  static const String _emittenteRagione = 'WFM Servizi Idrici S.p.A.';
+  static const double _side = 28;
+
+  static const String _emittenteRagione = 'Viva Servizi S.p.A.';
   static const String _emittenteIndirizzo =
-      'Via dell\'Acquedotto 12 - 60100 Ancona (AN)';
-  static const String _emittentePiva = 'P.IVA 02345678901';
+      'Via del Commercio 29 - 60127 Ancona (AN)';
+  static const String _emittentePiva = 'P.IVA 02191510420';
   static const String _emittenteContatti =
-      'Tel. 071 1234567 - info@wfmservizi.it';
+      'Numero Verde 800 216 172 - info@vivaservizi.it';
+
+  // Logo Viva Servizi (assets/images/logo.png) caricato una sola volta.
+  pw.MemoryImage? _logo;
+
+  Future<pw.MemoryImage?> _loadLogo() async {
+    if (_logo != null) return _logo;
+    try {
+      final data = await rootBundle.load('assets/images/logo.png');
+      _logo = pw.MemoryImage(data.buffer.asUint8List());
+    } catch (_) {
+      _logo = null;
+    }
+    return _logo;
+  }
 
   Future<String?> generaEsalva({
     required NotificationAvviso avviso,
@@ -57,10 +71,10 @@ class PreventivoPdfService {
         tecnicoNome: tecnicoNome,
       );
       final dir = await getApplicationDocumentsDirectory();
-      final folder = Directory('${dir.path}${Platform.pathSeparator}preventivi');
+      final folder =
+          Directory('${dir.path}${Platform.pathSeparator}preventivi');
       if (!await folder.exists()) await folder.create(recursive: true);
-      final fileName =
-          'PREV_${avviso.numeroAvviso}_${preventivo.id}.pdf';
+      final fileName = 'PREV_${avviso.numeroAvviso}_${preventivo.id}.pdf';
       final file =
           File('${folder.path}${Platform.pathSeparator}$fileName');
       await file.writeAsBytes(bytes);
@@ -75,148 +89,92 @@ class PreventivoPdfService {
     required Preventivo preventivo,
     String? tecnicoNome,
   }) async {
-    final fontRegular = await PdfGoogleFonts.notoSansRegular();
-    final fontBold = await PdfGoogleFonts.notoSansBold();
-    final fontItalic = await PdfGoogleFonts.notoSansItalic();
-
     final numero = preventivo.numeroPreventivo.isNotEmpty
         ? preventivo.numeroPreventivo
         : preventivo.id;
 
+    final logo = await _loadLogo();
+
     final doc = pw.Document(
       title: 'Preventivo $numero',
-      author: tecnicoNome ?? 'WFM Mobile',
-      theme: pw.ThemeData.withFont(
-        base: fontRegular,
-        bold: fontBold,
-        italic: fontItalic,
-      ),
+      author: tecnicoNome ?? 'Viva Servizi',
     );
 
-    final firma = preventivo.firma;
-    final firmaImage =
-        firma != null ? pw.MemoryImage(firma.pngBytes) : null;
-    final indirizzoLavoro =
+    final c = avviso.customer;
+    final indirizzo =
         avviso.indirizzoLavoro ?? avviso.indirizzoOggetto ?? avviso.address;
+    final cf = c.codiceFiscale ?? avviso.codiceFiscaleCliente ?? '';
+    final nomeCliente = c.isBusiness
+        ? (c.ragioneSociale ?? '-')
+        : (c.fullName.isEmpty ? '-' : c.fullName);
 
     doc.addPage(pw.MultiPage(
       pageFormat: PdfPageFormat.a4,
-      margin: const pw.EdgeInsets.fromLTRB(40, 30, 40, 35),
-      footer: (ctx) => _footer(ctx, tecnicoNome),
+      margin: pw.EdgeInsets.zero,
+      footer: (ctx) => _pad(_footer(ctx, tecnicoNome)),
       build: (ctx) => [
-        // ── INTESTAZIONE EMITTENTE / NUMERO ──────────────────────────
-        _intestazione(avviso, preventivo, numero),
+        _pad(pw.SizedBox(height: 18)),
+        _pad(_intestazione(logo)),
+        _pad(pw.SizedBox(height: 8)),
 
-        pw.SizedBox(height: 18),
+        // ── Dati preventivo ───────────────────────────────────────────────
+        _pad(_grid([
+          _rigaGrid([
+            _cella('Preventivo n.', numero, flex: 2),
+            _cella('Data', _fmtDate(preventivo.createdAt), flex: 1),
+            _cella('Rif. avviso / OdL', avviso.numeroAvviso, flex: 2),
+          ]),
+        ])),
 
-        // ── SPETT.LE CLIENTE ────────────────────────────────────────
-        _clienteBlocco(avviso),
+        // ── Griglia cliente ───────────────────────────────────────────────
+        _pad(_grid([
+          _rigaGrid([
+            _cella('Cliente', nomeCliente, flex: 3),
+            _cella('Codice fiscale / P.IVA', cf, flex: 2),
+            _cella('Telefono', c.telefono ?? '', flex: 2),
+          ]),
+        ])),
 
-        pw.SizedBox(height: 14),
+        // ── Griglia intervento ────────────────────────────────────────────
+        _pad(_grid([
+          _rigaGrid([
+            _cella('Luogo intervento',
+                indirizzo.full.isEmpty ? '-' : indirizzo.full, flex: 4),
+            _cella('Sede tecnica', avviso.sedeTecnica ?? '', flex: 3),
+          ]),
+          _rigaGrid([
+            _cella('Oggetto / descrizione lavoro',
+                avviso.descrizione.isEmpty ? '-' : avviso.descrizione,
+                flex: 1),
+          ]),
+        ])),
 
-        // ── DATI DOCUMENTO ──────────────────────────────────────────
-        _datiDocumento(avviso, preventivo),
+        _pad(pw.SizedBox(height: 10)),
 
-        pw.SizedBox(height: 14),
+        // ── Tabella materiali ─────────────────────────────────────────────
+        _pad(_titoloBarra(
+            'MATERIALI NECESSARI ALL\'INTERVENTO (${preventivo.materiali.length})')),
+        _pad(_materialiTable(preventivo)),
 
-        // ── INDIRIZZO INTERVENTO ───────────────────────────────────
-        _labelRow('Indirizzo di intervento:',
-            _formattaIndirizzo(indirizzoLavoro)),
-        if (indirizzoLavoro.hasCoordinates) ...[
-          pw.SizedBox(height: 2),
-          _labelRow('Coordinate GPS:', indirizzoLavoro.gpsCoordinates),
-        ],
+        _pad(pw.SizedBox(height: 12)),
 
-        pw.SizedBox(height: 14),
+        // ── Firme (cliente | operatore) ───────────────────────────────────
+        _pad(_titoloBarra('FIRME PER PRESA VISIONE')),
+        _pad(_grid([
+          _rigaGrid([
+            _cellaFirma('Firma del cliente', preventivo.firma),
+            _cellaFirma('Firma dell\'operatore', preventivo.firmaOperatore),
+          ]),
+        ])),
 
-        // ── DESCRIZIONE LAVORO ─────────────────────────────────────
-        _sezioneTitolo('Oggetto / Descrizione lavoro'),
-        _bordedBox(
-          child: pw.Text(
-            avviso.descrizione.isEmpty
-                ? '-'
-                : avviso.descrizione,
-            style: const pw.TextStyle(fontSize: 10),
-          ),
-        ),
-
-        if (preventivo.motivo.isNotEmpty ||
-            preventivo.classificazioneFiscale.isNotEmpty ||
-            preventivo.settoreMerceologico.isNotEmpty ||
-            preventivo.numeroOrdineSd.isNotEmpty) ...[
-          pw.SizedBox(height: 8),
-          _bordedBox(
-            child: pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.start,
-              children: [
-                if (preventivo.motivo.isNotEmpty)
-                  _labelInline('Motivo preventivo', preventivo.motivo),
-                if (preventivo.classificazioneFiscale.isNotEmpty)
-                  _labelInline('Classificazione fiscale',
-                      preventivo.classificazioneFiscale),
-                if (preventivo.settoreMerceologico.isNotEmpty)
-                  _labelInline('Settore merceologico',
-                      preventivo.settoreMerceologico),
-                if (preventivo.numeroOrdineSd.isNotEmpty)
-                  _labelInline(
-                      'Numero ordine SD', preventivo.numeroOrdineSd),
-              ],
-            ),
-          ),
-        ],
-
-        pw.SizedBox(height: 16),
-
-        // ── TABELLA MATERIALI ──────────────────────────────────────
-        _sezioneTitolo(
-            'Materiali e prestazioni (${preventivo.materiali.length})'),
-        _tabellaMateriali(preventivo),
-
-        pw.SizedBox(height: 10),
-
-        // ── TOTALI ─────────────────────────────────────────────────
-        _totaliBox(preventivo),
-
-        pw.SizedBox(height: 16),
-
-        // ── CONDIZIONI ─────────────────────────────────────────────
-        _sezioneTitolo('Condizioni e validita'),
-        _condizioniBlock(avviso),
-
-        pw.SizedBox(height: 16),
-
-        // ── FIRMA ──────────────────────────────────────────────────
-        _sezioneTitolo('Firma del cliente per accettazione'),
-        if (firma != null && firmaImage != null)
-          _firmaBlock(firma, firmaImage)
-        else
-          _bordedBox(
-            height: 80,
-            child: pw.Center(
-              child: pw.Text('Da firmare',
-                  style: pw.TextStyle(
-                      color: _muted,
-                      fontStyle: pw.FontStyle.italic,
-                      fontSize: 10)),
-            ),
-          ),
-
-        if (preventivo.stato == PreventivoStato.pagato ||
-            preventivo.stato == PreventivoStato.chiuso) ...[
-          pw.SizedBox(height: 12),
-          pw.Container(
-            padding: const pw.EdgeInsets.all(8),
-            decoration: pw.BoxDecoration(
-              border: pw.Border.all(color: _primary),
-            ),
-            child: pw.Text(
-                'PAGATO il ${_fmtDate(preventivo.dataPagamento)}',
-                style: pw.TextStyle(
-                    fontSize: 11,
-                    fontWeight: pw.FontWeight.bold,
-                    color: _primary)),
-          ),
-        ],
+        _pad(pw.SizedBox(height: 8)),
+        _pad(pw.Text(
+            'Documento non fiscale - elenco dei materiali necessari '
+            'all\'intervento. Validità 30 giorni dalla data di emissione.',
+            style: pw.TextStyle(
+                fontSize: 8,
+                color: _muted,
+                fontStyle: pw.FontStyle.italic))),
       ],
     ));
 
@@ -227,467 +185,258 @@ class PreventivoPdfService {
   // BLOCCHI
   // ════════════════════════════════════════════════════════════════════
 
-  pw.Widget _intestazione(
-      NotificationAvviso avviso, Preventivo p, String numero) {
-    return pw.Column(
-      crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+  /// Intestazione stile "busta paga": società a sinistra, logo incorniciato
+  /// a destra, senza banda colorata.
+  pw.Widget _intestazione(pw.MemoryImage? logo) {
+    return pw.Table(
+      border: pw.TableBorder.all(color: _border, width: 0.6),
+      columnWidths: const {
+        0: pw.FlexColumnWidth(3),
+        1: pw.FlexColumnWidth(1.3),
+      },
       children: [
-        pw.Row(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
-          children: [
-            // Emittente
-            pw.Expanded(
-              flex: 3,
-              child: pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                children: [
-                  pw.Text(_emittenteRagione,
-                      style: pw.TextStyle(
-                          fontSize: 14,
-                          fontWeight: pw.FontWeight.bold,
-                          color: _text)),
-                  pw.SizedBox(height: 2),
-                  pw.Text(_emittenteIndirizzo,
-                      style: const pw.TextStyle(fontSize: 9)),
-                  pw.Text(_emittentePiva,
-                      style: const pw.TextStyle(fontSize: 9)),
-                  pw.Text(_emittenteContatti,
-                      style: const pw.TextStyle(fontSize: 9)),
-                ],
-              ),
-            ),
-            // Numero documento (riquadro classico in alto a destra)
-            pw.Container(
-              width: 180,
-              padding: const pw.EdgeInsets.all(8),
-              decoration: pw.BoxDecoration(
-                border: pw.Border.all(color: _border, width: 0.8),
-              ),
-              child: pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                children: [
-                  pw.Text('PREVENTIVO',
-                      style: pw.TextStyle(
-                          fontSize: 12,
-                          fontWeight: pw.FontWeight.bold,
-                          color: _primary,
-                          letterSpacing: 1.2)),
-                  pw.SizedBox(height: 4),
-                  pw.Text('N. $numero',
-                      style: pw.TextStyle(
-                          fontSize: 10, fontWeight: pw.FontWeight.bold)),
-                  pw.Text('Data: ${_fmtDate(p.createdAt)}',
-                      style: const pw.TextStyle(fontSize: 9)),
-                  pw.SizedBox(height: 4),
-                  pw.Text('Avviso SAP: ${avviso.numeroAvviso}',
-                      style: pw.TextStyle(fontSize: 9, color: _muted)),
-                  pw.Text('Tipo: ${avviso.sottotipo.code}',
-                      style: pw.TextStyle(fontSize: 9, color: _muted)),
-                  pw.Text('Stato: ${p.stato.label}',
-                      style: pw.TextStyle(fontSize: 9, color: _muted)),
-                ],
-              ),
-            ),
-          ],
-        ),
-        pw.SizedBox(height: 6),
-        pw.Divider(color: _primary, thickness: 1.2, height: 4),
-      ],
-    );
-  }
-
-  pw.Widget _clienteBlocco(NotificationAvviso avviso) {
-    final c = avviso.customer;
-    final cf = c.codiceFiscale ?? avviso.codiceFiscaleCliente ?? '';
-    return pw.Row(
-      crossAxisAlignment: pw.CrossAxisAlignment.start,
-      children: [
-        pw.Spacer(flex: 2),
-        pw.Expanded(
-          flex: 3,
-          child: pw.Container(
-            padding: const pw.EdgeInsets.all(10),
-            decoration: pw.BoxDecoration(
-              border: pw.Border.all(color: _border, width: 0.8),
-            ),
+        pw.TableRow(children: [
+          pw.Container(
+            padding:
+                const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             child: pw.Column(
               crossAxisAlignment: pw.CrossAxisAlignment.start,
               children: [
-                pw.Text('Spett.le',
-                    style: pw.TextStyle(fontSize: 9, color: _muted)),
-                pw.SizedBox(height: 2),
-                pw.Text(
-                    c.isBusiness
-                        ? (c.ragioneSociale ?? '-')
-                        : (c.fullName.isEmpty ? '-' : c.fullName),
+                pw.Text(_emittenteRagione,
                     style: pw.TextStyle(
                         fontSize: 13,
                         fontWeight: pw.FontWeight.bold,
-                        color: _text)),
+                        color: _primaryDark)),
+                pw.SizedBox(height: 2),
+                pw.Text(_emittenteIndirizzo,
+                    style: pw.TextStyle(fontSize: 8, color: _muted)),
+                pw.Text('$_emittentePiva  ·  $_emittenteContatti',
+                    style: pw.TextStyle(fontSize: 8, color: _muted)),
                 pw.SizedBox(height: 4),
-                if (cf.isNotEmpty)
-                  pw.Text('Cod. Fiscale: $cf',
-                      style: const pw.TextStyle(fontSize: 9)),
-                if ((c.partitaIva ?? '').isNotEmpty)
-                  pw.Text('Partita IVA: ${c.partitaIva}',
-                      style: const pw.TextStyle(fontSize: 9)),
-                if ((c.codBp ?? '').isNotEmpty)
-                  pw.Text('Cod. BP: ${c.codBp}',
-                      style: pw.TextStyle(fontSize: 9, color: _muted)),
-                if ((c.telefono ?? '').isNotEmpty)
-                  pw.Text('Tel. ${c.telefono}',
-                      style: const pw.TextStyle(fontSize: 9)),
-                if ((c.email ?? '').isNotEmpty)
-                  pw.Text('Email: ${c.email}',
-                      style: const pw.TextStyle(fontSize: 9)),
+                pw.Text('PREVENTIVO',
+                    style: pw.TextStyle(
+                        fontSize: 13,
+                        fontWeight: pw.FontWeight.bold,
+                        color: _primary,
+                        letterSpacing: 2)),
               ],
             ),
           ),
-        ),
+          pw.Container(
+            padding: const pw.EdgeInsets.all(6),
+            alignment: pw.Alignment.center,
+            child: logo != null
+                ? pw.SizedBox(
+                    height: 52,
+                    child: pw.Image(logo, fit: pw.BoxFit.contain))
+                : pw.Column(
+                    mainAxisAlignment: pw.MainAxisAlignment.center,
+                    children: [
+                      pw.Container(
+                        width: 42,
+                        height: 42,
+                        decoration: pw.BoxDecoration(
+                          color: _primary,
+                          borderRadius: pw.BorderRadius.circular(8),
+                        ),
+                        alignment: pw.Alignment.center,
+                        child: pw.Text('VS',
+                            style: pw.TextStyle(
+                                color: _white,
+                                fontWeight: pw.FontWeight.bold,
+                                fontSize: 18)),
+                      ),
+                      pw.SizedBox(height: 4),
+                      pw.Text('VIVA SERVIZI',
+                          style: pw.TextStyle(
+                              fontSize: 9,
+                              fontWeight: pw.FontWeight.bold,
+                              color: _primaryDark,
+                              letterSpacing: 1)),
+                    ],
+                  ),
+          ),
+        ]),
       ],
     );
   }
 
-  pw.Widget _datiDocumento(NotificationAvviso avviso, Preventivo p) {
-    final righe = <List<String>>[
-      if (avviso.hasOrdineCollegato)
-        ['Numero OdL', avviso.ordineDiLavoro ?? ''],
-      if ((avviso.contratto ?? '').isNotEmpty)
-        ['Contratto', avviso.contratto!],
-      if ((avviso.sedeTecnica ?? '').isNotEmpty)
-        ['Sede tecnica', avviso.sedeTecnica!],
-      if ((avviso.ubicazioneTecnica ?? '').isNotEmpty)
-        ['Ubicazione', avviso.ubicazioneTecnica!],
-      if ((avviso.equipment ?? '').isNotEmpty)
-        ['Equipment', avviso.equipment!],
-      if ((avviso.centroLavoro ?? '').isNotEmpty)
-        ['Centro lavoro', avviso.centroLavoro!],
-      if (avviso.priorita.isNotEmpty) ['Priorita', avviso.priorita],
-      if (p.dataInvio != null)
-        ['Data invio', _fmtDate(p.dataInvio)],
-      if (p.dataApprovazioneCliente != null)
-        ['Data approvazione', _fmtDate(p.dataApprovazioneCliente)],
-    ];
-    if (righe.isEmpty) return pw.SizedBox.shrink();
-    // Tabella 2 colonne (label + valore) impacchettata su 2 colonne fisiche.
-    return pw.Table(
-      border: pw.TableBorder.all(color: _borderSoft, width: 0.5),
-      columnWidths: const {
-        0: pw.FlexColumnWidth(2),
-        1: pw.FlexColumnWidth(3),
-        2: pw.FlexColumnWidth(2),
-        3: pw.FlexColumnWidth(3),
-      },
-      children: [
-        for (var i = 0; i < righe.length; i += 2)
-          pw.TableRow(children: [
-            _datoLabel(righe[i][0]),
-            _datoValue(righe[i][1]),
-            if (i + 1 < righe.length) _datoLabel(righe[i + 1][0]) else _datoLabel(''),
-            if (i + 1 < righe.length) _datoValue(righe[i + 1][1]) else _datoValue(''),
-          ]),
-      ],
-    );
-  }
-
-  pw.Widget _datoLabel(String s) => pw.Container(
-        padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-        child: pw.Text(s,
-            style: pw.TextStyle(fontSize: 9, color: _muted)),
-      );
-
-  pw.Widget _datoValue(String s) => pw.Container(
-        padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-        child: pw.Text(s.isEmpty ? '-' : s,
+  /// Titolo su barra piena (etichetta di sezione del modulo).
+  pw.Widget _titoloBarra(String text) => pw.Container(
+        width: double.infinity,
+        color: _primaryDark,
+        padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+        child: pw.Text(text,
             style: pw.TextStyle(
-                fontSize: 9, fontWeight: pw.FontWeight.bold)),
+                fontSize: 8,
+                fontWeight: pw.FontWeight.bold,
+                color: _white,
+                letterSpacing: 0.5)),
       );
 
-  pw.Widget _tabellaMateriali(Preventivo p) {
-    if (p.materiali.isEmpty) {
-      return _bordedBox(
-        height: 40,
-        child: pw.Center(
-          child: pw.Text('Nessun materiale aggiunto',
-              style: pw.TextStyle(
-                  color: _muted, fontStyle: pw.FontStyle.italic)),
-        ),
-      );
+  pw.Widget _materialiTable(Preventivo p) {
+    const minRighe = 12; // righe minime per "riempire" il modulo
+    final righe = <pw.TableRow>[
+      pw.TableRow(
+        decoration: const pw.BoxDecoration(color: _headerBg),
+        children: [
+          _thead('N.', align: pw.Alignment.center),
+          _thead('Codice'),
+          _thead('Descrizione'),
+          _thead('UM', align: pw.Alignment.center),
+          _thead('Q.tà', align: pw.Alignment.center),
+        ],
+      ),
+    ];
+    for (var i = 0; i < p.materiali.length; i++) {
+      righe.add(pw.TableRow(children: [
+        _tcell('${i + 1}', align: pw.Alignment.center),
+        _tcell(p.materiali[i].codice),
+        _tcell(p.materiali[i].descrizione),
+        _tcell(p.materiali[i].unitaMisura, align: pw.Alignment.center),
+        _tcell('${p.materiali[i].quantita}', align: pw.Alignment.center),
+      ]));
+    }
+    // Righe vuote per completare il modulo.
+    for (var i = p.materiali.length; i < minRighe; i++) {
+      righe.add(pw.TableRow(children: [
+        for (var j = 0; j < 5; j++) pw.Container(height: 15),
+      ]));
     }
     return pw.Table(
       border: pw.TableBorder.all(color: _border, width: 0.6),
       columnWidths: const {
-        0: pw.FlexColumnWidth(1.0),
-        1: pw.FlexColumnWidth(3.4),
-        2: pw.FlexColumnWidth(0.7),
-        3: pw.FlexColumnWidth(0.6),
-        4: pw.FlexColumnWidth(1.2),
-        5: pw.FlexColumnWidth(1.3),
+        0: pw.FlexColumnWidth(0.6),
+        1: pw.FlexColumnWidth(1.6),
+        2: pw.FlexColumnWidth(5.0),
+        3: pw.FlexColumnWidth(0.8),
+        4: pw.FlexColumnWidth(0.9),
       },
-      children: [
-        pw.TableRow(
-          decoration: const pw.BoxDecoration(
-            border: pw.Border(
-              bottom: pw.BorderSide(color: _primary, width: 1.2),
-            ),
-          ),
-          children: [
-            _thead('Codice'),
-            _thead('Descrizione'),
-            _thead('Qta', align: pw.Alignment.center),
-            _thead('UM', align: pw.Alignment.center),
-            _thead('Prezzo un.', align: pw.Alignment.centerRight),
-            _thead('Totale', align: pw.Alignment.centerRight),
-          ],
-        ),
-        for (final m in p.materiali)
-          pw.TableRow(children: [
-            _tcell(m.codice),
-            _tcell(m.descrizione),
-            _tcell('${m.quantita}', align: pw.Alignment.center),
-            _tcell(m.unitaMisura, align: pw.Alignment.center),
-            _tcell(_money(m.prezzoUnitario),
-                align: pw.Alignment.centerRight),
-            _tcell(_money(m.totale),
-                align: pw.Alignment.centerRight, bold: true),
-          ]),
-      ],
+      children: righe,
     );
   }
 
   pw.Widget _thead(String text,
           {pw.Alignment align = pw.Alignment.centerLeft}) =>
       pw.Container(
-        padding:
-            const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+        padding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 4),
         alignment: align,
         child: pw.Text(text,
             style: pw.TextStyle(
-                fontSize: 9,
+                fontSize: 8,
                 fontWeight: pw.FontWeight.bold,
-                color: _primary)),
+                color: _primaryDark)),
       );
 
   pw.Widget _tcell(String text,
-          {pw.Alignment align = pw.Alignment.centerLeft,
-          bool bold = false}) =>
+          {pw.Alignment align = pw.Alignment.centerLeft}) =>
       pw.Container(
-        padding:
-            const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+        padding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 3),
         alignment: align,
-        child: pw.Text(text,
-            style: pw.TextStyle(
-                fontSize: 9,
-                fontWeight:
-                    bold ? pw.FontWeight.bold : pw.FontWeight.normal,
-                color: _text)),
+        child: pw.Text(text, style: pw.TextStyle(fontSize: 9, color: _text)),
       );
-
-  pw.Widget _totaliBox(Preventivo p) {
-    return pw.Row(
-      mainAxisAlignment: pw.MainAxisAlignment.end,
-      children: [
-        pw.Container(
-          width: 240,
-          child: pw.Table(
-            border: pw.TableBorder.all(color: _border, width: 0.6),
-            columnWidths: const {
-              0: pw.FlexColumnWidth(1.4),
-              1: pw.FlexColumnWidth(1),
-            },
-            children: [
-              _trTotale('Imponibile', _money(p.totaleSenzaIva)),
-              _trTotale(
-                  'IVA ${p.aliquotaIva.toStringAsFixed(0)}%',
-                  _money(p.importoIva)),
-              _trTotale('TOTALE', _money(p.totaleConIva), bold: true),
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  pw.TableRow _trTotale(String label, String value, {bool bold = false}) =>
-      pw.TableRow(
-        decoration: bold
-            ? const pw.BoxDecoration(
-                border: pw.Border(
-                  top: pw.BorderSide(color: _primary, width: 1.2),
-                ),
-              )
-            : null,
-        children: [
-          pw.Container(
-            padding:
-                const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-            child: pw.Text(label,
-                style: pw.TextStyle(
-                    fontSize: bold ? 11 : 9,
-                    fontWeight:
-                        bold ? pw.FontWeight.bold : pw.FontWeight.normal,
-                    color: bold ? _primary : _muted)),
-          ),
-          pw.Container(
-            padding:
-                const pw.EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-            alignment: pw.Alignment.centerRight,
-            child: pw.Text(value,
-                style: pw.TextStyle(
-                    fontSize: bold ? 12 : 10,
-                    fontWeight:
-                        bold ? pw.FontWeight.bold : pw.FontWeight.normal,
-                    color: bold ? _primary : _text)),
-          ),
-        ],
-      );
-
-  pw.Widget _condizioniBlock(NotificationAvviso avviso) {
-    return _bordedBox(
-      child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          _puntoElenco(
-              'Validita del presente preventivo: 30 giorni dalla data di emissione.'),
-          _puntoElenco(
-              'Modalita di pagamento accettate: Contanti, Carta, Bonifico, POS.'),
-          _puntoElenco(
-              'I prezzi indicati sono comprensivi di IVA come da aliquota in tabella.'),
-          _puntoElenco(
-              'L\'esecuzione dei lavori e subordinata alla firma di accettazione del cliente.'),
-          if (avviso.lavoriACaricoCliente)
-            _puntoElenco(
-                'Alcuni lavori preliminari restano a carico del cliente.'),
-        ],
-      ),
-    );
-  }
-
-  pw.Widget _puntoElenco(String text) => pw.Padding(
-        padding: const pw.EdgeInsets.symmetric(vertical: 1),
-        child: pw.Row(
-          crossAxisAlignment: pw.CrossAxisAlignment.start,
-          children: [
-            pw.Text('-  ',
-                style: pw.TextStyle(fontSize: 9, color: _muted)),
-            pw.Expanded(
-              child: pw.Text(text,
-                  style: const pw.TextStyle(fontSize: 9)),
-            ),
-          ],
-        ),
-      );
-
-  pw.Widget _firmaBlock(FirmaCliente firma, pw.MemoryImage img) {
-    return _bordedBox(
-      child: pw.Column(
-        crossAxisAlignment: pw.CrossAxisAlignment.start,
-        children: [
-          pw.Container(
-            height: 70,
-            alignment: pw.Alignment.centerLeft,
-            child: pw.Image(img, fit: pw.BoxFit.contain),
-          ),
-          pw.SizedBox(height: 4),
-          pw.Divider(color: _borderSoft, height: 4),
-          pw.SizedBox(height: 4),
-          pw.Text('Firmato da: ${firma.nomeFirmatario}',
-              style: pw.TextStyle(
-                  fontSize: 10, fontWeight: pw.FontWeight.bold)),
-          pw.Text(
-              'Data: ${firma.dataFormattata}    Ora: ${firma.oraFormattata}',
-              style: pw.TextStyle(fontSize: 9, color: _muted)),
-        ],
-      ),
-    );
-  }
 
   pw.Widget _footer(pw.Context ctx, String? tecnico) {
     return pw.Container(
-      padding: const pw.EdgeInsets.only(top: 6),
+      padding: const pw.EdgeInsets.only(top: 5, bottom: 8),
       decoration: const pw.BoxDecoration(
-        border: pw.Border(top: pw.BorderSide(color: _borderSoft)),
+        border: pw.Border(top: pw.BorderSide(color: _border, width: 0.5)),
       ),
       child: pw.Row(
         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
         children: [
           pw.Text(
-              'Generato il ${_fmtDateTime(DateTime.now())}'
-              '${tecnico != null ? "  -  $tecnico" : ""}',
-              style: pw.TextStyle(fontSize: 8, color: _muted)),
-          pw.Text('Pagina ${ctx.pageNumber} di ${ctx.pagesCount}',
-              style: pw.TextStyle(fontSize: 8, color: _muted)),
+              'Viva Servizi S.p.A. - generato il ${_fmtDateTime(DateTime.now())}'
+              '${tecnico != null ? "  ·  $tecnico" : ""}',
+              style: pw.TextStyle(fontSize: 7, color: _muted)),
+          pw.Text('Pag. ${ctx.pageNumber}/${ctx.pagesCount}',
+              style: pw.TextStyle(fontSize: 7, color: _muted)),
         ],
       ),
     );
   }
 
   // ════════════════════════════════════════════════════════════════════
-  // HELPERS
+  // GRIGLIA (celle etichettate, stile modulo)
   // ════════════════════════════════════════════════════════════════════
 
-  pw.Widget _sezioneTitolo(String text) => pw.Padding(
-        padding: const pw.EdgeInsets.only(bottom: 4),
-        child: pw.Text(text.toUpperCase(),
-            style: pw.TextStyle(
-                fontSize: 10,
-                fontWeight: pw.FontWeight.bold,
-                color: _primary,
-                letterSpacing: 0.8)),
+  /// Impila più righe-tabella in un'unica griglia continua bordata.
+  pw.Widget _grid(List<pw.Widget> righe) => pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+        children: righe,
       );
 
-  pw.Widget _bordedBox(
-      {required pw.Widget child, double? height}) {
-    return pw.Container(
-      height: height,
-      width: double.infinity,
-      padding: const pw.EdgeInsets.all(8),
-      decoration: pw.BoxDecoration(
-        border: pw.Border.all(color: _border, width: 0.6),
-      ),
-      child: child,
+  /// Riga della griglia: le celle sono equilibrate secondo il loro flex e
+  /// separate da bordi condivisi (Table con TableBorder.all).
+  pw.Widget _rigaGrid(List<_Cella> celle) {
+    final widths = <int, pw.TableColumnWidth>{};
+    for (var i = 0; i < celle.length; i++) {
+      widths[i] = pw.FlexColumnWidth(celle[i].flex.toDouble());
+    }
+    return pw.Table(
+      border: pw.TableBorder.all(color: _border, width: 0.6),
+      columnWidths: widths,
+      children: [
+        pw.TableRow(children: [for (final c in celle) c.widget]),
+      ],
     );
   }
 
-  pw.Widget _labelRow(String label, String value) {
-    return pw.RichText(
-      text: pw.TextSpan(
-        children: [
-          pw.TextSpan(
-              text: '$label ',
-              style: pw.TextStyle(fontSize: 10, color: _muted)),
-          pw.TextSpan(
-              text: value,
-              style: pw.TextStyle(
-                  fontSize: 10, fontWeight: pw.FontWeight.bold)),
-        ],
-      ),
-    );
-  }
-
-  pw.Widget _labelInline(String label, String value) {
-    return pw.Padding(
-      padding: const pw.EdgeInsets.symmetric(vertical: 1),
-      child: pw.RichText(
-        text: pw.TextSpan(
-          children: [
-            pw.TextSpan(
-                text: '$label: ',
-                style: pw.TextStyle(fontSize: 9, color: _muted)),
-            pw.TextSpan(
-                text: value,
-                style: pw.TextStyle(
-                    fontSize: 9, fontWeight: pw.FontWeight.bold)),
-          ],
+  _Cella _cella(String label, String value, {int flex = 1}) => _Cella(
+        flex: flex,
+        widget: pw.Container(
+          padding:
+              const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+          child: pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Text(label.toUpperCase(),
+                  style: pw.TextStyle(
+                      fontSize: 6, color: _muted, letterSpacing: 0.3)),
+              pw.SizedBox(height: 1),
+              pw.Text(value.isEmpty ? '-' : value,
+                  style: pw.TextStyle(fontSize: 9, color: _text)),
+            ],
+          ),
         ),
-      ),
-    );
-  }
+      );
 
-  String _formattaIndirizzo(Address a) => a.full.isEmpty ? '-' : a.full;
+  _Cella _cellaFirma(String label, FirmaCliente? firma) => _Cella(
+        flex: 1,
+        widget: pw.Container(
+          padding:
+              const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 3),
+          child: pw.Column(
+            crossAxisAlignment: pw.CrossAxisAlignment.start,
+            children: [
+              pw.Text(label.toUpperCase(),
+                  style: pw.TextStyle(
+                      fontSize: 6, color: _muted, letterSpacing: 0.3)),
+              pw.Container(
+                height: 46,
+                alignment: pw.Alignment.centerLeft,
+                child: firma != null
+                    ? pw.Image(pw.MemoryImage(firma.pngBytes),
+                        fit: pw.BoxFit.contain)
+                    : pw.Text('Da firmare',
+                        style: pw.TextStyle(
+                            fontSize: 9,
+                            color: _muted,
+                            fontStyle: pw.FontStyle.italic)),
+              ),
+              pw.Text(
+                  firma != null ? 'Il ${firma.dataFormattata}' : ' ',
+                  style: pw.TextStyle(fontSize: 6, color: _muted)),
+            ],
+          ),
+        ),
+      );
 
-  String _money(num value) =>
-      'EUR ${value.toStringAsFixed(2).replaceAll('.', ',')}';
+  /// Applica il margine orizzontale ai contenuti (la banda resta full-width).
+  pw.Widget _pad(pw.Widget child) => pw.Padding(
+        padding: const pw.EdgeInsets.symmetric(horizontal: _side),
+        child: child,
+      );
 
   String _fmtDate(DateTime? d) {
     if (d == null) return '-';
@@ -699,4 +448,11 @@ class PreventivoPdfService {
   String _fmtDateTime(DateTime d) {
     return '${_fmtDate(d)} ${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
   }
+}
+
+/// Cella con il suo peso (flex) per comporre una riga della griglia.
+class _Cella {
+  final int flex;
+  final pw.Widget widget;
+  const _Cella({required this.flex, required this.widget});
 }

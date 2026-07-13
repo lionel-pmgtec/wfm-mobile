@@ -35,6 +35,10 @@ class AvvisoExtensionNotifier extends StateNotifier<AvvisoExtension> {
   Future<void> clearPreventivo() =>
       _persist(state.copyWith(clearPreventivo: true));
 
+  // ── Elaborazione (campi operatore inline) ────────────────────────────────
+  Future<void> setElaborazione(AvvisoElaborazione e) =>
+      _persist(state.copyWith(elaborazione: e));
+
   // ── Permessi ────────────────────────────────────────────────────────────
   Future<void> addPermesso(Permesso p) =>
       _persist(state.copyWith(permessi: [...state.permessi, p]));

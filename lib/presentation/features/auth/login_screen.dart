@@ -1,6 +1,9 @@
-// PAGINA 1 — Accesso SAP . Branchée Riverpod + go_router.
+// PAGINA 1 — Accesso SAP.
+// Layout responsive: hero split su tablet (pannello brand + card), stacked su
+// smartphone. Sfondo a gradiente + animazione acqua (tema utility idrica).
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
@@ -31,10 +34,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   void initState() {
     super.initState();
     _animCtrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 700));
+        vsync: this, duration: const Duration(milliseconds: 500));
     _fadeAnim = CurvedAnimation(parent: _animCtrl, curve: Curves.easeOut);
-    _slideAnim = Tween<Offset>(begin: const Offset(0, 0.08), end: Offset.zero)
-        .animate(CurvedAnimation(parent: _animCtrl, curve: Curves.easeOut));
+    _slideAnim = Tween<Offset>(begin: const Offset(0, 0.06), end: Offset.zero)
+        .animate(CurvedAnimation(parent: _animCtrl, curve: Curves.easeOutCubic));
     _animCtrl.forward();
   }
 
@@ -58,35 +61,49 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
 
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.of(context).size;
-    final isTablet = size.width >= 600;
     final authState = ref.watch(authControllerProvider);
     final isLoading = authState is AuthLoading;
     final errorMessage = authState is AuthError ? authState.message : null;
 
-    return Scaffold(
-      backgroundColor: AppColors.primary,
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      // Sfondo scuro → icone di sistema chiare (status + navigation).
+      value: const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+        systemNavigationBarColor: Colors.transparent,
+        systemNavigationBarIconBrightness: Brightness.light,
+        systemNavigationBarContrastEnforced: false,
+      ),
+      child: Scaffold(
       body: Stack(
         children: [
-          _buildBackground(size),
+          const _GradientBackground(),
           const WaterAnimationLayer(),
+          const _DecorGlow(),
           SafeArea(
-            child: Center(
-              child: SingleChildScrollView(
-                padding: EdgeInsets.symmetric(
-                    horizontal: isTablet ? size.width * 0.2 : 28, vertical: 32),
-                child: FadeTransition(
-                  opacity: _fadeAnim,
-                  child: SlideTransition(
-                    position: _slideAnim,
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _buildHeader(),
-                        const SizedBox(height: 40),
-                        _buildFormCard(isLoading, errorMessage),
-                      ],
+            child: FadeTransition(
+              opacity: _fadeAnim,
+              child: SlideTransition(
+                position: _slideAnim,
+                // Layout unico, centrato e impilato: branding sopra, card sotto
+                // (limitato in larghezza per non allargarsi troppo su tablet).
+                child: Center(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 24, vertical: 32),
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 500),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          _buildVivaServiziLogo(),
+                          const SizedBox(height: 8),
+                          _buildBrandingPanel(),
+                          const SizedBox(height: 28),
+                          _buildFormCard(isLoading, errorMessage),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -95,222 +112,252 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
           ),
         ],
       ),
+      ),
     );
   }
 
-  Widget _buildBackground(Size size) {
-    return Stack(
-      children: [
-        Positioned(
-          top: -size.width * 0.3,
-          right: -size.width * 0.2,
-          child: Container(
-            width: size.width * 0.8,
-            height: size.width * 0.8,
+  // ── Logo VIVA SERVIZI (wordmark testuale su una riga, come il logo ufficiale
+  Widget _buildVivaServiziLogo() {
+    return SizedBox(
+      // Altezza contenuta: il testo occupa ~60px, quindi non lasciamo mezzo
+      // riquadro vuoto sotto. L'alone (più grande) sfora ma è trasparente ai
+      // bordi, quindi non crea spazio morto: il blocco sotto risale.
+      height: 150,
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.center,
+        children: [
+          // Alone perfettamente circolare (bordi invisibili: alpha→0). È un
+          // quadrato fisso, così il gradiente radiale resta un CERCHIO e non
+          // viene stirato in ellisse dal testo largo.
+          Container(
+            width: 280,
+            height: 280,
             decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withValues(alpha: 0.05)),
-          ),
-        ),
-        Positioned(
-          bottom: -size.width * 0.2,
-          left: -size.width * 0.15,
-          child: Container(
-            width: size.width * 0.6,
-            height: size.width * 0.6,
-            decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withValues(alpha: 0.04)),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildHeader() {
-    return Column(
-      children: [
-        Container(
-          width: 80,
-          height: 80,
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.12),
-            borderRadius: BorderRadius.circular(22),
-            border:
-                Border.all(color: Colors.white.withValues(alpha: 0.2), width: 1.5),
-          ),
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              Icon(Icons.build_circle_outlined,
-                  size: 38, color: Colors.white.withValues(alpha: 0.9)),
-              Positioned(
-                bottom: 14,
-                right: 14,
-                child: Container(
-                  width: 16,
-                  height: 16,
-                  decoration: const BoxDecoration(
-                      color: Color(0xFF4FC3F7), shape: BoxShape.circle),
-                  child: const Icon(Icons.bolt, size: 10, color: Colors.white),
-                ),
+              shape: BoxShape.circle,
+              gradient: RadialGradient(
+                colors: [
+                  const Color(0xFF4FC3F7).withValues(alpha: 0.38),
+                  const Color(0xFF4FC3F7).withValues(alpha: 0.0),
+                ],
+                stops: const [0.0, 1.0],
               ),
-            ],
+            ),
           ),
-        ),
-        const SizedBox(height: 20),
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 300),
+            child: const FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text.rich(
+              TextSpan(children: [
+            TextSpan(
+              text: 'viva',
+              style: const TextStyle(
+                fontSize: 150,
+                fontWeight: FontWeight.w900,
+                fontStyle: FontStyle.italic,
+                letterSpacing: -4,
+                height: 1.0,
+                color: Color(0xFFF39200), // arancione VIVA
+              ),
+            ),
+            TextSpan(
+              text: ' servizi',
+              style: const TextStyle(
+                fontSize: 100,
+                fontWeight: FontWeight.w600,
+                fontStyle: FontStyle.italic,
+                letterSpacing: -0.5,
+                height: 1.0,
+                color: Color(0xFF1F6FB2), // blu SERVIZI
+              ),
+            ),
+              ]),
+              textAlign: TextAlign.center,
+              maxLines: 1,
+            ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Pannello di branding ──────────────────────────────────────────────────
+  Widget _buildBrandingPanel() {
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
         const Text('SAP Work Manager',
             textAlign: TextAlign.center,
             style: TextStyle(
-                fontSize: 26,
-                fontWeight: FontWeight.w700,
+                fontSize: 30,
+                fontWeight: FontWeight.w800,
                 color: Colors.white,
-                letterSpacing: -0.3)),
-        const SizedBox(height: 6),
-        Text('WFM Mobile — Gestione Ordini di Lavoro',
+                height: 1.1,
+                letterSpacing: -0.5)),
+        const SizedBox(height: 10),
+        Text('WFM Mobile — Gestione Ordini di Lavoro sul campo',
             textAlign: TextAlign.center,
             style: TextStyle(
-                fontSize: 13, color: Colors.white.withValues(alpha: 0.65))),
+                fontSize: 14,
+                height: 1.4,
+                color: Colors.white.withValues(alpha: 0.72))),
       ],
     );
   }
 
+  // ── Card del form ─────────────────────────────────────────────────────────
   Widget _buildFormCard(bool isLoading, String? errorMessage) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-              color: Colors.black.withValues(alpha: 0.18),
-              blurRadius: 30,
-              offset: const Offset(0, 10)),
+              color: Colors.black.withValues(alpha: 0.22),
+              blurRadius: 40,
+              offset: const Offset(0, 16)),
         ],
       ),
-      child: Padding(
-        padding: const EdgeInsets.all(28),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text('Accesso SAP',
-                  style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary)),
-              const SizedBox(height: 6),
-              const Text('Inserisci le credenziali SAP per continuare',
-                  style:
-                      TextStyle(fontSize: 13, color: AppColors.textSecondary)),
-              const SizedBox(height: 28),
-              _label('Utente SAP (CID)'),
-              const SizedBox(height: 6),
-              TextFormField(
-                key: const Key('login_username'),
-                controller: _userController,
-                textInputAction: TextInputAction.next,
-                autocorrect: false,
-                textCapitalization: TextCapitalization.characters,
-                decoration: const InputDecoration(
-                  hintText: 'es. VAIOTTIM',
-                  prefixIcon: Icon(Icons.person_outline,
-                      color: AppColors.textHint, size: 20),
-                ),
-                validator: (v) =>
-                    (v == null || v.trim().isEmpty) ? 'Campo obbligatorio' : null,
-              ),
-              const SizedBox(height: 18),
-              _label('Password'),
-              const SizedBox(height: 6),
-              TextFormField(
-                key: const Key('login_password'),
-                controller: _passController,
-                obscureText: _obscurePassword,
-                textInputAction: TextInputAction.done,
-                onFieldSubmitted: (_) => _login(),
-                decoration: InputDecoration(
-                  hintText: '••••••••',
-                  prefixIcon: const Icon(Icons.lock_outline,
-                      color: AppColors.textHint, size: 20),
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                        _obscurePassword
-                            ? Icons.visibility_off_outlined
-                            : Icons.visibility_outlined,
-                        color: AppColors.textHint,
-                        size: 20),
-                    onPressed: () =>
-                        setState(() => _obscurePassword = !_obscurePassword),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(28),
+            child: Form(
+              key: _formKey,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('Bentornato',
+                      style: TextStyle(
+                          fontSize: 30,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.textPrimary,
+                          letterSpacing: -0.3)),
+                  const SizedBox(height: 6),
+                  const Text('Inserisci le credenziali SAP per accedere',
+                      style: TextStyle(
+                          fontSize: 15, color: AppColors.textSecondary)),
+                  const SizedBox(height: 28),
+                  _label('Utente SAP (CID)'),
+                  const SizedBox(height: 7),
+                  TextFormField(
+                    key: const Key('login_username'),
+                    controller: _userController,
+                    textInputAction: TextInputAction.next,
+                    autocorrect: false,
+                    textCapitalization: TextCapitalization.characters,
+                    decoration: const InputDecoration(
+                      hintText: 'es. VAIOTTIM',
+                      prefixIcon: Icon(Icons.person_outline,
+                          color: AppColors.textHint, size: 30),
+                    ),
+                    validator: (v) => (v == null || v.trim().isEmpty)
+                        ? 'Campo obbligatorio'
+                        : null,
                   ),
-                ),
-                validator: (v) =>
-                    (v == null || v.isEmpty) ? 'Campo obbligatorio' : null,
-              ),
-              if (errorMessage != null) ...[
-                const SizedBox(height: 14),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFDECEC),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFFFFCDD2)),
+                  const SizedBox(height: 20),
+                  _label('Password'),
+                  const SizedBox(height: 7),
+                  TextFormField(
+                    key: const Key('login_password'),
+                    controller: _passController,
+                    obscureText: _obscurePassword,
+                    textInputAction: TextInputAction.done,
+                    onFieldSubmitted: (_) => _login(),
+                    decoration: InputDecoration(
+                      hintText: '••••••••',
+                      prefixIcon: const Icon(Icons.lock_outline,
+                          color: AppColors.textHint, size: 30),
+                      suffixIcon: IconButton(
+                        tooltip: _obscurePassword ? 'Mostra' : 'Nascondi',
+                        icon: Icon(
+                            _obscurePassword
+                                ? Icons.visibility_off_outlined
+                                : Icons.visibility_outlined,
+                            color: AppColors.textHint,
+                            size: 30),
+                        onPressed: () => setState(
+                            () => _obscurePassword = !_obscurePassword),
+                      ),
+                    ),
+                    validator: (v) =>
+                        (v == null || v.isEmpty) ? 'Campo obbligatorio' : null,
                   ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.error_outline,
-                          color: AppColors.accentRed, size: 18),
-                      const SizedBox(width: 8),
-                      Expanded(
-                          child: Text(errorMessage,
-                              style: const TextStyle(
-                                  fontSize: 13, color: AppColors.accentRed))),
-                    ],
+                  AnimatedSize(
+                    duration: const Duration(milliseconds: 200),
+                    child: errorMessage == null
+                        ? const SizedBox.shrink()
+                        : Padding(
+                            padding: const EdgeInsets.only(top: 16),
+                            child: _errorBanner(errorMessage),
+                          ),
                   ),
-                ),
-              ],
-              const SizedBox(height: 28),
-              SizedBox(
-                height: 58,
-                child: ElevatedButton(
-                  key: const Key('login_submit'),
-                  onPressed: isLoading ? null : _login,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(14)),
-                    elevation: 0,
+                  const SizedBox(height: 28),
+                  SizedBox(
+                    height: 56,
+                    child: ElevatedButton(
+                      key: const Key('login_submit'),
+                      onPressed: isLoading ? null : _login,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.primary,
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(14)),
+                        elevation: 0,
+                      ),
+                      child: isLoading
+                          ? const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2.5, color: Colors.white))
+                          : const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text('Accedi',
+                                    style: TextStyle(
+                                        fontSize: 17,
+                                        fontWeight: FontWeight.w600,
+                                        letterSpacing: 0.3)),
+                                SizedBox(width: 8),
+                                Icon(Icons.arrow_forward_rounded, size: 20),
+                              ],
+                            ),
+                    ),
                   ),
-                  child: isLoading
-                      ? const SizedBox(
-                          width: 24,
-                          height: 24,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2.5, color: Colors.white))
-                      : const Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Text('Accedi',
-                                style: TextStyle(
-                                    fontSize: 17,
-                                    fontWeight: FontWeight.w600,
-                                    letterSpacing: 0.3)),
-                            SizedBox(width: 8),
-                            Icon(Icons.arrow_forward, size: 20),
-                          ],
-                        ),
-                ),
+                ],
               ),
-              const SizedBox(height: 20),
-              const Center(
-                child: Text('SAP S/4HANA · WFM Syclo v1.0',
-                    style: TextStyle(fontSize: 11, color: AppColors.textHint)),
-              ),
-            ],
+            ),
           ),
-        ),
+        ],
+      ),
+    );
+  }
+
+  Widget _errorBanner(String message) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFDECEC),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFFFCDD2)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline, color: AppColors.accentRed, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+              child: Text(message,
+                  style: const TextStyle(
+                      fontSize: 13, color: AppColors.accentRed))),
+        ],
       ),
     );
   }
@@ -321,4 +368,63 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
           fontWeight: FontWeight.w600,
           color: AppColors.textSecondary,
           letterSpacing: 0.3));
+}
+
+// ─── Sfondo a gradiente ───────────────────────────────────────────────────
+class _GradientBackground extends StatelessWidget {
+  const _GradientBackground();
+
+  @override
+  Widget build(BuildContext context) {
+    return const DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppColors.primaryDark,
+            AppColors.primary,
+            Color(0xFF2E6BA8),
+          ],
+          stops: [0.0, 0.55, 1.0],
+        ),
+      ),
+      child: SizedBox.expand(),
+    );
+  }
+}
+
+// ─── Aloni decorativi ──────────────────────────────────────────────────────
+class _DecorGlow extends StatelessWidget {
+  const _DecorGlow();
+
+  @override
+  Widget build(BuildContext context) {
+    final w = MediaQuery.sizeOf(context).width;
+    return IgnorePointer(
+      child: Stack(
+        children: [
+          Positioned(
+            top: -w * 0.25,
+            right: -w * 0.15,
+            child: _circle(w * 0.6, const Color(0xFF4FC3F7), 0.14),
+          ),
+          Positioned(
+            bottom: -w * 0.2,
+            left: -w * 0.18,
+            child: _circle(w * 0.55, Colors.white, 0.05),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _circle(double size, Color color, double opacity) => Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: color.withValues(alpha: opacity),
+        ),
+      );
 }

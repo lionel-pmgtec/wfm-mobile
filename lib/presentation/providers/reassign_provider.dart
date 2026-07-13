@@ -2,50 +2,12 @@
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../domain/entities/user.dart';
-import '../../domain/entities/enums.dart';
+import 'anagrafica_provider.dart';
 
-// ─── Lista operatori disponibili (mock — vera collegato con backend) ────────
+// ─── Lista operatori disponibili (dal Cruscotto via anagrafica/tecnici) ─────
 
 final availableOperatorsProvider = FutureProvider<List<AppUser>>((ref) async {
-  // Simulazione ritardo rete
-  await Future.delayed(const Duration(milliseconds: 400));
-  return [
-    const AppUser(
-      cid: 'TEC001',
-      nome: 'Marco',
-      cognome: 'Rossi',
-      workCenter: 'WC-ANCONA',
-      role: UserRole.tecnico,
-    ),
-    const AppUser(
-      cid: 'TEC002',
-      nome: 'Luca',
-      cognome: 'Bianchi',
-      workCenter: 'WC-ANCONA',
-      role: UserRole.tecnico,
-    ),
-    const AppUser(
-      cid: 'TEC003',
-      nome: 'Sara',
-      cognome: 'Conti',
-      workCenter: 'WC-JESI',
-      role: UserRole.tecnicoSenior,
-    ),
-    const AppUser(
-      cid: 'TEC004',
-      nome: 'Paolo',
-      cognome: 'Ferrari',
-      workCenter: 'WC-SENIGALLIA',
-      role: UserRole.tecnico,
-    ),
-    const AppUser(
-      cid: 'TEC005',
-      nome: 'Elena',
-      cognome: 'Marini',
-      workCenter: 'WC-FABRIANO',
-      role: UserRole.tecnicoSenior,
-    ),
-  ];
+  return ref.watch(techniciansProvider('').future);
 });
 
 // ─── Stato della riasignazione ────────────────────────────────────────────────

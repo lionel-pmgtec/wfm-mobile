@@ -1,0 +1,8 @@
+# Database Excel generato a runtime (non versionato)
+/data/
+*.xlsx
+
+# Chiave privata service account Firebase (SEGRETO — mai versionare)
+*firebase-adminsdk*.json
+*-adminsdk-*.json
+serviceAccountKey.json

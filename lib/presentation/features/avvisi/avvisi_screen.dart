@@ -66,7 +66,6 @@ class AvvisiScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        leading: const BackButton(),
         title: const Text('Avvisi di Servizio'),
         actions: [
           IconButton(
@@ -161,11 +160,21 @@ class AvvisiScreen extends ConsumerWidget {
                       : ListView.builder(
                           padding: const EdgeInsets.only(bottom: 24),
                           itemCount: filtered.length,
-                          itemBuilder: (_, i) => _AvvisoItem(
-                            avviso: filtered[i],
-                            onTap: () => context.push(AppRoutes
-                                .avvisoDetailPath(filtered[i].numeroAvviso)),
-                          ),
+                          itemBuilder: (_, i) {
+                            final a = filtered[i];
+                            return Dismissible(
+                              key: ValueKey('avviso_${a.numeroAvviso}'),
+                              direction: DismissDirection.endToStart,
+                              background: const WfmSwipeDeleteBackground(),
+                              confirmDismiss: (_) => _confirmAndDeleteAvviso(
+                                  context, ref, a.numeroAvviso),
+                              child: _AvvisoItem(
+                                avviso: a,
+                                onTap: () => context.push(AppRoutes
+                                    .avvisoDetailPath(a.numeroAvviso)),
+                              ),
+                            );
+                          },
                         );
                 },
               ),
@@ -269,6 +278,31 @@ class AvvisiScreen extends ConsumerWidget {
       }
     }).toList();
   }
+}
+
+/// Conferma + eliminazione di un avviso. Ritorna true se eliminato.
+Future<bool> _confirmAndDeleteAvviso(
+    BuildContext context, WidgetRef ref, String numero) async {
+  final ok = await showWfmConfirmDialog(
+    context: context,
+    title: 'Eliminare l\'avviso?',
+    message: 'L\'avviso $numero sarà eliminato definitivamente.',
+    confirmLabel: 'Elimina',
+    tone: WfmDialogTone.danger,
+  );
+  if (ok != true) return false;
+  final res = await ref.read(deleteAvvisoProvider)(numero);
+  if (!context.mounted) return true;
+  return res.when(
+    success: (_) {
+      showSapToast(context, 'Avviso $numero eliminato');
+      return true;
+    },
+    failure: (f) {
+      showSapToast(context, 'Errore: ${f.message}', isError: true);
+      return false;
+    },
+  );
 }
 
 class _AvvisoItem extends ConsumerWidget {

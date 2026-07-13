@@ -87,6 +87,17 @@ class WorkOrderActions {
     return res;
   }
 
+  /// Elimina definitivamente un OdL.
+  Future<Result<void>> delete(String code) async {
+    final repo = ref.read(workOrderRepositoryProvider);
+    final res = await repo.deleteWorkOrder(code);
+    if (res.isSuccess) {
+      ref.invalidate(workOrdersProvider);
+      ref.invalidate(dashboardStatsProvider);
+    }
+    return res;
+  }
+
   /// Pausa locale: non invia nulla al server (server vede ancora inEsecuzione).
   Future<Result<WorkOrder>> pauseLocally(String code) async {
     final repo = ref.read(workOrderRepositoryProvider);

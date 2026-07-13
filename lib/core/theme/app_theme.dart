@@ -31,18 +31,19 @@ class AppColors {
   static const Color textHint = Color(0xFFAAB4C8);
   static const Color textOnPrimary = Color(0xFFFFFFFF);
 
-  // Stati OdL
+  // Stati OdL (colori da capitolato: Ricevuto=blu, In esecuzione=giallo,
+  // Sospeso=arancione, Completato=verde, Annullato=rosso).
   static const Color statusReceived = Color(0xFF1565C0);   // Ricevuto — blu
-  static const Color statusInProgress = Color(0xFFE65100); // In corso — arancione
-  static const Color statusDone = Color(0xFF2E7D32);       // Terminato — verde
-  static const Color statusSuspended = Color(0xFF7B1FA2);  // Sospeso — viola
+  static const Color statusInProgress = Color(0xFFF9A825); // In esecuzione — giallo/oro
+  static const Color statusDone = Color(0xFF2E7D32);       // Completato — verde
+  static const Color statusSuspended = Color(0xFFEF6C00);  // Sospeso — arancione
   static const Color statusNew = Color(0xFF00838F);        // Nuovo — teal
 
   // Superfici stati (chiaro)
   static const Color statusReceivedBg = Color(0xFFE3F2FD);
-  static const Color statusInProgressBg = Color(0xFFFFF3E0);
+  static const Color statusInProgressBg = Color(0xFFFFF8E1); // giallo chiaro
   static const Color statusDoneBg = Color(0xFFE8F5E9);
-  static const Color statusSuspendedBg = Color(0xFFF3E5F5);
+  static const Color statusSuspendedBg = Color(0xFFFFF3E0);  // arancione chiaro
   static const Color statusNewBg = Color(0xFFE0F7FA);
 }
 
@@ -114,10 +115,13 @@ class AppTextStyles {
 
 // ─── TEMA MATERIAL ────────────────────────────────────────────────────────────
 
-ThemeData buildAppTheme() {
+ThemeData buildAppTheme({double iconScale = 1.0}) {
   return ThemeData(
     useMaterial3: true,
     fontFamily: AppTextStyles.fontFamily,
+
+    // Icone di base (ListTile, Icon senza size esplicita, ...): scala globale.
+    iconTheme: IconThemeData(size: 24 * iconScale, color: AppColors.textPrimary),
 
     // Palette colori
     colorScheme: const ColorScheme.light(
@@ -135,12 +139,11 @@ ThemeData buildAppTheme() {
     ),
 
     // Dialog (AlertDialog, showDialog, ...) — più larghi e leggibili.
-    dialogTheme: DialogThemeData(
+    dialogTheme: const DialogThemeData(
       // Riduce il margine esterno → dialog largo fino a ~95% schermo
       // su mobile, max 600px su tablet/desktop.
-      insetPadding:
-          const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-      shape: const RoundedRectangleBorder(
+      insetPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.all(Radius.circular(16)),
       ),
       backgroundColor: AppColors.surface,
@@ -150,24 +153,33 @@ ThemeData buildAppTheme() {
     ),
 
     // AppBar
-    appBarTheme: const AppBarTheme(
+    appBarTheme: AppBarTheme(
       backgroundColor: AppColors.primary,
       foregroundColor: AppColors.textOnPrimary,
       elevation: 0,
+      // Nessuna tinta di superficie: l'AppBar resta blu piatto (AppColors.primary)
+      // anche con contenuto scrollato sotto, così combacia col header blu della
+      // sidebar e non compare alcuna riga chiara alla frontiera.
+      scrolledUnderElevation: 0,
+      surfaceTintColor: Colors.transparent,
+      shadowColor: Colors.transparent,
       centerTitle: true,
       toolbarHeight: 60,
-      titleTextStyle: TextStyle(
+      titleTextStyle: const TextStyle(
         fontSize: 18, fontWeight: FontWeight.w600,
         color: AppColors.textOnPrimary, letterSpacing: 0.1,
       ),
-      iconTheme: IconThemeData(color: AppColors.textOnPrimary, size: 26),
-      actionsIconTheme: IconThemeData(color: AppColors.textOnPrimary, size: 26),
+      // Icona leading (tasto Indietro) più grande per l'uso su tablet in cantiere.
+      iconTheme:
+          IconThemeData(color: AppColors.textOnPrimary, size: 30 * iconScale),
+      actionsIconTheme:
+          IconThemeData(color: AppColors.textOnPrimary, size: 26 * iconScale),
     ),
 
     // IconButton
     iconButtonTheme: IconButtonThemeData(
       style: IconButton.styleFrom(
-        iconSize: 26,
+        iconSize: 26 * iconScale,
         minimumSize: const Size(48, 48),
         padding: const EdgeInsets.all(10),
       ),
@@ -309,7 +321,9 @@ ThemeData buildAppTheme() {
     case 'I0002':
       return (color: AppColors.statusInProgress, background: AppColors.statusInProgressBg, label: 'In esecuzione');
     case 'IN PAUSA':
-      return (color: AppColors.accentOrange, background: const Color(0xFFFFF3E0), label: 'In pausa');
+      // Stato locale (pausa del tecnico): neutro, per non confonderlo con
+      // Sospeso (arancione) o In esecuzione (giallo).
+      return (color: const Color(0xFF546E7A), background: const Color(0xFFECEFF1), label: 'In pausa');
     case 'CHIUSO':
     case 'TERMINATO':
     case 'I0005':

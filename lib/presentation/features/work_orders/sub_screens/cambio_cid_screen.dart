@@ -7,7 +7,9 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/widgets.dart';
+import '../widgets/odl_actions_menu.dart';
 import '../../../../domain/entities/entities.dart';
+import '../../../providers/anagrafica_provider.dart';
 import '../../../providers/work_orders_provider.dart';
 
 class CambioCidScreen extends ConsumerStatefulWidget {
@@ -23,15 +25,6 @@ class _CambioCidScreenState extends ConsumerState<CambioCidScreen> {
   final _motivoCtrl = TextEditingController();
   bool _saving = false;
 
-  // Lista di tecnici "trovati" (mock; in produzione = ricerca SAP).
-  static const _suggestedTechs = [
-    'VAIOTTIM — Vaiotti M.',
-    'ROSSIPAO — Rossi P.',
-    'BIANCRG — Bianchi R.G.',
-    'TECN001 — Tecnico Standard',
-    'TECN002 — Tecnico Senior',
-  ];
-
   @override
   void dispose() {
     _cidCtrl.dispose();
@@ -43,7 +36,7 @@ class _CambioCidScreenState extends ConsumerState<CambioCidScreen> {
   Widget build(BuildContext context) {
     final async = ref.watch(workOrderDetailProvider(widget.code));
     return Scaffold(
-      appBar: AppBar(title: const Text('Cambio CID')),
+      appBar: AppBar(title: const Text('Cambio CID'), actions: [OdlActionsMenu(code: widget.code)]),
       body: async.when(
         loading: () => const WfmLoading(),
         error: (e, _) => WfmErrorState(message: e.toString()),
@@ -77,18 +70,30 @@ class _CambioCidScreenState extends ConsumerState<CambioCidScreen> {
         const SizedBox(height: 12),
         Text('Suggerimenti', style: AppTextStyles.labelMedium),
         const SizedBox(height: 6),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: _suggestedTechs.map((s) {
-            final code = s.split(' — ').first;
-            return ActionChip(
-              avatar: const Icon(Icons.person_outline, size: 16),
-              label: Text(s),
-              onPressed: () => setState(() => _cidCtrl.text = code),
-            );
-          }).toList(),
-        ),
+        ref.watch(techniciansProvider('')).when(
+              loading: () => const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: SizedBox(
+                    height: 18,
+                    width: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2)),
+              ),
+              error: (_, __) => Text('Elenco tecnici non disponibile',
+                  style: AppTextStyles.bodySmall),
+              data: (techs) => Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: techs
+                    .where((t) => t.cid != order.cidAssegnato)
+                    .map((t) => ActionChip(
+                          avatar: const Icon(Icons.person_outline, size: 16),
+                          label: Text('${t.cid} — ${t.fullName}'),
+                          onPressed: () =>
+                              setState(() => _cidCtrl.text = t.cid),
+                        ))
+                    .toList(),
+              ),
+            ),
         const SizedBox(height: 16),
         TextField(
           controller: _motivoCtrl,

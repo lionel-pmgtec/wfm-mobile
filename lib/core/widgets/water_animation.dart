@@ -5,11 +5,16 @@
 
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 // ─── PALETTE GOCCIOLINE ──────────────────────────────────────────────────────
 const Color _kPipeDark   = Color(0xFF0D47A1); // bordo scuro per profondità
 const Color _kDropLight  = Color(0xFF90CAF9); // goccia — azzurro chiaro
 const Color _kDropDark   = Color(0xFF1565C0); // goccia — blu scuro
+
+// Secondi impiegati da una goccia a velocità 1.0 per compiere un ciclo completo
+// (dall'alto fuori campo fino a sotto lo schermo). Più alto = caduta più lenta.
+const double _kBaseFallSeconds = 9.0;
 
 // ─── MODELLI INTERNI ─────────────────────────────────────────────────────────
 
@@ -45,9 +50,12 @@ class WaterAnimationLayer extends StatefulWidget {
 }
 
 class _WaterAnimationLayerState extends State<WaterAnimationLayer>
-    with TickerProviderStateMixin {
-  // Controllore principale: pilota la caduta delle gocce (loop 3 s)
-  late final AnimationController _fallCtrl;
+    with SingleTickerProviderStateMixin {
+  // Tempo MONOTÒNO (secondi trascorsi). Non si azzera mai: così ogni goccia
+  // avanza e si riavvolge in modo continuo, senza il "salto" globale periodico
+  // che si aveva con un controller in loop 0→1.
+  late final Ticker _ticker;
+  final ValueNotifier<double> _time = ValueNotifier<double>(0);
 
   // Goccioline pre-calcolate (seme fisso → rendering stabile)
   static final List<_Droplet> _drops = _buildDroplets();
@@ -55,28 +63,30 @@ class _WaterAnimationLayerState extends State<WaterAnimationLayer>
   @override
   void initState() {
     super.initState();
-    _fallCtrl = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 3),
-    )..repeat();
+    _ticker = createTicker((elapsed) {
+      _time.value = elapsed.inMicroseconds / Duration.microsecondsPerSecond;
+    })..start();
   }
 
   @override
   void dispose() {
-    _fallCtrl.dispose();
+    _ticker.dispose();
+    _time.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return IgnorePointer(
-      child: AnimatedBuilder(
-        animation: _fallCtrl,
-        builder: (_, __) => SizedBox.expand(
-          child: CustomPaint(
-            painter: _WaterPainter(
-              fallProgress: _fallCtrl.value,
-              drops: _drops,
+      child: RepaintBoundary(
+        child: AnimatedBuilder(
+          animation: _time,
+          builder: (_, __) => SizedBox.expand(
+            child: CustomPaint(
+              painter: _WaterPainter(
+                time: _time.value,
+                drops: _drops,
+              ),
             ),
           ),
         ),
@@ -85,9 +95,13 @@ class _WaterAnimationLayerState extends State<WaterAnimationLayer>
   }
 
   // Genera le gocce una sola volta (seme fisso → aspetto stabile ad ogni hot-reload).
-  // Distribuzione uniforme su tutto lo schermo, ora che non ci sono più tubi.
+  //
+  // Caduta CONTINUA: ogni goccia parte SOPRA lo schermo (y0 negativo) e
+  // attraversa l'intera altezza fino a uscire in basso (travel > 1). Così le
+  // dissolvenze in entrata/uscita avvengono fuori campo e non si percepisce più
+  // il "lampeggio" di gocce che appaiono/spariscono a metà schermo.
   static List<_Droplet> _buildDroplets() {
-    final rng = math.Random(42);
+    final rng = math.Random(50);
     double r(double lo, double hi) => lo + rng.nextDouble() * (hi - lo);
 
     return [
@@ -95,34 +109,34 @@ class _WaterAnimationLayerState extends State<WaterAnimationLayer>
       for (int i = 0; i < 14; i++)
         _Droplet(
           x: r(0.04, 0.96),
-          y0: r(-0.05, 0.40),
-          travel: r(0.50, 0.90),
-          size: r(7.0, 12.0),
-          speed: r(0.5, 1.0),
+          y0: r(-0.30, -0.05),
+          travel: r(1.15, 1.45),
+          size: r(5.0, 8.5),
+          speed: r(0.6, 1.0),
           phase: r(0.0, 1.0),
           opacity: r(0.70, 1.00),
         ),
 
       // -- Goccioline medie (livello intermedio) -------------------------------
-      for (int i = 0; i < 16; i++)
+      for (int i = 0; i < 18; i++)
         _Droplet(
           x: r(0.02, 0.98),
-          y0: r(-0.10, 0.50),
-          travel: r(0.40, 0.80),
-          size: r(4.5, 7.5),
-          speed: r(0.7, 1.4),
+          y0: r(-0.35, -0.05),
+          travel: r(1.15, 1.45),
+          size: r(3.6, 4.2),
+          speed: r(0.8, 1.3),
           phase: r(0.0, 1.0),
           opacity: r(0.50, 0.80),
         ),
 
       // -- Goccioline piccole (sfondo, scintillanti) ---------------------------
-      for (int i = 0; i < 14; i++)
+      for (int i = 0; i < 18; i++)
         _Droplet(
           x: r(0.02, 0.98),
-          y0: r(-0.10, 0.60),
-          travel: r(0.30, 0.70),
-          size: r(2.5, 4.5),
-          speed: r(1.0, 1.8),
+          y0: r(-0.40, -0.05),
+          travel: r(1.15, 1.50),
+          size: r(1.4, 2.6),
+          speed: r(1.0, 1.7),
           phase: r(0.0, 1.0),
           opacity: r(0.35, 0.60),
         ),
@@ -133,16 +147,16 @@ class _WaterAnimationLayerState extends State<WaterAnimationLayer>
 // ─── PAINTER ─────────────────────────────────────────────────────────────────
 
 class _WaterPainter extends CustomPainter {
-  final double fallProgress;  // 0..1, loop
+  final double time;          // secondi trascorsi, monotòno
   final List<_Droplet> drops;
 
   const _WaterPainter({
-    required this.fallProgress,
+    required this.time,
     required this.drops,
   });
 
   @override
-  bool shouldRepaint(_WaterPainter old) => old.fallProgress != fallProgress;
+  bool shouldRepaint(_WaterPainter old) => old.time != time;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -155,15 +169,20 @@ class _WaterPainter extends CustomPainter {
 
   void _drawFallingDroplets(Canvas canvas, Size size) {
     for (final d in drops) {
-      // t normalizzato per velocità e fase, riavvolto su [0, 1)
-      final t = (fallProgress * d.speed + d.phase) % 1.0;
+      // Numero di cicli percorsi finora (cresce senza limiti); il modulo lo
+      // riavvolge su [0,1) in modo CONTINUO — nessun salto quando t torna a 0
+      // perché `time` non si azzera mai.
+      final cycles = time / _kBaseFallSeconds;
+      final t = (cycles * d.speed + d.phase) % 1.0;
 
       final x = d.x * size.width;
       final y = (d.y0 + t * d.travel) * size.height;
 
-      // Dissolvenza in entrata / uscita
-      final fadeIn  = (t / 0.12).clamp(0.0, 1.0);
-      final fadeOut = ((1.0 - t) / 0.15).clamp(0.0, 1.0);
+      // Dissolvenza in entrata / uscita brevi: avvengono mentre la goccia è
+      // ancora fuori campo (sopra o sotto), così l'ingresso in schermo è già a
+      // piena opacità e non si percepisce alcun "lampeggio".
+      final fadeIn  = (t / 0.05).clamp(0.0, 1.0);
+      final fadeOut = ((1.0 - t) / 0.05).clamp(0.0, 1.0);
       final eff = d.opacity * math.min(fadeIn, fadeOut);
 
       _drawTeardrop(canvas, center: Offset(x, y), radius: d.size, opacity: eff);
@@ -237,3 +256,4 @@ class _WaterPainter extends CustomPainter {
     );
   }
 }
+

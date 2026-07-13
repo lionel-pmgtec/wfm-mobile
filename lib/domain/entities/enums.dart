@@ -136,6 +136,7 @@ enum UserRole {
 enum SyncOperationType {
   submitEsito,
   updateStatus,
+  updateWorkOrder,
   uploadAttachment,
   submitMeterReading,
   submitMaterials,

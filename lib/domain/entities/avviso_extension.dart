@@ -136,6 +136,80 @@ class AvvisoNota {
       );
 }
 
+/// Dati di "elaborazione" inseriti dall'operatore (NON SAP), modificabili
+/// inline dal dettaglio Avviso tramite la matita "Elabora": stato utente,
+/// priorità, oggetti tecnici, normativa 655 (pressione + esito VER), note.
+class AvvisoElaborazione {
+  final String? statoUtente;
+  final String? priorita;
+  final String? sedeTecnica;
+  final String? equipment;
+  final bool fermoMacchina;
+  final String? pressioneBar;
+  final String? esitoVer;
+  final String? note;
+  final DateTime updatedAt;
+
+  const AvvisoElaborazione({
+    this.statoUtente,
+    this.priorita,
+    this.sedeTecnica,
+    this.equipment,
+    this.fermoMacchina = false,
+    this.pressioneBar,
+    this.esitoVer,
+    this.note,
+    required this.updatedAt,
+  });
+
+  AvvisoElaborazione copyWith({
+    String? statoUtente,
+    String? priorita,
+    String? sedeTecnica,
+    String? equipment,
+    bool? fermoMacchina,
+    String? pressioneBar,
+    String? esitoVer,
+    String? note,
+  }) =>
+      AvvisoElaborazione(
+        statoUtente: statoUtente ?? this.statoUtente,
+        priorita: priorita ?? this.priorita,
+        sedeTecnica: sedeTecnica ?? this.sedeTecnica,
+        equipment: equipment ?? this.equipment,
+        fermoMacchina: fermoMacchina ?? this.fermoMacchina,
+        pressioneBar: pressioneBar ?? this.pressioneBar,
+        esitoVer: esitoVer ?? this.esitoVer,
+        note: note ?? this.note,
+        updatedAt: DateTime.now(),
+      );
+
+  Map<String, dynamic> toJson() => {
+        'statoUtente': statoUtente,
+        'priorita': priorita,
+        'sedeTecnica': sedeTecnica,
+        'equipment': equipment,
+        'fermoMacchina': fermoMacchina,
+        'pressioneBar': pressioneBar,
+        'esitoVer': esitoVer,
+        'note': note,
+        'updatedAt': updatedAt.toIso8601String(),
+      };
+
+  factory AvvisoElaborazione.fromJson(Map json) => AvvisoElaborazione(
+        statoUtente: json['statoUtente'] as String?,
+        priorita: json['priorita'] as String?,
+        sedeTecnica: json['sedeTecnica'] as String?,
+        equipment: json['equipment'] as String?,
+        fermoMacchina: (json['fermoMacchina'] as bool?) ?? false,
+        pressioneBar: json['pressioneBar'] as String?,
+        esitoVer: json['esitoVer'] as String?,
+        note: json['note'] as String?,
+        updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? '') ??
+            DateTime.now(),
+      );
+}
+
 /// Aggregatore dei dati LOCALI di un Avviso di Servizio.
 class AvvisoExtension {
   final String avvisoNumero;
@@ -146,6 +220,7 @@ class AvvisoExtension {
   final List<AvvisoDocumento> documenti;
   final List<Suspension> sospensioni;
   final List<AvvisoNota> note;
+  final AvvisoElaborazione? elaborazione;
   final DateTime updatedAt;
 
   const AvvisoExtension({
@@ -157,6 +232,7 @@ class AvvisoExtension {
     this.documenti = const [],
     this.sospensioni = const [],
     this.note = const [],
+    this.elaborazione,
     required this.updatedAt,
   });
 
@@ -179,6 +255,8 @@ class AvvisoExtension {
     List<AvvisoDocumento>? documenti,
     List<Suspension>? sospensioni,
     List<AvvisoNota>? note,
+    AvvisoElaborazione? elaborazione,
+    bool clearElaborazione = false,
   }) =>
       AvvisoExtension(
         avvisoNumero: avvisoNumero,
@@ -189,6 +267,8 @@ class AvvisoExtension {
         documenti: documenti ?? this.documenti,
         sospensioni: sospensioni ?? this.sospensioni,
         note: note ?? this.note,
+        elaborazione:
+            clearElaborazione ? null : (elaborazione ?? this.elaborazione),
         updatedAt: DateTime.now(),
       );
 
@@ -201,6 +281,7 @@ class AvvisoExtension {
         'documenti': documenti.map((d) => d.toJson()).toList(),
         'sospensioni': sospensioni.map(_suspensionToJson).toList(),
         'note': note.map((n) => n.toJson()).toList(),
+        'elaborazione': elaborazione?.toJson(),
         'updatedAt': updatedAt.toIso8601String(),
       };
 
@@ -227,6 +308,9 @@ class AvvisoExtension {
         note: ((json['note'] as List?) ?? [])
             .map((e) => AvvisoNota.fromJson(e as Map))
             .toList(),
+        elaborazione: json['elaborazione'] != null
+            ? AvvisoElaborazione.fromJson(json['elaborazione'] as Map)
+            : null,
         updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? '') ??
             DateTime.now(),
       );

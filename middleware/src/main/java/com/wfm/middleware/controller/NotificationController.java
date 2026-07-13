@@ -1,7 +1,7 @@
 package com.wfm.middleware.controller;
 
 import com.wfm.middleware.dto.Dto;
-import com.wfm.middleware.store.InMemoryStore;
+import com.wfm.middleware.store.ExcelStore;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -16,8 +16,8 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/notifications")
 public class NotificationController {
 
-    private final InMemoryStore store;
-    public NotificationController(InMemoryStore store) { this.store = store; }
+    private final ExcelStore store;
+    public NotificationController(ExcelStore store) { this.store = store; }
 
     @GetMapping
     public Dto.NotificationList list(@RequestParam(required = false) String q) {
@@ -42,4 +42,13 @@ public class NotificationController {
         if (wo == null) return ResponseEntity.notFound().build();
         return ResponseEntity.status(201).body(wo);
     }
+
+    /** Elimina un Avviso. 204 se eliminato, 404 se inesistente. */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> delete(@PathVariable String id) {
+        return store.deleteNotification(id)
+                ? ResponseEntity.noContent().build()
+                : ResponseEntity.notFound().build();
+    }
+
 }

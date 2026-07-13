@@ -1,7 +1,7 @@
 // Mapper DTO <-> Entita. La nomenclatura JSON segue il contratto REST del
 // middleware Spring Boot (com.wfm.middleware.dto.Dto).
 //
-// Usati da HttpRemoteDataSource quando AppConfig.useMockData == false.
+// Usati da HttpRemoteDataSource per (de)serializzare i dati del Cruscotto.
 
 import '../../domain/entities/entities.dart';
 
@@ -551,3 +551,43 @@ Warehouse warehouseFromJson(Map<String, dynamic> j) =>
 
 CodeLabel codeLabelFromJson(Map<String, dynamic> j) =>
     CodeLabel(j['code']?.toString() ?? '', j['label'] ?? '');
+
+// ─── EQUIPMENT ───────────────────────────────────────────────────────────────
+
+Equipment equipmentFromJson(Map<String, dynamic> j) => Equipment(
+      matricola: j['matricola']?.toString() ?? '',
+      barcode: j['barcode']?.toString() ?? '',
+      produttore: j['produttore'] ?? '',
+      modello: j['modello'] ?? '',
+      localita: j['localita'] ?? '',
+      comune: j['comune'] ?? '',
+      sedeTecnica: j['sedeTecnica'] ?? '',
+      dataInstallazione: _date(j['dataInstallazione']),
+      stato: j['stato'] ?? '',
+    );
+
+// ─── TECNICO (AppUser) ───────────────────────────────────────────────────────
+
+UserRole _roleFromJson(dynamic v) {
+  switch ((v ?? '').toString().toLowerCase()) {
+    case 'tecnicosenior':
+    case 'senior':
+      return UserRole.tecnicoSenior;
+    case 'readonly':
+    case 'sola lettura':
+      return UserRole.readOnly;
+    default:
+      return UserRole.tecnico;
+  }
+}
+
+AppUser technicianFromJson(Map<String, dynamic> j) => AppUser(
+      cid: j['cid']?.toString() ?? '',
+      nome: j['nome'] ?? '',
+      cognome: j['cognome'] ?? '',
+      email: _s(j['email']),
+      role: _roleFromJson(j['role']),
+      workCenter: j['workCenter'] ?? '',
+      squadra: _s(j['squadra']),
+      tecnicoVV: _s(j['tecnicoVV']),
+    );

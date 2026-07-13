@@ -35,3 +35,13 @@ final materialSearchProvider =
       .getMaterials(query: query.isEmpty ? null : query);
   return res.valueOrNull ?? const [];
 });
+
+/// Elenco/ricerca tecnici (Cambio CID, riassegnazione OdL).
+/// Con query vuota restituisce l'elenco completo.
+final techniciansProvider =
+    FutureProvider.family<List<AppUser>, String>((ref, query) async {
+  final res = await ref
+      .watch(anagraficaRepositoryProvider)
+      .getTechnicians(query: query.isEmpty ? null : query);
+  return res.valueOrNull ?? const [];
+});

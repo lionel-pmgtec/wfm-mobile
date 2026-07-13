@@ -1,6 +1,6 @@
 // Injection de dépendances (Riverpod). Punto unico di costruzione di
-// config, datasources e repository. Cambiare l'implementazione qui (mock <->
-// http) NON impatta la UI.
+// config, datasources e repository. La sorgente dati è sempre il middleware
+// (HTTP); cambiare l'implementazione qui NON impatta la UI.
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -10,7 +10,6 @@ import '../../core/network/dio_client.dart';
 
 import '../../data/datasources/local/local_data_source.dart';
 import '../../data/datasources/remote/remote_data_source.dart';
-import '../../data/datasources/remote/mock_remote_data_source.dart';
 import '../../data/datasources/remote/http_remote_data_source.dart';
 
 import '../../data/repositories/auth_repository_impl.dart';
@@ -60,10 +59,9 @@ final localDataSourceProvider = Provider<WfmLocalDataSource>(
   (ref) => InMemoryLocalDataSource(),
 );
 
-/// Sceglie mock o HTTP in base alla configurazione (useMockData).
+/// Sorgente dati remota: SEMPRE il middleware (Cruscotto) via HTTP/JSON.
+/// Nessun mock — tutti i dati (Avvisi, ODL, anagrafiche) arrivano dal backend.
 final remoteDataSourceProvider = Provider<WfmRemoteDataSource>((ref) {
-  final config = ref.watch(appConfigProvider);
-  if (config.useMockData) return MockRemoteDataSource();
   return HttpRemoteDataSource(ref.watch(dioClientProvider));
 });
 
@@ -85,6 +83,7 @@ final workOrderRepositoryProvider = Provider<WorkOrderRepository>(
     ref.watch(remoteDataSourceProvider),
     ref.watch(localDataSourceProvider),
     ref.watch(connectivityProvider),
+    ref.watch(syncRepositoryProvider),
   ),
 );
 

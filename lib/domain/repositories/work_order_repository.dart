@@ -92,6 +92,9 @@ abstract interface class WorkOrderRepository {
   /// Creazione OdL dal campo (M10).
   Future<Result<WorkOrder>> createWorkOrder(WorkOrder order);
 
+  /// Eliminazione di un OdL.
+  Future<Result<void>> deleteWorkOrder(String externalCode);
+
   /// Statistiche per la dashboard home.
   Future<Result<Map<WorkOrderStatus, int>>> getStats();
 }

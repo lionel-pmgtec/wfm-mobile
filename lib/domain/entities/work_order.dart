@@ -132,15 +132,6 @@ class WorkOrder {
   bool get hasDettagliCliente =>
       woType.startsWith('ATTI') || woType.startsWith('SOST');
 
-  bool get hasNormativa655 =>
-      woType.startsWith('ZA') ||
-      woTypeDescription.toLowerCase().contains('interruzione');
-
-  bool get hasDatiRqti =>
-      woType.startsWith('ZA') ||
-      woTypeDescription.toLowerCase().contains('perdita') ||
-      woTypeDescription.toLowerCase().contains('riparazione');
-
   bool get hasPreventivo => woType.startsWith('PA');
 
   /// DISA — Disattivazione fornitura: lettura finale + conferma disattivazione.

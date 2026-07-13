@@ -1,23 +1,30 @@
-# Guida completa — Creare un OdL lato backend
+# Guida completa — Creare Avvisi e OdL lato backend (Cruscotto)
 
 Ce middleware **Spring Boot** est le composant qui s'intercale entre ton app
 Flutter et SAP : il reçoit les requêtes REST/JSON de l'app, persiste/expose les
-ordres de travail (OdL), et (en production) traduit en appels SOAP vers SAP.
+avvisi et ordres de travail (OdL), et (en production) traduit en appels SOAP
+vers SAP.
 
 ```
 [App Flutter] ◄── REST/JSON ──► [Middleware Spring Boot] ◄── SOAP/XML ──► [SAP]
+                                        │
+                                        ▼
+                              data/wfm-database.xlsx  (il "database")
 ```
 
-Per il momento la fase SOAP→SAP è **stubbata** (store in memoria) : l'obiettivo
-è che tu possa **creare un OdL e vederlo apparire nell'app Flutter in pochi
-minuti**.
+Il middleware **fa da Cruscotto** : non esiste un frontend admin, quindi si
+creano gli Avvisi e gli OdL **via Postman** (o `curl`). La fase SOAP→SAP è
+**stubbata** ; **tutti i dati creati (Avvisi, ODL, Esiti) sono persistiti in un
+file Excel** (`data/wfm-database.xlsx`) tramite Apache POI. Riavviando il
+server i dati restano. L'obiettivo è **creare un Avviso/OdL da Postman e
+vederlo apparire nell'app Flutter in pochi minuti**.
 
 ---
 
 ## 1. Prerequisiti
 
-- **Java 21** (`java --version`)
-- **Maven 3.9+** (`mvn -v`)
+- **Java 17+** (`java --version`)
+- **Maven 3.9+** (`mvn -v`) — oppure aprire la cartella in IntelliJ (Maven incluso)
 - La cartella `middleware/` si trova nella radice del progetto `wfm_app`.
 
 ---
@@ -41,9 +48,26 @@ Il server è in ascolto su :
 - **Base API** : `http://localhost:8080/api/v1`
 - **Swagger UI** : `http://localhost:8080/api/v1/swagger-ui.html`
 
-Lo store è pre-popolato con 3 OdL (tra cui il **DISA 50557262** corrispondente
-al documento di specifica) e 1 avviso, identici a quelli dell'app mobile in
-modalità mock.
+### Il "database" Excel
+
+Al **primo avvio** il middleware crea `data/wfm-database.xlsx` con **solo le
+anagrafiche di riferimento** (materiali, magazzini, marche, codici TAM,
+cause/soluzioni, equipment, tecnici) : **nessun Avviso/OdL preesistente**. Sta
+a te crearli via Postman. Ogni creazione/aggiornamento riscrive il file.
+
+Schede del workbook :
+
+| Scheda            | Contenuto                                             |
+|-------------------|-------------------------------------------------------|
+| `Avvisi`          | Avvisi creati (colonne leggibili + colonna `_json`)   |
+| `ODL`             | Ordini di lavoro (colonne leggibili + `_json`)        |
+| `Esiti`           | Esiti intervento inviati dall'app                     |
+| `Materiali` …     | Anagrafiche di riferimento (lookup)                   |
+| `Equipment`       | Equipment ricercabili per matricola/barcode           |
+| `Tecnici`         | Tecnici/operatori (Cambio CID, riassegnazione)        |
+
+Il percorso è configurabile in `application.yml` → `wfm.excel.path`. Per
+ripartire da zero: fermare il server ed eliminare `data/wfm-database.xlsx`.
 
 ---
 
@@ -122,7 +146,6 @@ curl -X POST http://localhost:8080/api/v1/work-orders \
   "externalCode": "90000001",
   "woType": "DISA",
   "status": "RICEVUTO",
-  ...
 }
 ```
 
@@ -136,11 +159,7 @@ Per l'MVP, l'app recupera i propri OdL in *pull* (all'avvio e tramite
 pull-to-refresh). In produzione, aggiungere un push **Firebase Cloud Messaging
 (FCM)** in `WorkOrderController.create(...)` :
 
-```java
-// pseudo-codice
-fcm.send(token, Map.of("event","NEW_OR_UPDATED_OR_CANCELLED",
-                       "externalCode", created.externalCode()));
-```
+
 
 L'app può ascoltare questi messaggi per invalidare `workOrdersProvider` e
 aggiornare la lista senza intervento dell'utente (spec EF-M13.1).
@@ -202,29 +221,48 @@ tecnicamente l'OdL (flusso S13) e registra l'esito (E55).
 | GET     | `/anagrafica/tam-codes`                         | Codici TAM (incluso `DISA`)               |
 | GET     | `/anagrafica/causes`                            | Codici causa (dropdown Esito)             |
 | GET     | `/anagrafica/solutions`                         | Codici soluzione (dropdown Esito)         |
+| GET     | `/anagrafica/equipment?matricola=&barcode=`     | Ricerca equipment (Standalone)            |
+| GET     | `/anagrafica/tecnici?q=`                         | Ricerca tecnici (Cambio CID)              |
+| GET     | `/anagrafica/operatori`                          | Lista operatori (riassegnazione OdL)      |
 
 Swagger UI fornisce la documentazione interattiva di tutti questi endpoint.
+
+### Collezione Postman pronta all'uso
+
+In `middleware/postman/` trovi :
+
+- `WFM.postman_collection.json` — tutte le richieste (login, crea OdL, crea
+  Avviso, workflow Avviso+ODL, aggiorna stato, invia esito, anagrafiche) con
+  body d'esempio già compilati e test-script che salvano `lastWorkOrderCode` /
+  `lastAvvisoNumber` nell'environment ;
+- `WFM.postman_environment.json` — environment con `{{baseUrl}}` =
+  `http://localhost:8080/api/v1`.
+
+Importa entrambi in Postman, seleziona l'environment, poi esegui **Login →
+Create work-order** (o **Workflow → Create Avviso + ODL**) e verifica il file
+Excel.
 
 ---
 
 ## 5. Collegare l'app Flutter a questo middleware
 
-Due modifiche in `lib/core/config/app_config.dart` :
+L'app **non ha più dati mock** : parla sempre col middleware via
+`HttpRemoteDataSource`. Basta impostare l'URL corretto in
+`lib/core/config/app_config.dart` :
 
 ```dart
 // Per sviluppo locale
-const AppConfig kAppConfig = AppConfig(
+static const AppConfig dev = AppConfig(
   flavor: AppFlavor.dev,
   // Emulatore Android Studio -> host = 10.0.2.2
-  // Simulatore iOS           -> host = localhost
+  // Simulatore iOS / Web     -> host = localhost
   // Dispositivo fisico       -> IP della tua macchina sulla rete Wi-Fi
   middlewareBaseUrl: 'http://10.0.2.2:8080/api/v1',
-  useMockData: false,           // ← importante : si esce dal mock
 );
 ```
 
-L'app passa automaticamente da `MockRemoteDataSource` a `HttpRemoteDataSource`
-(gestione affidata a `presentation/providers/core_providers.dart`).
+Il flag `useMockData` **non esiste più** : l'unica sorgente dati è il middleware
+(gestione in `presentation/providers/core_providers.dart`).
 
 Per dispositivo iOS/Android senza HTTPS durante i test :
 - **Android** : aggiungere `android:usesCleartextTraffic="true"` in
@@ -239,15 +277,14 @@ Per dispositivo iOS/Android senza HTTPS durante i test :
 ## 6. Prossimi passi per la produzione
 
 | Passo                                 | Cosa fare                                                                   |
-|---------------------------------------|----------------------------------------------------------------------------|
-| Sostituire `InMemoryStore`            | PostgreSQL tramite Spring Data JPA + entità `WorkOrderEntity` ecc.          |
+|---------------------------------------|-----------------------------------------------------------------------------|
+| Sostituire `ExcelStore`               | PostgreSQL tramite Spring Data JPA + entità `WorkOrderEntity` ecc.          |
 | Collegare SAP in SOAP                 | Apache CXF, generare gli stub dai WSDL forniti dal team SAP                 |
 | Autenticazione reale                  | JWT (o OAuth2), filtro Spring Security, WS-Security UsernameToken verso SAP |
 | Push FCM                              | `firebase-admin-java`, inviare un push alla creazione/modifica di OdL       |
 | Coda di messaggi                      | RabbitMQ o Kafka per l'asincrono con SAP (spec §7.2.2)                      |
 | Cache anagrafiche                     | Redis con TTL 24 h (spec tabella §12 anagrafiche)                           |
 | Osservabilità                         | Micrometer + Prometheus + Grafana (latenza, tasso d'errore, coda SOAP)      |
-| CI/CD                                 | Pipeline build → test → push immagine Docker                                |
 | Sicurezza                             | TLS 1.2+, certificate pinning lato mobile, HSTS, audit log strutturato      |
 
 ---
@@ -282,4 +319,3 @@ Per dispositivo iOS/Android senza HTTPS durante i test :
 5. SAP — chiusura contabile e tecnica dell'OdL.
 ```
 
-Già da oggi puoi eseguire i passaggi 2 e 3 in locale (mock SOAP).

@@ -129,7 +129,8 @@ class Preventivo {
   final String settoreMerceologico;
   final String numeroOrdineSd;
   final List<PreventivoMateriale> materiali;
-  final FirmaCliente? firma;
+  final FirmaCliente? firma; // firma del cliente
+  final FirmaCliente? firmaOperatore; // firma dell'operatore/tecnico
   final String? pdfPath; // path locale al PDF generato
   final DateTime? dataInvio;
   final DateTime? dataApprovazioneCliente;
@@ -163,6 +164,7 @@ class Preventivo {
     this.numeroOrdineSd = '',
     this.materiali = const [],
     this.firma,
+    this.firmaOperatore,
     this.pdfPath,
     this.dataInvio,
     this.dataApprovazioneCliente,
@@ -209,6 +211,7 @@ class Preventivo {
 
   bool get hasMateriali => materiali.isNotEmpty;
   bool get hasFirma => firma != null;
+  bool get hasFirmaOperatore => firmaOperatore != null;
   bool get hasPdf => pdfPath != null && pdfPath!.isNotEmpty;
 
   Preventivo copyWith({
@@ -221,6 +224,8 @@ class Preventivo {
     List<PreventivoMateriale>? materiali,
     FirmaCliente? firma,
     bool clearFirma = false,
+    FirmaCliente? firmaOperatore,
+    bool clearFirmaOperatore = false,
     String? pdfPath,
     bool clearPdf = false,
     DateTime? dataInvio,
@@ -249,6 +254,9 @@ class Preventivo {
         numeroOrdineSd: numeroOrdineSd ?? this.numeroOrdineSd,
         materiali: materiali ?? this.materiali,
         firma: clearFirma ? null : (firma ?? this.firma),
+        firmaOperatore: clearFirmaOperatore
+            ? null
+            : (firmaOperatore ?? this.firmaOperatore),
         pdfPath: clearPdf ? null : (pdfPath ?? this.pdfPath),
         dataInvio: dataInvio ?? this.dataInvio,
         dataApprovazioneCliente:
@@ -280,6 +288,7 @@ class Preventivo {
         'numeroOrdineSd': numeroOrdineSd,
         'materiali': materiali.map((m) => m.toJson()).toList(),
         'firma': firma?.toJson(),
+        'firmaOperatore': firmaOperatore?.toJson(),
         'pdfPath': pdfPath,
         'dataInvio': dataInvio?.toIso8601String(),
         'dataApprovazioneCliente':
@@ -317,6 +326,9 @@ class Preventivo {
             .toList(),
         firma: json['firma'] != null
             ? FirmaCliente.fromJson(json['firma'] as Map)
+            : null,
+        firmaOperatore: json['firmaOperatore'] != null
+            ? FirmaCliente.fromJson(json['firmaOperatore'] as Map)
             : null,
         pdfPath: json['pdfPath'] as String?,
         dataInvio: json['dataInvio'] != null

@@ -107,43 +107,24 @@ class _PreventivoScreenState extends ConsumerState<PreventivoScreen> {
         .setPreventivo(p.copyWith(materiali: updated));
   }
 
-  Future<void> _markInviato() async {
+  Future<void> _firma(String role) async {
     await _persistHeader();
-    final p = _ensurePreventivo();
-    final updated = p.copyWith(
-      stato: PreventivoStato.inviato,
-      dataInvio: DateTime.now(),
-    );
-    await ref
-        .read(avvisoExtensionProvider(widget.numeroAvviso).notifier)
-        .setPreventivo(updated);
-    if (mounted) showSapToast(context, 'Preventivo contrassegnato come inviato');
-  }
-
-  Future<void> _markPagato() async {
-    final p = _ensurePreventivo();
-    final updated = p.copyWith(
-      stato: PreventivoStato.pagato,
-      dataPagamento: DateTime.now(),
-    );
-    await ref
-        .read(avvisoExtensionProvider(widget.numeroAvviso).notifier)
-        .setPreventivo(updated);
-    if (mounted) showSapToast(context, 'Pagamento registrato');
-  }
-
-  Future<void> _firma() async {
-    await _persistHeader();
+    if (!mounted) return;
     final ok = await context.push<bool>(
-      AppRoutes.preventivoFirmaPath(widget.numeroAvviso),
+      '${AppRoutes.preventivoFirmaPath(widget.numeroAvviso)}?role=$role',
     );
     if (ok == true && mounted) {
-      showSapToast(context, 'Firma cliente acquisita');
+      showSapToast(
+          context,
+          role == 'operatore'
+              ? 'Firma operatore acquisita'
+              : 'Firma cliente acquisita');
     }
   }
 
   Future<void> _generaPdf() async {
     await _persistHeader();
+    if (!mounted) return;
     await context.push(AppRoutes.preventivoPdfPath(widget.numeroAvviso));
   }
 
@@ -155,7 +136,6 @@ class _PreventivoScreenState extends ConsumerState<PreventivoScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        leading: const BackButton(),
         title: const Text('Preventivo'),
         actions: [
           if (p != null)
@@ -303,16 +283,11 @@ class _PreventivoScreenState extends ConsumerState<PreventivoScreen> {
                           Text(m.descrizione,
                               style: AppTextStyles.headingSmall),
                           const SizedBox(height: 2),
-                          Text(
-                              '${m.codice} · ${m.quantita} ${m.unitaMisura} × €${m.prezzoUnitario.toStringAsFixed(2)}',
+                          Text('${m.codice} · ${m.quantita} ${m.unitaMisura}',
                               style: AppTextStyles.bodySmall),
                         ],
                       ),
                     ),
-                    Text('€ ${m.totale.toStringAsFixed(2)}',
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.primary)),
                     IconButton(
                       icon: const Icon(Icons.close, size: 18),
                       onPressed: p.stato.isFinal ? null : () => _removeMateriale(i),
@@ -330,15 +305,11 @@ class _PreventivoScreenState extends ConsumerState<PreventivoScreen> {
                   ? 'Seleziona materiali dal catalogo'
                   : 'Aggiungi altri materiali'),
             ),
-          const SectionHeader(title: 'TOTALI'),
-          _TotaleBox(preventivo: p ?? Preventivo.bozza(widget.numeroAvviso)),
           const SectionHeader(title: 'AZIONI'),
           _ActionButtons(
             preventivo: p,
             onFirma: _firma,
             onPdf: _generaPdf,
-            onMarkInviato: _markInviato,
-            onMarkPagato: _markPagato,
           ),
           const SizedBox(height: 90),
         ],
@@ -347,125 +318,64 @@ class _PreventivoScreenState extends ConsumerState<PreventivoScreen> {
   }
 }
 
-class _TotaleBox extends StatelessWidget {
-  final Preventivo preventivo;
-  const _TotaleBox({required this.preventivo});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding:
-          const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-      decoration: BoxDecoration(
-        color: AppColors.primary.withValues(alpha: 0.06),
-        borderRadius: BorderRadius.circular(12),
-        border:
-            Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
-      ),
-      child: Column(
-        children: [
-          Row(children: [
-            const Expanded(
-                child: Text('Imponibile', style: AppTextStyles.bodyMedium)),
-            Text('€ ${preventivo.totaleSenzaIva.toStringAsFixed(2)}',
-                style: AppTextStyles.bodyLarge
-                    .copyWith(fontWeight: FontWeight.w600)),
-          ]),
-          const SizedBox(height: 4),
-          Row(children: [
-            Expanded(
-                child: Text(
-                    'IVA ${preventivo.aliquotaIva.toStringAsFixed(0)}%',
-                    style: AppTextStyles.bodyMedium)),
-            Text('€ ${preventivo.importoIva.toStringAsFixed(2)}',
-                style: AppTextStyles.bodyLarge
-                    .copyWith(fontWeight: FontWeight.w600)),
-          ]),
-          const Divider(height: 16),
-          Row(children: [
-            const Expanded(
-              child: Text('TOTALE',
-                  style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.primary,
-                      letterSpacing: 0.5)),
-            ),
-            Text('€ ${preventivo.totaleConIva.toStringAsFixed(2)}',
-                style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.primary)),
-          ]),
-        ],
-      ),
-    );
-  }
-}
-
 class _ActionButtons extends StatelessWidget {
   final Preventivo? preventivo;
-  final VoidCallback onFirma;
+  final ValueChanged<String> onFirma; // role: 'cliente' | 'operatore'
   final VoidCallback onPdf;
-  final VoidCallback onMarkInviato;
-  final VoidCallback onMarkPagato;
 
   const _ActionButtons({
     required this.preventivo,
     required this.onFirma,
     required this.onPdf,
-    required this.onMarkInviato,
-    required this.onMarkPagato,
   });
 
   @override
   Widget build(BuildContext context) {
     final p = preventivo;
-    final canFirma = p != null && p.hasMateriali && !p.stato.isFinal;
-    final canPdf = p != null && p.hasMateriali;
-    final canInviato = p != null &&
-        p.hasMateriali &&
-        p.stato == PreventivoStato.bozza;
-    final canPagato = p != null &&
-        (p.stato == PreventivoStato.firmato ||
-            p.stato == PreventivoStato.inviato);
+    final hasMat = p != null && p.hasMateriali;
+    final firmaCliente = p?.firma != null;
+    final firmaOperatore = p?.firmaOperatore != null;
     return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // Firme raccolte alla fine, prima della generazione del PDF.
         Row(children: [
           Expanded(
             child: OutlinedButton.icon(
-              onPressed: canFirma ? onFirma : null,
-              icon: const Icon(Icons.draw_outlined),
-              label: const Text('Firma'),
+              onPressed:
+                  (hasMat && !firmaCliente) ? () => onFirma('cliente') : null,
+              icon: Icon(firmaCliente
+                  ? Icons.check_circle_outline
+                  : Icons.draw_outlined),
+              label: Text(firmaCliente ? 'Cliente firmato' : 'Firma cliente'),
             ),
           ),
           const SizedBox(width: 10),
           Expanded(
             child: OutlinedButton.icon(
-              onPressed: canPdf ? onPdf : null,
-              icon: const Icon(Icons.picture_as_pdf_outlined),
-              label: const Text('PDF'),
+              onPressed: (hasMat && !firmaOperatore)
+                  ? () => onFirma('operatore')
+                  : null,
+              icon: Icon(firmaOperatore
+                  ? Icons.check_circle_outline
+                  : Icons.draw_outlined),
+              label: Text(
+                  firmaOperatore ? 'Operatore firmato' : 'Firma operatore'),
             ),
           ),
         ]),
         const SizedBox(height: 10),
-        Row(children: [
-          Expanded(
-            child: OutlinedButton.icon(
-              onPressed: canInviato ? onMarkInviato : null,
-              icon: const Icon(Icons.send_outlined),
-              label: const Text('Marca inviato'),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: ElevatedButton.icon(
-              onPressed: canPagato ? onMarkPagato : null,
-              icon: const Icon(Icons.payments_outlined),
-              label: const Text('Registra pagamento'),
-            ),
-          ),
-        ]),
+        // PDF → schermata anteprima con Stampa e Invio integrati.
+        ElevatedButton.icon(
+          onPressed: hasMat ? onPdf : null,
+          icon: const Icon(Icons.picture_as_pdf_outlined),
+          label: const Text('Genera PDF · Stampa · Invia'),
+        ),
+        if (!hasMat) ...[
+          const SizedBox(height: 8),
+          const Text('Aggiungi almeno un materiale per continuare.',
+              textAlign: TextAlign.center, style: AppTextStyles.bodySmall),
+        ],
       ],
     );
   }
@@ -486,8 +396,6 @@ class _CartLine {
         classificazione = '-NONE-',
         qtaCtrl = TextEditingController(text: '1'),
         prezzoCtrl = TextEditingController(text: '0,00');
-
-  num get totale => quantita * prezzoUnitario;
 
   void dispose() {
     qtaCtrl.dispose();
@@ -531,11 +439,6 @@ class _AggiungiMaterialeSheetState
     setState(() => _cart[code]!.quantita = n);
   }
 
-  void _setPrezzo(String code, String v) {
-    final n = num.tryParse(v.replaceAll(',', '.')) ?? 0;
-    setState(() => _cart[code]!.prezzoUnitario = n);
-  }
-
   void _confirm() {
     if (_cart.isEmpty) {
       showSapToast(context, 'Seleziona almeno un materiale',
@@ -569,8 +472,6 @@ class _AggiungiMaterialeSheetState
     // (importante su Flutter Web dove le constraints sono a volte ambigue).
     return LayoutBuilder(builder: (context, constraints) {
       final search = ref.watch(materialSearchProvider(_query));
-      final totale =
-          _cart.values.fold<num>(0, (acc, l) => acc + l.totale);
       final media = MediaQuery.of(context);
       final width = constraints.maxWidth.isFinite
           ? constraints.maxWidth
@@ -656,7 +557,6 @@ class _AggiungiMaterialeSheetState
                               onRemove: (code) =>
                                   _toggle(_cart[code]!.material),
                               onSetQta: _setQta,
-                              onSetPrezzo: _setPrezzo,
                             ),
                           ],
                         ),
@@ -697,9 +597,9 @@ class _AggiungiMaterialeSheetState
                             Text(
                                 _cart.isEmpty
                                     ? 'Nessuna selezione'
-                                    : '${_cart.length} ${_cart.length == 1 ? "materiale" : "materiali"}',
+                                    : 'Materiali selezionati',
                                 style: AppTextStyles.bodySmall),
-                            Text('Totale: € ${totale.toStringAsFixed(2)}',
+                            Text('${_cart.length}',
                                 style: const TextStyle(
                                     fontSize: 20,
                                     fontWeight: FontWeight.w800,
@@ -788,13 +688,11 @@ class _SelezionatiList extends StatelessWidget {
   final Map<String, _CartLine> cart;
   final void Function(String code) onRemove;
   final void Function(String code, String v) onSetQta;
-  final void Function(String code, String v) onSetPrezzo;
 
   const _SelezionatiList({
     required this.cart,
     required this.onRemove,
     required this.onSetQta,
-    required this.onSetPrezzo,
   });
 
   @override
@@ -853,49 +751,14 @@ class _SelezionatiList extends StatelessWidget {
                 ),
               ]),
               const SizedBox(height: 6),
-              Row(children: [
-                Expanded(
-                  child: TextField(
-                    controller: l.qtaCtrl,
-                    keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true),
-                    decoration: const InputDecoration(
-                        labelText: 'Qtà', isDense: true),
-                    onChanged: (v) => onSetQta(l.material.materialCode, v),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  flex: 2,
-                  child: TextField(
-                    controller: l.prezzoCtrl,
-                    keyboardType: const TextInputType.numberWithOptions(
-                        decimal: true),
-                    decoration: const InputDecoration(
-                        labelText: 'Prezzo un.',
-                        suffixText: '€',
-                        isDense: true),
-                    onChanged: (v) =>
-                        onSetPrezzo(l.material.materialCode, v),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 6, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: AppColors.primary.withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text('€ ${l.totale.toStringAsFixed(2)}',
-                        textAlign: TextAlign.right,
-                        style: const TextStyle(
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.primary)),
-                  ),
-                ),
-              ]),
+              TextField(
+                controller: l.qtaCtrl,
+                keyboardType:
+                    const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(
+                    labelText: 'Quantità', isDense: true),
+                onChanged: (v) => onSetQta(l.material.materialCode, v),
+              ),
             ],
           ),
         );

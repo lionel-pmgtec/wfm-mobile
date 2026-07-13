@@ -43,9 +43,18 @@ class AttachmentRepositoryImpl implements AttachmentRepository {
   }
 
   @override
-  Future<Result<void>> deleteAttachment(String attachmentId) async {
+  Future<Result<void>> deleteAttachment(String workOrderCode, String attachmentId) async {
     try {
       await local.removeAttachment(attachmentId);
+      // Elimina anche la copia sul middleware, altrimenti al refresh l'allegato
+      // "cancellato" ricomparirebbe (fantasma) dalla lista remota.
+      if (connectivity.isOnline) {
+        try {
+          await remote.deleteAttachment(workOrderCode, attachmentId);
+        } catch (_) {
+          // Se il server non risponde, la cancellazione locale resta valida.
+        }
+      }
       return const Success(null);
     } catch (e) {
       return Err(CacheFailure(e.toString()));

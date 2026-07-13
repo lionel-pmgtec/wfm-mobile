@@ -28,7 +28,6 @@ class _SignatureScreenState extends State<SignatureScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leading: const BackButton(),
         title: const Text('Firma cliente'),
         actions: [
           IconButton(

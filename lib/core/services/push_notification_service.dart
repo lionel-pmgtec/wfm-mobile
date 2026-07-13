@@ -1,5 +1,5 @@
 // Servizio notifiche locali (flutter_local_notifications).
-// In produzione sostituire con FCM; in mock simula la ricezione con timer.
+// Riceve i push dal Cruscotto tramite FCM e li mostra localmente.
 
 import 'dart:async';
 import 'dart:convert';

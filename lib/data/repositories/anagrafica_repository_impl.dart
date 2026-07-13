@@ -39,4 +39,12 @@ class AnagraficaRepositoryImpl implements AnagraficaRepository {
   @override
   Future<Result<List<CodeLabel>>> getSolutionCodes() =>
       _guard(() => remote.getSolutionCodes());
+
+  @override
+  Future<Result<Equipment?>> getEquipment({String? matricola, String? barcode}) =>
+      _guard(() => remote.getEquipment(matricola: matricola, barcode: barcode));
+
+  @override
+  Future<Result<List<AppUser>>> getTechnicians({String? query}) =>
+      _guard(() => remote.getTechnicians(query: query));
 }

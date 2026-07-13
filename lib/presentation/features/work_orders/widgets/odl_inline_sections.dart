@@ -2,14 +2,16 @@
 //   • ATTIVITÀ (CRUD inline)
 //   • APPUNTAMENTI (CRUD inline)
 //   • SOSPENSIONI (CRUD inline)
-//   • PREVENTIVO COLLEGATO (summary read-only)
-//   • FIRME (Cliente + Tecnico)
+//   • PREVENTIVO (summary + apri/crea)
 //
+// Le firme (cliente + operatore) sono raccolte sul Preventivo, non qui.
 // Tutte le sezioni usano [WfmCollapsibleSection] e [odlExtensionProvider].
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../../core/router/app_routes.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/widgets/widgets.dart';
@@ -55,20 +57,20 @@ class OdlInlineSections extends ConsumerWidget {
           initiallyExpanded: false,
           child: _SospensioniInline(odlCode: code, ext: ext),
         ),
-        if (hasAvviso)
+        if (hasAvviso || order.hasPreventivo)
           WfmCollapsibleSection(
-            title: 'PREVENTIVO COLLEGATO',
+            title: 'PREVENTIVO',
             icon: Icons.description_outlined,
-            initiallyExpanded: false,
+            initiallyExpanded: order.hasPreventivo,
             child: _PreventivoSummary(
-                avvisoNumero: order.notificationNumberSap!),
+              // Preventivo INDIPENDENTE per OdL: chiave = codice OdL, così il
+              // preventivo (e la sua firma) non è condiviso con l'Avviso di
+              // origine né con altri OdL. Un nuovo OdL parte senza firma.
+              preventivoKey: code,
+            ),
           ),
-        WfmCollapsibleSection(
-          title: 'FIRME',
-          icon: Icons.draw_outlined,
-          initiallyExpanded: false,
-          child: _FirmeInline(odlCode: code, ext: ext),
-        ),
+        // La firma del preventivo è solo del preventivo (per il PDF del devis);
+        // la firma di chiusura dell'OdL è separata (esito).
       ],
     );
   }
@@ -826,19 +828,30 @@ class _SospensioneSheetState extends State<_SospensioneSheet> {
 // ═══════════════════════════════════════════════════════════════════════
 
 class _PreventivoSummary extends ConsumerWidget {
-  final String avvisoNumero;
-  const _PreventivoSummary({required this.avvisoNumero});
+  final String preventivoKey;
+  const _PreventivoSummary({required this.preventivoKey});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final ext = ref.watch(avvisoExtensionProvider(avvisoNumero));
+    final ext = ref.watch(avvisoExtensionProvider(preventivoKey));
     final p = ext.preventivo;
     if (p == null) {
-      return const Text(
-          'Nessun preventivo collegato. Apri l\'Avviso per gestirlo.',
-          style: TextStyle(
-              fontStyle: FontStyle.italic,
-              color: AppColors.textSecondary));
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const Text('Nessun preventivo per questo OdL.',
+              style: TextStyle(
+                  fontStyle: FontStyle.italic,
+                  color: AppColors.textSecondary)),
+          const SizedBox(height: 10),
+          ElevatedButton.icon(
+            onPressed: () =>
+                context.push(AppRoutes.preventivoPath(preventivoKey)),
+            icon: const Icon(Icons.add_circle_outline_rounded),
+            label: const Text('Crea preventivo'),
+          ),
+        ],
+      );
     }
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -882,6 +895,16 @@ class _PreventivoSummary extends ConsumerWidget {
         _kv('TOTALE DOCUMENTO',
             'EUR ${p.totaleConIva.toStringAsFixed(2)}',
             bold: true),
+        const SizedBox(height: 10),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: OutlinedButton.icon(
+            onPressed: () =>
+                context.push(AppRoutes.preventivoPath(preventivoKey)),
+            icon: const Icon(Icons.open_in_new_rounded),
+            label: const Text('Apri preventivo'),
+          ),
+        ),
       ],
     );
   }
@@ -905,204 +928,4 @@ class _PreventivoSummary extends ConsumerWidget {
                       bold ? AppColors.primary : AppColors.textPrimary)),
         ]),
       );
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// FIRME (Cliente + Tecnico)
-// ═══════════════════════════════════════════════════════════════════════
-
-class _FirmeInline extends ConsumerWidget {
-  final String odlCode;
-  final OdlExtension ext;
-  const _FirmeInline({required this.odlCode, required this.ext});
-
-  Future<void> _firma(BuildContext context, WidgetRef ref,
-      {required bool isCliente}) async {
-    final res = await showModalBottomSheet<FirmaCliente>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) =>
-          _NomeFirmatarioSheet(isCliente: isCliente),
-    );
-    if (res == null) return;
-    final n = ref.read(odlExtensionProvider(odlCode).notifier);
-    if (isCliente) {
-      await n.setFirmaCliente(res);
-    } else {
-      await n.setFirmaTecnico(res);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Column(children: [
-      _FirmaCard(
-        title: 'Firma Cliente',
-        firma: ext.firmaCliente,
-        onSign: () => _firma(context, ref, isCliente: true),
-        onClear: () => ref
-            .read(odlExtensionProvider(odlCode).notifier)
-            .clearFirmaCliente(),
-      ),
-      const SizedBox(height: 8),
-      _FirmaCard(
-        title: 'Firma Tecnico',
-        firma: ext.firmaTecnico,
-        onSign: () => _firma(context, ref, isCliente: false),
-        onClear: () => ref
-            .read(odlExtensionProvider(odlCode).notifier)
-            .clearFirmaTecnico(),
-      ),
-    ]);
-  }
-}
-
-class _FirmaCard extends StatelessWidget {
-  final String title;
-  final FirmaCliente? firma;
-  final VoidCallback onSign;
-  final VoidCallback onClear;
-  const _FirmaCard({
-    required this.title,
-    required this.firma,
-    required this.onSign,
-    required this.onClear,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(10),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.borderLight),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(children: [
-            Icon(
-                firma == null
-                    ? Icons.draw_outlined
-                    : Icons.check_circle_outline,
-                size: 18,
-                color: firma == null
-                    ? AppColors.textSecondary
-                    : AppColors.accentGreen),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(title,
-                  style: AppTextStyles.headingSmall.copyWith(fontSize: 13)),
-            ),
-            if (firma == null)
-              OutlinedButton.icon(
-                onPressed: onSign,
-                icon: const Icon(Icons.draw_outlined, size: 14),
-                label: const Text('Firma'),
-                style: OutlinedButton.styleFrom(
-                    minimumSize: const Size(0, 32)),
-              )
-            else
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.delete_outline,
-                    size: 16, color: AppColors.accentRed),
-                onPressed: onClear,
-              ),
-          ]),
-          if (firma != null) ...[
-            const SizedBox(height: 6),
-            Text('Nome: ${firma!.nomeFirmatario}',
-                style: AppTextStyles.bodySmall),
-            Text(
-                'Data: ${firma!.dataFormattata}  •  Ora: ${firma!.oraFormattata}',
-                style: AppTextStyles.bodySmall),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-/// Sheet semplificato : raccoglie solo il nome del firmatario.
-/// Per la firma grafometrica vera vai dal Preventivo dell'Avviso collegato
-/// (che ha la canvas tactile). Qui salviamo nome + data per registro OdL.
-class _NomeFirmatarioSheet extends StatefulWidget {
-  final bool isCliente;
-  const _NomeFirmatarioSheet({required this.isCliente});
-  @override
-  State<_NomeFirmatarioSheet> createState() => _NomeFirmatarioSheetState();
-}
-
-class _NomeFirmatarioSheetState extends State<_NomeFirmatarioSheet> {
-  final _nomeCtrl = TextEditingController();
-
-  @override
-  void dispose() {
-    _nomeCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final label =
-        widget.isCliente ? 'Firma Cliente' : 'Firma Tecnico';
-    return Container(
-      decoration: const BoxDecoration(
-        color: AppColors.backgroundPage,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      padding: EdgeInsets.only(
-        left: 16,
-        right: 16,
-        top: 16,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(label, style: AppTextStyles.headingMedium),
-          const SizedBox(height: 4),
-          const Text(
-              'Inserisci il nome del firmatario. Per la firma grafometrica '
-              'completa apri il Preventivo dall\'Avviso collegato.',
-              style: AppTextStyles.bodySmall),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _nomeCtrl,
-            textCapitalization: TextCapitalization.words,
-            autofocus: true,
-            decoration: const InputDecoration(
-              labelText: 'Nome firmatario *',
-              prefixIcon: Icon(Icons.person_outline),
-            ),
-          ),
-          const SizedBox(height: 16),
-          ElevatedButton.icon(
-            onPressed: () {
-              final nome = _nomeCtrl.text.trim();
-              if (nome.isEmpty) {
-                showSapToast(context, 'Inserisci il nome firmatario',
-                    isError: true);
-                return;
-              }
-              Navigator.pop(
-                  context,
-                  FirmaCliente(
-                    id: 'FIRMA-${DateTime.now().millisecondsSinceEpoch}',
-                    nomeFirmatario: nome,
-                    firmataIl: DateTime.now(),
-                    pngBase64: '',
-                  ));
-            },
-            icon: const Icon(Icons.check),
-            label: const Text('Conferma firma'),
-          ),
-        ],
-      ),
-    );
-  }
 }

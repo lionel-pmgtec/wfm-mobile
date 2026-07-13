@@ -24,6 +24,7 @@ import '../../../../domain/entities/entities.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../providers/avviso_extension_provider.dart';
 import '../../../providers/avvisi_provider.dart';
+import '../../../providers/work_orders_provider.dart';
 
 class PreventivoPdfScreen extends ConsumerStatefulWidget {
   final String numeroAvviso;
@@ -43,17 +44,32 @@ class _PreventivoPdfScreenState extends ConsumerState<PreventivoPdfScreen> {
   Widget build(BuildContext context) {
     final ext = ref.watch(avvisoExtensionProvider(widget.numeroAvviso));
     final avvisoAsync = ref.watch(avvisoDetailProvider(widget.numeroAvviso));
+    // Se il preventivo è legato a un OdL (nessun Avviso), i dati anagrafici
+    // provengono dall'OdL: la chiave è il suo externalCode.
+    final wo = ref.watch(workOrderDetailProvider(widget.numeroAvviso)).valueOrNull;
     final tecnico = ref.watch(authControllerProvider.notifier).user;
 
     return Scaffold(
       appBar: AppBar(
-        leading: const BackButton(),
         title: const Text('Anteprima PDF Preventivo'),
       ),
-      body: avvisoAsync.when(
-        loading: () => const WfmLoading(),
-        error: (e, _) => WfmErrorState(message: e.toString()),
-        data: (avviso) {
+      body: avvisoAsync.isLoading
+          ? const WfmLoading()
+          : Builder(builder: (context) {
+          // Dati anagrafici: dall'Avviso se esiste, altrimenti dall'OdL
+          // collegato (customer/indirizzo/sede tecnica realmente compilati),
+          // altrimenti header minimale.
+          final avviso = avvisoAsync.valueOrNull ??
+              (wo != null
+                  ? NotificationAvviso(
+                      numeroAvviso: widget.numeroAvviso,
+                      descrizione: wo.woTypeDescription,
+                      tipo: 'PA',
+                      customer: wo.customer,
+                      address: wo.address,
+                      sedeTecnica: wo.sedeTecnica,
+                    )
+                  : NotificationAvviso.empty(widget.numeroAvviso));
           final prev = ext.preventivo;
           if (prev == null) {
             return const EmptyState(
@@ -113,8 +129,7 @@ class _PreventivoPdfScreenState extends ConsumerState<PreventivoPdfScreen> {
               ),
             ],
           );
-        },
-      ),
+        }),
     );
   }
 

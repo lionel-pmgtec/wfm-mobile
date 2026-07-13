@@ -26,6 +26,12 @@ class SyncRepositoryImpl implements SyncRepository {
   }
 
   @override
+  Future<void> update(SyncOperation operation) async {
+    await local.updateQueueItem(operation);
+    _emit();
+  }
+
+  @override
   Future<void> retryAll() async {
     for (final op in local.syncQueue()) {
       if (op.status == SyncStatus.failed || op.status == SyncStatus.pending) {

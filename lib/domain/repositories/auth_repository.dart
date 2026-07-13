@@ -1,7 +1,7 @@
 import '../../core/network/result.dart';
 import '../entities/user.dart';
 
-/// Contratto di autenticazione (M1). Implementazione mock o remota (middleware).
+/// Contratto di autenticazione (M1). Implementazione remota (middleware).
 abstract interface class AuthRepository {
   /// Login con CID + password. In caso di successo restituisce l'utente.
   Future<Result<AppUser>> login(String cid, String password);

@@ -1,7 +1,8 @@
 package com.wfm.middleware.controller;
 
 import com.wfm.middleware.dto.Dto;
-import com.wfm.middleware.store.InMemoryStore;
+import com.wfm.middleware.service.WorkOrderNotifier;
+import com.wfm.middleware.store.ExcelStore;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -24,8 +25,13 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/workflow")
 public class WorkflowController {
 
-    private final InMemoryStore store;
-    public WorkflowController(InMemoryStore store) { this.store = store; }
+    private final ExcelStore store;
+    private final WorkOrderNotifier notifier;
+
+    public WorkflowController(ExcelStore store, WorkOrderNotifier notifier) {
+        this.store = store;
+        this.notifier = notifier;
+    }
 
     @PostMapping("/avviso-with-odl")
     public ResponseEntity<Dto.AvvisoWithOdlResponse> createAvvisoWithOdl(
@@ -34,6 +40,8 @@ public class WorkflowController {
             return ResponseEntity.badRequest().build();
         }
         Dto.AvvisoWithOdlResponse resp = store.createAvvisoWithOdl(request);
+        // Push al tecnico assegnato all'OdL appena creato/collegato.
+        if (resp != null) notifier.notifyAssignedTechnician(resp.odl());
         return ResponseEntity.status(201).body(resp);
     }
 }

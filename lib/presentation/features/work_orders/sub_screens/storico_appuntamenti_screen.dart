@@ -8,6 +8,7 @@ import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/widgets/widgets.dart';
+import '../widgets/odl_actions_menu.dart';
 import '../../../../domain/entities/entities.dart';
 import '../../../providers/appointments_provider.dart';
 
@@ -22,7 +23,7 @@ class StoricoAppuntamentiScreen extends ConsumerWidget {
     final sorted = [...list]..sort((a, b) => b.date.compareTo(a.date));
 
     return Scaffold(
-      appBar: AppBar(title: Text('Storico appuntamenti · $code')),
+      appBar: AppBar(title: Text('Storico appuntamenti · $code'), actions: [OdlActionsMenu(code: code)]),
       body: sorted.isEmpty
           ? const EmptyState(
               title: 'Nessun appuntamento storico',

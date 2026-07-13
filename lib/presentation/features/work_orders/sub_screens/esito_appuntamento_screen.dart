@@ -9,6 +9,7 @@ import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/widgets/widgets.dart';
+import '../widgets/odl_actions_menu.dart';
 
 class EsitoAppuntamentoScreen extends ConsumerStatefulWidget {
   final String code;
@@ -108,7 +109,7 @@ class _EsitoAppuntamentoScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Esito appuntamento')),
+      appBar: AppBar(title: const Text('Esito appuntamento'), actions: [OdlActionsMenu(code: widget.code)]),
       body: ListView(
         padding: kPagePadding,
         children: [

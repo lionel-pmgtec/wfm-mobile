@@ -8,6 +8,7 @@ import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/widgets.dart';
+import '../work_orders/widgets/odl_actions_menu.dart';
 import '../../../domain/entities/entities.dart';
 import '../../../core/utils/validators.dart';
 import '../../providers/anagrafica_provider.dart';
@@ -111,10 +112,9 @@ class _EsitoScreenState extends ConsumerState<EsitoScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        leading: const BackButton(),
           title: Text(isDisa
               ? 'Esito Disattivazione ${widget.code}'
-              : 'Esito OdL ${widget.code}')),
+              : 'Esito OdL ${widget.code}'), actions: [OdlActionsMenu(code: widget.code)]),
       body: Form(
         key: _formKey,
         child: ListView(

@@ -19,8 +19,8 @@ import '../../../domain/entities/entities.dart';
 import '../../providers/attachments_provider.dart';
 import '../../providers/work_orders_provider.dart';
 import 'widgets/lifecycle_action_bar.dart';
+import 'widgets/odl_actions_menu.dart';
 import 'widgets/odl_inline_sections.dart';
-import 'widgets/reassign_sheet.dart';
 
 class WorkOrderDetailScreen extends ConsumerWidget {
   final String code;
@@ -32,14 +32,12 @@ class WorkOrderDetailScreen extends ConsumerWidget {
     return async.when(
       loading: () => Scaffold(
         appBar: AppBar(
-          leading: const BackButton(),
           title: Text('OdL $code'),
         ),
         body: const WfmLoading(message: 'Caricamento OdL…'),
       ),
       error: (e, _) => Scaffold(
         appBar: AppBar(
-          leading: const BackButton(),
           title: Text('OdL $code'),
         ),
         body: WfmErrorState(
@@ -80,62 +78,14 @@ class _DetailViewState extends ConsumerState<_DetailView>
 
   @override
   Widget build(BuildContext context) {
+    // Conteggio allegati dalla lista reale (locale + remoto), non da order.
+    final attCount = ref.watch(attachmentsProvider(order.externalCode)).valueOrNull?.length ??
+        order.attachmentsCount;
     return Scaffold(
       appBar: AppBar(
-        leading: const BackButton(),
         title: Text('OdL ${order.externalCode}'),
         actions: [
-          PopupMenuButton<String>(
-            onSelected: (v) => _onMenu(context, v),
-            itemBuilder: (_) => [
-              const PopupMenuItem(
-                  value: 'appointments', child: Text('Appuntamenti')),
-              const PopupMenuItem(
-                  value: 'storico',
-                  child: Text('Storico appuntamenti')),
-              const PopupMenuItem(
-                  value: 'esito_app',
-                  child: Text('Esito appuntamento')),
-              const PopupMenuItem(
-                  value: 'sospensioni',
-                  child: Text('Sospensioni')),
-              const PopupMenuItem(
-                  value: 'gen_ore', child: Text('Genera ore')),
-              const PopupMenuItem(
-                  value: 'add_comp',
-                  child: Text('Aggiungi componente')),
-              const PopupMenuItem(
-                  value: 'copia', child: Text('Copia OdL')),
-              const PopupMenuItem(
-                  value: 'cambio_cid', child: Text('Cambio CID')),
-              if (order.hasInterventoRete) ...[
-                const PopupMenuItem(
-                    value: 'rqti', child: Text('Dati RQTI')),
-                const PopupMenuItem(
-                    value: 'determina5',
-                    child: Text('Determina 5 / Bilancio idrico')),
-              ],
-              if (order.hasMeter)
-                const PopupMenuItem(
-                    value: 'meter', child: Text('Gestione contatore')),
-              const PopupMenuItem(
-                  value: 'scanner', child: Text('Scansiona barcode')),
-              const PopupMenuItem(
-                  value: 'map', child: Text('Apri mappa')),
-              const PopupMenuItem(
-                value: 'reassign',
-                child: Row(
-                  children: [
-                    Icon(Icons.swap_horiz_rounded, size: 18, color: Colors.black54),
-                    SizedBox(width: 8),
-                    Text('Riassegna OdL'),
-                  ],
-                ),
-              ),
-              if (order.canCancel)
-                const PopupMenuItem(value: 'cancel', child: Text('Annulla OdL')),
-            ],
-          ),
+          OdlActionsMenu(code: order.externalCode, order: order),
         ],
         bottom: TabBar(
           controller: _tab,
@@ -150,7 +100,7 @@ class _DetailViewState extends ConsumerState<_DetailView>
             const Tab(text: 'Dettaglio'),
             Tab(text: 'Operazioni (${order.operations.length})'),
             Tab(text: 'Materiali (${order.plannedMaterials.length})'),
-            Tab(text: 'Allegati (${order.attachmentsCount})'),
+            Tab(text: 'Allegati ($attCount)'),
             const Tab(text: 'Chiusura'),
           ],
         ),
@@ -169,87 +119,6 @@ class _DetailViewState extends ConsumerState<_DetailView>
     );
   }
 
-  Future<void> _onMenu(BuildContext context, String value) async {
-    final code = order.externalCode;
-    switch (value) {
-      case 'appointments':
-        context.push(AppRoutes.appointmentsPath(code));
-        break;
-      case 'storico':
-        context.push(AppRoutes.storicoAppuntamentiPath(code));
-        break;
-      case 'esito_app':
-        context.push(AppRoutes.esitoAppuntamentoPath(code));
-        break;
-      case 'sospensioni':
-        context.push(AppRoutes.sospensioniPath(code));
-        break;
-      case 'gen_ore':
-        context.push(AppRoutes.genOrePath(code));
-        break;
-      case 'add_comp':
-        context.push(AppRoutes.addComponentePath(code));
-        break;
-      case 'copia':
-        context.push(AppRoutes.copiaOrdinePath(code));
-        break;
-      case 'cambio_cid':
-        context.push(AppRoutes.cambioCidPath(code));
-        break;
-      case 'rqti':
-        context.push(AppRoutes.datiRqtiPath(code));
-        break;
-      case 'determina5':
-        context.push(AppRoutes.determina5Path(code));
-        break;
-      case 'meter':
-        context.push(AppRoutes.meterPath(code));
-        break;
-      case 'scanner':
-        context.push(AppRoutes.scanner);
-        break;
-      case 'map':
-        context.push(AppRoutes.map);
-        break;
-      case 'reassign':
-        await showReassignSheet(context, ref, code);
-        break;
-      case 'cancel':
-        await _confirmCancel(context);
-        break;
-    }
-  }
-
-  Future<void> _confirmCancel(BuildContext context) async {
-    final reasonCtrl = TextEditingController();
-    final ok = await showWfmConfirmDialog(
-      context: context,
-      title: 'Annulla OdL',
-      message:
-          'L\'OdL verrà annullato e rimosso dal tablet. Inserisci un motivo per la chiusura.',
-      confirmLabel: 'Annulla OdL',
-      cancelLabel: 'Indietro',
-      tone: WfmDialogTone.danger,
-      icon: Icons.cancel_outlined,
-      extraContent: TextField(
-        controller: reasonCtrl,
-        decoration: const InputDecoration(labelText: 'Motivo annullamento'),
-        maxLines: 2,
-      ),
-    );
-    if (ok == true && context.mounted) {
-      final res = await ref.read(workOrderActionsProvider).changeStatus(
-            order.externalCode,
-            WorkOrderStatus.annullato,
-            reason: reasonCtrl.text,
-          );
-      if (context.mounted) {
-        res.isSuccess
-            ? context.pop()
-            : showSapToast(context, 'Errore annullamento', isError: true);
-      }
-    }
-  }
 }
 
 // ─── SCHEDA DETTAGLIO ──────────────────────────────────────────────────────
@@ -426,7 +295,7 @@ class _DettaglioTab extends StatelessWidget {
               ? IconButton(
                   icon: const Icon(Icons.map_outlined,
                       color: AppColors.primary),
-                  onPressed: () => context.push(AppRoutes.map))
+                  onPressed: () => context.go(AppRoutes.map))
               : null,
         ),
         if (order.indirizzoOggetto != null) ...[
@@ -446,7 +315,7 @@ class _DettaglioTab extends StatelessWidget {
                 ? IconButton(
                     icon: const Icon(Icons.map_outlined,
                         color: AppColors.primary),
-                    onPressed: () => context.push(AppRoutes.map))
+                    onPressed: () => context.go(AppRoutes.map))
                 : null,
           ),
         ],
@@ -712,169 +581,90 @@ class _QuickActionChip extends StatelessWidget {
 //
 // Sezione spec : Esito Intervento, Problema risolto, Da riprogrammare,
 // Data Chiusura, Chiuso Da, Note Finali.
-class _ChiusuraTab extends StatefulWidget {
+// Scorciatoia verso la schermata Esito, unico punto di chiusura reale dell'OdL
+// (tempi, esito, causa/soluzione, ore/costi, firma → "Convalida e invia esito").
+class _ChiusuraTab extends StatelessWidget {
   final WorkOrder order;
   const _ChiusuraTab({required this.order});
 
   @override
-  State<_ChiusuraTab> createState() => _ChiusuraTabState();
-}
-
-class _ChiusuraTabState extends State<_ChiusuraTab> {
-  OdlEsitoIntervento? _esito;
-  bool _problemaRisolto = false;
-  bool _daRiprogrammare = false;
-  DateTime? _dataChiusura;
-  final _chiusoDaCtrl = TextEditingController();
-  final _noteCtrl = TextEditingController();
-
-  @override
-  void dispose() {
-    _chiusoDaCtrl.dispose();
-    _noteCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<void> _pickData() async {
-    final d = await showDatePicker(
-      context: context,
-      initialDate: _dataChiusura ?? DateTime.now(),
-      firstDate: DateTime(2020),
-      lastDate: DateTime(2035),
-    );
-    if (d != null) setState(() => _dataChiusura = d);
-  }
-
-  @override
   Widget build(BuildContext context) {
-    final isClosed = widget.order.isClosed;
-    return ListView(
-      padding: kPagePadding,
-      children: [
-        if (isClosed)
+    if (order.isClosed) {
+      return ListView(
+        padding: kPagePadding,
+        children: [
           Container(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
               color: AppColors.statusDoneBg,
-              borderRadius: BorderRadius.circular(8),
+              borderRadius: BorderRadius.circular(10),
             ),
             child: Row(children: [
-              const Icon(Icons.check_circle_outline,
-                  color: AppColors.accentGreen),
-              const SizedBox(width: 8),
+              const Icon(Icons.check_circle_outline, color: AppColors.accentGreen),
+              const SizedBox(width: 10),
               Expanded(
-                child: Text(
-                    'OdL chiuso (${widget.order.status.label}). Dati di chiusura disponibili in sola lettura.',
+                child: Text('OdL ${order.status.label.toLowerCase()}. Intervento concluso.',
                     style: AppTextStyles.bodyMedium),
               ),
             ]),
           ),
-        const SectionHeader(title: 'ESITO INTERVENTO'),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: OdlEsitoIntervento.values
-              .map((e) => ChoiceChip(
-                    label: Row(mainAxisSize: MainAxisSize.min, children: [
-                      Icon(e.icon,
-                          size: 16,
-                          color:
-                              _esito == e ? Colors.white : e.color),
-                      const SizedBox(width: 6),
-                      Text(e.label),
-                    ]),
-                    selected: _esito == e,
-                    selectedColor: e.color,
-                    onSelected: isClosed
-                        ? null
-                        : (_) => setState(() => _esito = e),
-                    labelStyle: TextStyle(
-                        color:
-                            _esito == e ? Colors.white : AppColors.textPrimary,
-                        fontWeight: FontWeight.w700),
-                  ))
-              .toList(),
-        ),
-        const SizedBox(height: 12),
-        const SectionHeader(title: 'DETTAGLI CHIUSURA'),
-        CheckboxListTile(
-          value: _problemaRisolto,
-          onChanged: isClosed
-              ? null
-              : (v) => setState(() => _problemaRisolto = v ?? false),
-          controlAffinity: ListTileControlAffinity.leading,
-          title: const Text('Problema risolto'),
-          contentPadding: EdgeInsets.zero,
-        ),
-        CheckboxListTile(
-          value: _daRiprogrammare,
-          onChanged: isClosed
-              ? null
-              : (v) => setState(() => _daRiprogrammare = v ?? false),
-          controlAffinity: ListTileControlAffinity.leading,
-          title: const Text('Da riprogrammare'),
-          contentPadding: EdgeInsets.zero,
-        ),
-        const SizedBox(height: 12),
-        Row(children: [
-          Expanded(
-            child: InkWell(
-              onTap: isClosed ? null : _pickData,
-              borderRadius: BorderRadius.circular(8),
-              child: InputDecorator(
-                decoration: const InputDecoration(
-                  labelText: 'Data Chiusura',
-                  prefixIcon: Icon(Icons.event_outlined),
+        ],
+      );
+    }
+    return ListView(
+      padding: kPagePadding,
+      children: [
+        const SectionHeader(title: 'CHIUSURA INTERVENTO'),
+        WfmCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                const Icon(Icons.flag_rounded, color: AppColors.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text('Concludi l\'intervento',
+                      style: AppTextStyles.headingSmall),
                 ),
-                child: Text(
-                  _dataChiusura == null
-                      ? (isClosed ? '—' : 'Seleziona…')
-                      : Fmt.date(_dataChiusura),
-                  style: AppTextStyles.bodyMedium,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: TextField(
-              controller: _chiusoDaCtrl,
-              enabled: !isClosed,
-              decoration: const InputDecoration(
-                labelText: 'Chiuso Da',
-                prefixIcon: Icon(Icons.engineering_outlined),
-              ),
-            ),
-          ),
-        ]),
-        const SizedBox(height: 12),
-        TextField(
-          controller: _noteCtrl,
-          maxLines: 4,
-          enabled: !isClosed,
-          decoration: const InputDecoration(
-            labelText: 'Note Finali',
-            alignLabelWithHint: true,
-            hintText: 'Annotazioni di chiusura intervento…',
-            border: OutlineInputBorder(),
+              ]),
+              const SizedBox(height: 8),
+              Text(
+                  'Per chiudere l\'OdL compila e invia l\'esito. Contiene tutte le '
+                  'informazioni di chiusura:',
+                  style: AppTextStyles.bodyMedium),
+              const SizedBox(height: 8),
+              _bullet('Tempi intervento (inizio / fine)'),
+              _bullet('Esito: Riuscito / Rinviato / Impossibile'),
+              _bullet('Causa e soluzione'),
+              _bullet('Ore lavorate e costi extra'),
+              _bullet('Commenti e firma del cliente'),
+            ],
           ),
         ),
-        const SizedBox(height: 18),
-        if (!isClosed)
-          ElevatedButton.icon(
-            onPressed: _esito == null
-                ? null
-                : () {
-                    showSapToast(context,
-                        'Chiusura salvata localmente — completa il ciclo tramite "Concludi"');
-                  },
-            icon: const Icon(Icons.save_outlined),
-            label: const Text('Salva chiusura'),
+        const SizedBox(height: 20),
+        SizedBox(
+          height: 56,
+          child: ElevatedButton.icon(
+            onPressed: () => context.push(AppRoutes.esitoPath(order.externalCode)),
+            icon: const Icon(Icons.flag_rounded),
+            label: const Text('Concludi e invia esito'),
           ),
+        ),
         const SizedBox(height: 80),
       ],
     );
   }
+
+  Widget _bullet(String text) => Padding(
+        padding: const EdgeInsets.only(top: 6),
+        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Padding(
+            padding: EdgeInsets.only(top: 7, right: 8),
+            child: Icon(Icons.circle, size: 6, color: AppColors.primary),
+          ),
+          Expanded(child: Text(text, style: AppTextStyles.bodyMedium)),
+        ]),
+      );
 }
 
 // ─── SCHEDA OPERAZIONI ─────────────────────────────────────────────────────
@@ -1417,19 +1207,42 @@ class _ComponentiTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final addButton = Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      child: SizedBox(
+        width: double.infinity,
+        child: ElevatedButton.icon(
+          onPressed: () =>
+              context.push(AppRoutes.addComponentePath(order.externalCode)),
+          icon: const Icon(Icons.add),
+          label: const Text('Aggiungi materiale'),
+        ),
+      ),
+    );
     if (order.plannedMaterials.isEmpty) {
-      return const EmptyState(
-          title: 'Nessun materiale',
-          subtitle: 'Aggiungi i materiali utilizzati durante l\'intervento.',
-          icon: Icons.inventory_2_outlined);
+      return Column(
+        children: [
+          const Expanded(
+            child: EmptyState(
+              title: 'Nessun materiale',
+              subtitle: 'Aggiungi i materiali utilizzati durante l\'intervento.',
+              icon: Icons.inventory_2_outlined,
+            ),
+          ),
+          addButton,
+        ],
+      );
     }
-    return ListView.separated(
-      padding: kPagePadding,
-      itemCount: order.plannedMaterials.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 10),
-      itemBuilder: (_, i) {
-        final m = order.plannedMaterials[i];
-        return WfmCard(
+    return Column(
+      children: [
+        Expanded(
+          child: ListView.separated(
+            padding: kPagePadding,
+            itemCount: order.plannedMaterials.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 10),
+            itemBuilder: (_, i) {
+              final m = order.plannedMaterials[i];
+              return WfmCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -1450,8 +1263,12 @@ class _ComponentiTab extends StatelessWidget {
               ]),
             ],
           ),
-        );
-      },
+              );
+            },
+          ),
+        ),
+        addButton,
+      ],
     );
   }
 

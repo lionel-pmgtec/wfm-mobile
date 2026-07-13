@@ -6,5 +6,5 @@ abstract interface class AttachmentRepository {
 
   Future<Result<Attachment>> addAttachment(Attachment attachment);
 
-  Future<Result<void>> deleteAttachment(String attachmentId);
+  Future<Result<void>> deleteAttachment(String workOrderCode, String attachmentId);
 }

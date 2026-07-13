@@ -22,7 +22,6 @@ class NotificationsScreen extends ConsumerWidget {
 
     return Scaffold(
       appBar: AppBar(
-        leading: const BackButton(),
         title: Text(unread > 0
             ? 'Notifiche ($unread non lette)'
             : 'Notifiche'),

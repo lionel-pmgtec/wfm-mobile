@@ -2,12 +2,15 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/app_constants.dart';
+import '../../../core/router/app_routes.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/utils/validators.dart';
 import '../../../core/widgets/widgets.dart';
+import '../work_orders/widgets/odl_actions_menu.dart';
 import '../../../domain/entities/entities.dart';
 import '../../providers/work_orders_provider.dart';
 
@@ -19,7 +22,7 @@ class MeterScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(workOrderDetailProvider(code));
     return Scaffold(
-      appBar: AppBar(title: const Text('Gestione contatore')),
+      appBar: AppBar(title: const Text('Gestione contatore'), actions: [OdlActionsMenu(code: code)]),
       body: async.when(
         loading: () => const WfmLoading(),
         error: (e, _) => WfmErrorState(message: e.toString()),
@@ -157,8 +160,13 @@ class _MeterBodyState extends State<_MeterBody>
           labelText: 'Matricola nuovo contatore',
           suffixIcon: IconButton(
             icon: const Icon(Icons.qr_code_scanner),
-            onPressed: () => setState(
-                () => _newMatricolaCtrl.text = 'MOCK-${DateTime.now().second}'),
+            tooltip: 'Scansiona matricola',
+            onPressed: () async {
+              final code = await context.push<String>(AppRoutes.scanner);
+              if (code != null && code.isNotEmpty) {
+                setState(() => _newMatricolaCtrl.text = code);
+              }
+            },
           ),
         ),
       ),

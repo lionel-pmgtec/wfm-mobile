@@ -13,6 +13,7 @@ import '../../../domain/repositories/work_order_repository.dart';
 import '../../providers/connectivity_provider.dart';
 import '../../providers/work_orders_provider.dart';
 import 'widgets/excel_import_sheet.dart';
+import 'widgets/odl_actions_menu.dart';
 
 class WorkOrdersScreen extends ConsumerStatefulWidget {
   const WorkOrdersScreen({super.key});
@@ -37,6 +38,31 @@ class _WorkOrdersScreenState extends ConsumerState<WorkOrdersScreen> {
         current.copyWith(query: q);
   }
 
+  /// Conferma + eliminazione di un OdL. Ritorna true se eliminato (l'item
+  /// scompare); false se annullato o in errore (l'item resta).
+  Future<bool> _confirmAndDeleteOdl(String code) async {
+    final ok = await showWfmConfirmDialog(
+      context: context,
+      title: 'Eliminare l\'OdL?',
+      message: 'L\'ordine di lavoro $code sarà eliminato definitivamente.',
+      confirmLabel: 'Elimina',
+      tone: WfmDialogTone.danger,
+    );
+    if (ok != true) return false;
+    final res = await ref.read(workOrderActionsProvider).delete(code);
+    if (!mounted) return true;
+    return res.when(
+      success: (_) {
+        showSapToast(context, 'OdL $code eliminato');
+        return true;
+      },
+      failure: (f) {
+        showSapToast(context, 'Errore: ${f.message}', isError: true);
+        return false;
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ordersAsync = ref.watch(workOrdersProvider);
@@ -47,7 +73,6 @@ class _WorkOrdersScreenState extends ConsumerState<WorkOrdersScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        leading: const BackButton(),
         title: _searching
             ? Theme(
                 data: Theme.of(context).copyWith(
@@ -121,7 +146,7 @@ class _WorkOrdersScreenState extends ConsumerState<WorkOrdersScreen> {
           IconButton(
             tooltip: 'Mappa OdL',
             icon: const Icon(Icons.map_outlined),
-            onPressed: () => context.push(AppRoutes.map),
+            onPressed: () => context.go(AppRoutes.map),
           ),
           IconButton(
             tooltip: 'Sincronizza',
@@ -180,12 +205,22 @@ class _WorkOrdersScreenState extends ConsumerState<WorkOrdersScreen> {
                     : ListView.builder(
                         padding: const EdgeInsets.only(top: 6, bottom: 90),
                         itemCount: orders.length,
-                        itemBuilder: (_, i) => _WorkOrderItem(
-                          order: orders[i],
-                          onTap: () => context.push(
-                              AppRoutes.workOrderDetailPath(
-                                  orders[i].externalCode)),
-                        ),
+                        itemBuilder: (_, i) {
+                          final o = orders[i];
+                          return Dismissible(
+                            key: ValueKey('odl_${o.externalCode}'),
+                            direction: DismissDirection.endToStart,
+                            background: const WfmSwipeDeleteBackground(),
+                            confirmDismiss: (_) =>
+                                _confirmAndDeleteOdl(o.externalCode),
+                            child: _WorkOrderItem(
+                              order: o,
+                              onTap: () => context.push(
+                                  AppRoutes.workOrderDetailPath(
+                                      o.externalCode)),
+                            ),
+                          );
+                        },
                       ),
               ),
             ),
@@ -490,9 +525,13 @@ class _WorkOrderItem extends StatelessWidget {
                 ),
                 const Spacer(),
                 WoStatusBadge(status: order.status, small: true),
+                OdlActionsMenu(
+                  code: order.externalCode,
+                  order: order,
+                  iconColor: AppColors.textSecondary,
+                ),
               ],
             ),
-            const SizedBox(height: 8),
             Text(order.woTypeDescription,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,

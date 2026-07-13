@@ -30,6 +30,54 @@ class _WoTypeOption {
   const _WoTypeOption(this.code, this.label, this.icon, this.color);
 }
 
+// ─── Campi dinamici per tipo OdL ─────────────────────────────────────────────
+
+class _DynField {
+  final String id;
+  final String label;
+  final bool number;
+  final int lines;
+  final List<String>? options;
+  const _DynField(this.id, this.label,
+      {this.number = false, this.lines = 1, this.options});
+}
+
+/// Campi specifici mostrati in funzione del tipo OdL selezionato.
+const Map<String, List<_DynField>> _dynFieldsByType = {
+  'ATTI': [
+    _DynField('matricola', 'Matricola contatore'),
+    _DynField('calibro', 'Calibro'),
+    _DynField('sigillo', 'Numero sigillo'),
+    _DynField('lettura', 'Lettura iniziale', number: true),
+    _DynField('marca', 'Marca contatore'),
+  ],
+  'SOST': [
+    _DynField('matricolaVecchio', 'Matricola contatore rimosso'),
+    _DynField('letturaVecchio', 'Lettura finale (rimosso)', number: true),
+    _DynField('matricola', 'Matricola nuovo contatore'),
+    _DynField('calibro', 'Calibro nuovo'),
+    _DynField('sigillo', 'Numero sigillo'),
+    _DynField('lettura', 'Lettura iniziale (nuovo)', number: true),
+  ],
+  'ZA02': [
+    _DynField('tipoPerdita', 'Tipo perdita',
+        options: ['Giunto', 'Tubazione', 'Raccordo', 'Contatore', 'Saracinesca']),
+    _DynField('pressione', 'Pressione (bar)', number: true),
+    _DynField('profondita', 'Profondità scavo (m)', number: true),
+  ],
+  'DISA': [
+    _DynField('lettura', 'Lettura finale', number: true),
+    _DynField('sigillo', 'Numero sigillo'),
+    _DynField('motivo', 'Motivo disattivazione',
+        options: ['Morosità', 'Richiesta cliente', 'Cessazione', 'Guasto']),
+  ],
+  'PA': [
+    _DynField('tipoAllaccio', 'Tipo allaccio',
+        options: ['Nuovo allaccio', 'Spostamento', 'Potenziamento']),
+    _DynField('lavori', 'Descrizione lavori richiesti', lines: 3),
+  ],
+};
+
 // ─── Screen principale ───────────────────────────────────────────────────────
 
 class CreateOrderScreen extends ConsumerStatefulWidget {
@@ -59,6 +107,13 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
   String _startTime = '08:00';
   bool _saving = false;
 
+  // Campi dinamici per tipo OdL: id → controller di testo / valore dropdown.
+  final Map<String, TextEditingController> _dynCtrls = {};
+  final Map<String, String> _dynSel = {};
+
+  TextEditingController _dynCtrl(String id) =>
+      _dynCtrls.putIfAbsent(id, () => TextEditingController());
+
   @override
   void dispose() {
     for (final c in [
@@ -66,6 +121,9 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
       _additionalCtrl, _sedeCtrl, _nomeCtrl, _cognomeCtrl,
       _telefonoCtrl, _codBpCtrl, _noteCtrl,
     ]) {
+      c.dispose();
+    }
+    for (final c in _dynCtrls.values) {
       c.dispose();
     }
     super.dispose();
@@ -113,6 +171,36 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
         plannedHours: 0.5,
       ),
     ];
+    // Campi dinamici (per tipo OdL) → Meter (contatore) + note strutturate.
+    final dynFields = _dynFieldsByType[_woType] ?? const <_DynField>[];
+    String dynVal(String id, {bool option = false}) => option
+        ? (_dynSel[id] ?? '')
+        : (_dynCtrls[id]?.text.trim() ?? '');
+    final dynLines = <String>[];
+    for (final f in dynFields) {
+      final v = dynVal(f.id, option: f.options != null);
+      if (v.isNotEmpty) dynLines.add('${f.label}: $v');
+    }
+    Meter? meter;
+    if (_woType == 'ATTI' || _woType == 'SOST' || _woType == 'DISA') {
+      final matricola = dynVal('matricola');
+      if (matricola.isNotEmpty) {
+        final sigillo = dynVal('sigillo');
+        meter = Meter(
+          matricola: matricola,
+          caliber: dynVal('calibro'),
+          brand: dynVal('marca'),
+          sealNumber: sigillo.isEmpty ? null : sigillo,
+          lastReading: num.tryParse(dynVal('lettura').replaceAll(',', '.')),
+        );
+      }
+    }
+    final baseNotes = _noteCtrl.text.trim();
+    final notes = [
+      if (dynLines.isNotEmpty) 'Dati specifici:\n${dynLines.join('\n')}',
+      if (baseNotes.isNotEmpty) baseNotes,
+    ].join('\n\n');
+
     final order = WorkOrder(
       externalCode: '',
       woType: _woType!,
@@ -139,7 +227,8 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
       telefonoCliente: _telefonoCtrl.text.trim(),
       operations: defaultOps,
       sedeTecnica: _sedeCtrl.text.trim(),
-      notes: _noteCtrl.text.trim(),
+      meter: meter,
+      notes: notes,
       accountingSector: 'POT - Servizio acqua potabile',
       cidAssegnato: cid,
       createdAt: now,
@@ -151,10 +240,10 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
     res.when(
       success: (wo) {
         showSapToast(context, 'OdL ${wo.externalCode} creato con successo');
-        // Vai direttamente al dettaglio dell'OdL appena creato (no ritorno
-        // alla lista). context.go sostituisce lo stack quindi il back porta
-        // alla schermata precedente al wizard.
-        context.go(AppRoutes.workOrderDetailPath(wo.externalCode));
+        // Sostituisce il wizard col dettaglio dell'OdL creato mantenendo lo
+        // stack sottostante: il tasto Indietro torna correttamente alla Home.
+        context.pushReplacement(
+            AppRoutes.workOrderDetailPath(wo.externalCode));
       },
       failure: (f) => showSapToast(context, f.message, isError: true),
     );
@@ -165,7 +254,6 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
     return Scaffold(
       backgroundColor: AppColors.backgroundPage,
       appBar: AppBar(
-        leading: const BackButton(),
         title: const Text('Nuovo Ordine di Lavoro'),
         actions: [
           if (_saving)
@@ -269,6 +357,25 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
               ),
             ),
             const SizedBox(height: 12),
+
+            // ── 1b. Dati specifici (dinamici per tipo OdL) ───────────────────
+            if (_woType != null &&
+                (_dynFieldsByType[_woType] ?? const []).isNotEmpty) ...[
+              _SectionCard(
+                title: 'Dati specifici',
+                icon: Icons.tune_rounded,
+                child: Column(
+                  children: [
+                    for (final f in _dynFieldsByType[_woType]!)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: _dynFieldWidget(f),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
 
             // ── 2. Appuntamento ──────────────────────────────────────────────
             _SectionCard(
@@ -415,29 +522,7 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
                 maxLines: 3,
               ),
             ),
-            const SizedBox(height: 12),
-
-            // ── Banner offline ───────────────────────────────────────────────
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.statusInProgressBg,
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(
-                    color: AppColors.accentOrange.withValues(alpha: 0.3)),
-              ),
-              child: const Row(children: [
-                Icon(Icons.info_outline, size: 18, color: AppColors.accentOrange),
-                SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    'L\'OdL sarà inviato a SAP (flusso I4) o accodato se offline.',
-                    style: TextStyle(fontSize: 12, color: AppColors.accentOrange),
-                  ),
-                ),
-              ]),
-            ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 15),
 
             // ── Bouton Crea ──────────────────────────────────────────────────
             ElevatedButton.icon(
@@ -463,6 +548,38 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _dynFieldWidget(_DynField f) {
+    if (f.options != null) {
+      return DropdownButtonFormField<String>(
+        initialValue: _dynSel[f.id],
+        isExpanded: true,
+        decoration: InputDecoration(
+          labelText: f.label,
+          filled: true,
+          fillColor: AppColors.backgroundPage,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: AppColors.border),
+          ),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        ),
+        items: f.options!
+            .map((o) => DropdownMenuItem(value: o, child: Text(o)))
+            .toList(),
+        onChanged: (v) => setState(() => _dynSel[f.id] = v ?? ''),
+      );
+    }
+    return _field(
+      controller: _dynCtrl(f.id),
+      label: f.label,
+      maxLines: f.lines,
+      keyboardType: f.number
+          ? const TextInputType.numberWithOptions(decimal: true)
+          : null,
     );
   }
 

@@ -92,43 +92,32 @@ class HomeScreen extends ConsumerWidget {
               data: (m) => _statsGrid(m),
             ),
             const SizedBox(height: kSpacingXl),
-            const Text('Moduli', style: AppTextStyles.headingMedium),
-            const SizedBox(height: kSpacingMd),
-            _moduleCard(context,
-                icon: Icons.notifications_active_outlined,
-                color: AppColors.statusNew,
-                title: 'Avvisi di Servizio',
-                subtitle: 'Pronto Intervento · Richiesta Preventivo',
-                onTap: () => context.push(AppRoutes.avvisi)),
-            const SizedBox(height: kSpacingMd),
-            _moduleCard(context,
-                icon: Icons.assignment_outlined,
-                color: AppColors.primary,
-                title: 'Ordini di Lavoro',
-                subtitle: 'ATTI / DISA / ZA01 / ZA02',
-                onTap: () => context.push(AppRoutes.workOrders)),
-            const SizedBox(height: kSpacingMd),
-            _moduleCard(context,
-                icon: Icons.map_outlined,
-                color: const Color(0xFF00897B),
-                title: 'Mappa interventi',
-                subtitle: 'Visualizza geolocalizzazione',
-                onTap: () => context.push(AppRoutes.map)),
-            const SizedBox(height: kSpacingXl),
             const Text('Accessi rapidi', style: AppTextStyles.headingMedium),
             const SizedBox(height: kSpacingMd),
-            Row(
+            GridView.count(
+              crossAxisCount: 3,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: kSpacingMd,
+              crossAxisSpacing: kSpacingMd,
+              childAspectRatio: 1.05,
               children: [
+                _quickAction(context,
+                    icon: Icons.add_task_rounded,
+                    label: 'Crea OdL',
+                    onTap: () => context.push(AppRoutes.createOrder)),
                 _quickAction(context,
                     icon: Icons.qr_code_scanner_rounded,
                     label: 'Scanner',
                     onTap: () => context.push(AppRoutes.scanner)),
-                const SizedBox(width: kSpacingMd),
+                _quickAction(context,
+                    icon: Icons.widgets_outlined,
+                    label: 'Standalone',
+                    onTap: () => context.push(AppRoutes.standalone)),
                 _quickAction(context,
                     icon: Icons.sync_rounded,
                     label: 'Sincronizza',
                     onTap: () => context.push(AppRoutes.syncQueue)),
-                const SizedBox(width: kSpacingMd),
                 _quickAction(context,
                     icon: Icons.settings_outlined,
                     label: 'Impostazioni',
@@ -168,7 +157,7 @@ class HomeScreen extends ConsumerWidget {
                 height: 38,
                 decoration:
                     BoxDecoration(color: style.background, shape: BoxShape.circle),
-                child: Icon(e.$2, size: 20, color: style.color),
+                child: Icon(e.$2, size: 30, color: style.color),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -193,55 +182,22 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
-  Widget _moduleCard(BuildContext context,
-      {required IconData icon,
-      required Color color,
-      required String title,
-      required String subtitle,
-      required VoidCallback onTap}) {
-    return WfmCard(
-      onTap: onTap,
-      child: Row(
-        children: [
-          Container(
-            width: 48,
-            height: 48,
-            decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(12)),
-            child: Icon(icon, color: color),
-          ),
-          const SizedBox(width: kSpacingLg),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: AppTextStyles.headingSmall),
-                const SizedBox(height: 2),
-                Text(subtitle, style: AppTextStyles.bodyMedium),
-              ],
-            ),
-          ),
-          const Icon(Icons.chevron_right_rounded, color: AppColors.textHint),
-        ],
-      ),
-    );
-  }
-
   Widget _quickAction(BuildContext context,
       {required IconData icon, required String label, required VoidCallback onTap}) {
-    return Expanded(
-      child: WfmCard(
-        onTap: onTap,
-        padding: const EdgeInsets.symmetric(vertical: kSpacingLg),
-        child: Column(
-          children: [
-            Icon(icon, color: AppColors.primary, size: 24),
-            const SizedBox(height: 8),
-            Text(label,
-                style: AppTextStyles.labelLarge, textAlign: TextAlign.center),
-          ],
-        ),
+    return WfmCard(
+      onTap: onTap,
+      padding: const EdgeInsets.symmetric(vertical: kSpacingMd, horizontal: 8),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(icon, color: AppColors.primary, size: 26),
+          const SizedBox(height: 8),
+          Text(label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppTextStyles.labelLarge,
+              textAlign: TextAlign.center),
+        ],
       ),
     );
   }

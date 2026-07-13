@@ -1,13 +1,21 @@
 // Verifica del supporto al tipo OdL DISA (Disattivazione fornitura).
+// Test a livello di entita: nessun dato mock, gli OdL sono costruiti inline.
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:wfm_mobile/data/mock/mock_data.dart';
 import 'package:wfm_mobile/domain/entities/entities.dart';
 
 void main() {
-  test('esiste un OdL DISA nei dati mock con contatore e lettura', () {
-    final disa =
-        MockData.workOrders().firstWhere((o) => o.woType == 'DISA');
+  test('un OdL DISA espone disattivazione, contatore e lettura', () {
+    const disa = WorkOrder(
+      externalCode: '50557262',
+      woType: 'DISA',
+      woTypeDescription: 'Misuratori - Chiusura (sigillo)',
+      meter: Meter(
+        matricola: '20114578',
+        brand: 'SENSUS',
+        lastReading: 125.0,
+      ),
+    );
     expect(disa.hasDisattivazione, isTrue);
     expect(disa.meter, isNotNull);
     expect(disa.meter!.lastReading, isNotNull);
@@ -16,10 +24,6 @@ void main() {
   test('hasDisattivazione è falso per gli altri tipi', () {
     const atti = WorkOrder(externalCode: '1', woType: 'ATTI');
     expect(atti.hasDisattivazione, isFalse);
-  });
-
-  test('DISA è tra i codici TAM disponibili', () {
-    expect(MockData.tamCodes, contains('DISA'));
   });
 
   test('Appointment.copyWith aggiorna l\'esito', () {

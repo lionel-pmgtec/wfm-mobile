@@ -101,6 +101,14 @@ class FcmService {
   }
 
   void _onForegroundMessage(RemoteMessage message) {
+    // Traccia inequivocabile che il messaggio arriva DA FIREBASE (FCM): il
+    // polling locale non passa mai da qui. messageId è assegnato dai server FCM.
+    if (kDebugMode) {
+      // ignore: avoid_print
+      print('[fcm] messaggio DA FIREBASE ricevuto '
+          '(messageId=${message.messageId}, source=${message.data['source']}, '
+          'from=${message.from})');
+    }
     final notif = _toAppNotification(message);
     if (notif == null) return;
     PushNotificationService.instance.show(notif);

@@ -12,6 +12,7 @@ import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/widgets/widgets.dart';
+import '../widgets/odl_actions_menu.dart';
 import '../../../../domain/entities/entities.dart';
 import '../../../providers/work_orders_provider.dart';
 
@@ -42,7 +43,7 @@ class _GenOreScreenState extends ConsumerState<GenOreScreen> {
   Widget build(BuildContext context) {
     final async = ref.watch(workOrderDetailProvider(widget.code));
     return Scaffold(
-      appBar: AppBar(title: const Text('Genera ore')),
+      appBar: AppBar(title: const Text('Genera ore'), actions: [OdlActionsMenu(code: widget.code)]),
       body: async.when(
         loading: () => const WfmLoading(),
         error: (e, _) => WfmErrorState(message: e.toString()),
@@ -196,7 +197,8 @@ class _GenOreScreenState extends ConsumerState<GenOreScreen> {
       return;
     }
     setState(() => _saving = true);
-    // Accoda l'operazione (mock); in produzione passerebbe via SyncRepository.
+    // TODO(backend): inviare la conferma ore al Cruscotto (P69/TimeConfirmation)
+    // via un endpoint dedicato / SyncRepository quando disponibile.
     await Future<void>.delayed(const Duration(milliseconds: 350));
     if (!mounted) return;
     setState(() => _saving = false);

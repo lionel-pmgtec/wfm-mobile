@@ -72,7 +72,6 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     return Scaffold(
       backgroundColor: AppColors.backgroundPage,
       appBar: AppBar(
-        leading: const BackButton(),
         title: const Text('Mappa OdL'),
         actions: [
           IconButton(

@@ -18,13 +18,13 @@ class AttachmentActions {
   }
 
   Future<void> remove(String workOrderCode, String id) async {
-    await ref.read(attachmentRepositoryProvider).deleteAttachment(id);
+    await ref.read(attachmentRepositoryProvider).deleteAttachment(workOrderCode, id);
     ref.invalidate(attachmentsProvider(workOrderCode));
   }
 
   /// Sostituisce un allegato esistente con uno nuovo (stesso workOrderCode).
   Future<void> replace(String workOrderCode, String oldId, Attachment newAttachment) async {
-    await ref.read(attachmentRepositoryProvider).deleteAttachment(oldId);
+    await ref.read(attachmentRepositoryProvider).deleteAttachment(workOrderCode, oldId);
     await ref.read(attachmentRepositoryProvider).addAttachment(newAttachment);
     ref.invalidate(attachmentsProvider(workOrderCode));
   }

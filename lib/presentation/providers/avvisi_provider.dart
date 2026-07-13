@@ -5,6 +5,12 @@ import 'core_providers.dart';
 
 final avvisiQueryProvider = StateProvider<String>((ref) => '');
 
+/// Modalità "Elabora" (edit inline) per un singolo avviso (numero).
+/// Attivata/disattivata dalla matita nell'AppBar del dettaglio Avviso.
+/// autoDispose: si azzera automaticamente quando si lascia il dettaglio.
+final avvisoEditModeProvider =
+    StateProvider.autoDispose.family<bool, String>((ref, _) => false);
+
 final avvisiProvider = FutureProvider<List<NotificationAvviso>>((ref) async {
   final query = ref.watch(avvisiQueryProvider);
   final repo = ref.watch(notificationRepositoryProvider);
@@ -31,6 +37,17 @@ final generateWorkOrderProvider =
   return (numero) async {
     final repo = ref.read(notificationRepositoryProvider);
     final res = await repo.generateWorkOrder(numero);
+    if (res.isSuccess) ref.invalidate(avvisiProvider);
+    return res;
+  };
+});
+
+/// Azione: eliminazione di un avviso.
+final deleteAvvisoProvider =
+    Provider<Future<Result<void>> Function(String)>((ref) {
+  return (numero) async {
+    final repo = ref.read(notificationRepositoryProvider);
+    final res = await repo.deleteAvviso(numero);
     if (res.isSuccess) ref.invalidate(avvisiProvider);
     return res;
   };

@@ -1,9 +1,7 @@
 // Factory del client HTTP (Dio) verso il MIDDLEWARE REST/JSON.
 //
-// NB: in modalità mock (AppConfig.useMockData == true) questo client NON viene
-// usato: i repository restituiscono dati locali. È pronto per il backend:
-// quando il middleware sarà disponibile basterà impostare useMockData=false e
-// fornire una RemoteDataSource che usa questa istanza Dio.
+// È l'unica sorgente dati dell'app: tutti i repository passano da qui verso il
+// Cruscotto (backend). Nessuna modalità mock.
 
 import 'package:dio/dio.dart';
 import '../config/app_config.dart';

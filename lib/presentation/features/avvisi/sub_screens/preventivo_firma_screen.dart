@@ -26,7 +26,11 @@ import '../../../providers/avviso_extension_provider.dart';
 
 class PreventivoFirmaScreen extends ConsumerStatefulWidget {
   final String numeroAvviso;
-  const PreventivoFirmaScreen({super.key, required this.numeroAvviso});
+
+  /// 'cliente' oppure 'operatore': determina quale firma viene salvata.
+  final String role;
+  const PreventivoFirmaScreen(
+      {super.key, required this.numeroAvviso, this.role = 'cliente'});
 
   @override
   ConsumerState<PreventivoFirmaScreen> createState() =>
@@ -35,24 +39,18 @@ class PreventivoFirmaScreen extends ConsumerStatefulWidget {
 
 class _PreventivoFirmaScreenState
     extends ConsumerState<PreventivoFirmaScreen> {
-  final _nomeCtrl = TextEditingController();
+  bool get _isOperatore => widget.role == 'operatore';
+
   final List<List<Offset>> _strokes = [];
   final GlobalKey _canvasKey = GlobalKey();
   bool _saving = false;
 
   bool get _hasSignature => _strokes.any((s) => s.length > 1);
-  bool get _canConfirm =>
-      _nomeCtrl.text.trim().isNotEmpty && _hasSignature && !_saving;
+  bool get _canConfirm => _hasSignature && !_saving;
 
   void _startStroke(Offset p) => setState(() => _strokes.add([p]));
   void _appendPoint(Offset p) => setState(() => _strokes.last.add(p));
   void _clear() => setState(() => _strokes.clear());
-
-  @override
-  void dispose() {
-    _nomeCtrl.dispose();
-    super.dispose();
-  }
 
   Future<Uint8List?> _exportSignaturePng() async {
     final boundary = _canvasKey.currentContext?.findRenderObject()
@@ -75,17 +73,21 @@ class _PreventivoFirmaScreenState
     }
     final firma = FirmaCliente(
       id: 'FIRMA-${DateTime.now().millisecondsSinceEpoch}',
-      nomeFirmatario: _nomeCtrl.text.trim(),
+      nomeFirmatario: _isOperatore ? 'Operatore' : 'Cliente',
       firmataIl: DateTime.now(),
       pngBase64: base64Encode(png),
     );
 
     final ext = ref.read(avvisoExtensionProvider(widget.numeroAvviso));
     final prev = ext.preventivo ?? Preventivo.bozza(widget.numeroAvviso);
-    final updated = prev.copyWith(
-      firma: firma,
-      stato: PreventivoStato.firmato,
-    );
+    final updated = _isOperatore
+        ? prev.copyWith(firmaOperatore: firma)
+        : prev.copyWith(
+            firma: firma,
+            stato: prev.stato == PreventivoStato.bozza
+                ? PreventivoStato.firmato
+                : prev.stato,
+          );
     await ref
         .read(avvisoExtensionProvider(widget.numeroAvviso).notifier)
         .setPreventivo(updated);
@@ -98,8 +100,7 @@ class _PreventivoFirmaScreenState
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leading: const BackButton(),
-        title: const Text('Firma cliente'),
+        title: Text(_isOperatore ? 'Firma operatore' : 'Firma cliente'),
         actions: [
           IconButton(
             tooltip: 'Cancella',
@@ -110,33 +111,19 @@ class _PreventivoFirmaScreenState
       ),
       body: Column(
         children: [
-          Padding(
+          const Padding(
             padding: kPagePadding,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                    'Inserisci il nome del firmatario e fai firmare il cliente nell\'area sottostante.',
-                    style: AppTextStyles.bodyMedium),
-                const SizedBox(height: 12),
-                TextField(
-                  controller: _nomeCtrl,
-                  textCapitalization: TextCapitalization.words,
-                  decoration: const InputDecoration(
-                    labelText: 'Nome firmatario *',
-                    prefixIcon: Icon(Icons.person_outline),
-                  ),
-                  onChanged: (_) => setState(() {}),
-                ),
-              ],
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text(
+                  'Fai firmare il cliente nell\'area sottostante.',
+                  style: AppTextStyles.bodyMedium),
             ),
           ),
           Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: RepaintBoundary(
-                key: _canvasKey,
-                child: Container(
+              child: Container(
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(12),
@@ -147,13 +134,17 @@ class _PreventivoFirmaScreenState
                     child: Stack(
                       children: [
                         Positioned.fill(
-                          child: GestureDetector(
-                            onPanStart: (d) => _startStroke(d.localPosition),
-                            onPanUpdate: (d) =>
-                                _appendPoint(d.localPosition),
-                            child: CustomPaint(
-                              painter: _SignaturePainter(_strokes),
-                              child: const SizedBox.expand(),
+                          // RepaintBoundary solo sul tracciato → PNG senza cornice.
+                          child: RepaintBoundary(
+                            key: _canvasKey,
+                            child: GestureDetector(
+                              onPanStart: (d) => _startStroke(d.localPosition),
+                              onPanUpdate: (d) =>
+                                  _appendPoint(d.localPosition),
+                              child: CustomPaint(
+                                painter: _SignaturePainter(_strokes),
+                                child: const SizedBox.expand(),
+                              ),
                             ),
                           ),
                         ),
@@ -174,7 +165,6 @@ class _PreventivoFirmaScreenState
                       ],
                     ),
                   ),
-                ),
               ),
             ),
           ),

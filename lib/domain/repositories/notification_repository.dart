@@ -12,4 +12,7 @@ abstract interface class NotificationRepository {
 
   /// Generazione di un OdL a partire da un avviso (EF-M9.3).
   Future<Result<WorkOrder>> generateWorkOrder(String numeroAvviso);
+
+  /// Eliminazione di un avviso.
+  Future<Result<void>> deleteAvviso(String numeroAvviso);
 }

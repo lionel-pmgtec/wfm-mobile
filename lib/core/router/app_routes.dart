@@ -19,17 +19,17 @@ class AppRoutes {
   static const String esitoAppuntamento =
       '/work-orders/:id/esito-appuntamento';
   static const String sospensioni = '/work-orders/:id/sospensioni';
-  static const String datiRqti = '/work-orders/:id/rqti';
-  static const String determina5 = '/work-orders/:id/determina5';
 
   static const String avvisi = '/avvisi';
   static const String avvisoDetail = '/avvisi/:id';
   // Sub-screens Avvisi
-  static const String elaboraAvviso = '/avvisi/:id/elabora';
   static const String generaOrdineDaAvviso = '/avvisi/:id/genera-ordine';
-  static const String preventivoAvviso = '/avvisi/:id/preventivo';
-  static const String preventivoFirma = '/avvisi/:id/preventivo/firma';
-  static const String preventivoPdf = '/avvisi/:id/preventivo/pdf';
+
+  // Preventivo — chiave generica: numero Avviso OPPURE codice OdL.
+  // Rende il flusso preventivo raggiungibile sia dall'Avviso sia dall'OdL.
+  static const String preventivo = '/preventivo/:key';
+  static const String preventivoFirma = '/preventivo/:key/firma';
+  static const String preventivoPdf = '/preventivo/:key/pdf';
 
   static const String createOrder = '/create-order';
   static const String settings = '/settings';
@@ -63,17 +63,13 @@ class AppRoutes {
   static String esitoAppuntamentoPath(String id) =>
       '/work-orders/$id/esito-appuntamento';
   static String sospensioniPath(String id) => '/work-orders/$id/sospensioni';
-  static String datiRqtiPath(String id) => '/work-orders/$id/rqti';
-  static String determina5Path(String id) => '/work-orders/$id/determina5';
 
   static String avvisoDetailPath(String id) => '/avvisi/$id';
-  static String elaboraAvvisoPath(String id) => '/avvisi/$id/elabora';
   static String generaOrdineDaAvvisoPath(String id) =>
       '/avvisi/$id/genera-ordine';
-  static String preventivoAvvisoPath(String id) =>
-      '/avvisi/$id/preventivo';
-  static String preventivoFirmaPath(String id) =>
-      '/avvisi/$id/preventivo/firma';
-  static String preventivoPdfPath(String id) =>
-      '/avvisi/$id/preventivo/pdf';
+
+  /// [key] = numero Avviso o codice OdL a cui è collegato il preventivo.
+  static String preventivoPath(String key) => '/preventivo/$key';
+  static String preventivoFirmaPath(String key) => '/preventivo/$key/firma';
+  static String preventivoPdfPath(String key) => '/preventivo/$key/pdf';
 }

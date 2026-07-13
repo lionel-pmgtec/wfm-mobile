@@ -10,9 +10,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
-import '../../../core/router/app_routes.dart';
 import '../../../core/widgets/widgets.dart';
 import '../../../domain/entities/entities.dart';
 import '../../providers/avvisi_provider.dart';
@@ -51,14 +49,12 @@ class _AvvisoDetailScreenState extends ConsumerState<AvvisoDetailScreen>
     return async.when(
       loading: () => Scaffold(
         appBar: AppBar(
-          leading: const BackButton(),
           title: Text('Avviso ${widget.numero}'),
         ),
         body: const WfmLoading(),
       ),
       error: (e, _) => Scaffold(
         appBar: AppBar(
-          leading: const BackButton(),
           title: Text('Avviso ${widget.numero}'),
         ),
         body: WfmErrorState(message: e.toString()),
@@ -68,9 +64,9 @@ class _AvvisoDetailScreenState extends ConsumerState<AvvisoDetailScreen>
   }
 
   Widget _buildScaffold(NotificationAvviso a) {
+    final editing = ref.watch(avvisoEditModeProvider(widget.numero));
     return Scaffold(
       appBar: AppBar(
-        leading: const BackButton(),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
@@ -86,12 +82,28 @@ class _AvvisoDetailScreenState extends ConsumerState<AvvisoDetailScreen>
           ],
         ),
         actions: [
-          IconButton(
-            tooltip: 'Elabora',
-            icon: const Icon(Icons.edit_outlined),
-            onPressed: () =>
-                context.push(AppRoutes.elaboraAvvisoPath(widget.numero)),
-          ),
+          if (editing)
+            IconButton(
+              tooltip: 'Fine',
+              icon: const Icon(Icons.check),
+              onPressed: () {
+                ref
+                    .read(avvisoEditModeProvider(widget.numero).notifier)
+                    .state = false;
+                showSapToast(context, 'Elaborazione salvata');
+              },
+            )
+          else
+            IconButton(
+              tooltip: 'Elabora',
+              icon: const Icon(Icons.edit_outlined),
+              onPressed: () {
+                ref
+                    .read(avvisoEditModeProvider(widget.numero).notifier)
+                    .state = true;
+                _tab.animateTo(0);
+              },
+            ),
         ],
         bottom: TabBar(
           controller: _tab,

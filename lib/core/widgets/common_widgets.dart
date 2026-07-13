@@ -415,3 +415,24 @@ void showSapToast(BuildContext context, String message,
     ),
   );
 }
+
+// ─── SWIPE-TO-DELETE BACKGROUND ────────────────────────────────────────────────
+
+/// Sfondo rosso con icona cestino per i [Dismissible] "scorri per eliminare".
+class WfmSwipeDeleteBackground extends StatelessWidget {
+  final AlignmentGeometry alignment;
+  const WfmSwipeDeleteBackground({
+    super.key,
+    this.alignment = Alignment.centerRight,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: AppColors.accentRed,
+      alignment: alignment,
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: const Icon(Icons.delete_outline, color: Colors.white, size: 28),
+    );
+  }
+}

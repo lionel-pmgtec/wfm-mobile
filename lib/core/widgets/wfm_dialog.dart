@@ -116,6 +116,13 @@ class _WfmDialog extends StatelessWidget {
     this.extraContent,
   });
 
+  /// Etichetta di pulsante su una sola riga: si riduce invece di andare a capo
+  /// (evita rotture del testo come "Ann/ulla" su pulsanti stretti).
+  Widget _btnLabel(String text) => FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Text(text, maxLines: 1, softWrap: false),
+      );
+
   @override
   Widget build(BuildContext context) {
     return Dialog(
@@ -165,8 +172,9 @@ class _WfmDialog extends StatelessWidget {
                   style: ElevatedButton.styleFrom(
                     backgroundColor: accent,
                     foregroundColor: Colors.white,
+                    minimumSize: const Size.fromHeight(52),
                   ),
-                  child: Text(confirmLabel),
+                  child: _btnLabel(confirmLabel),
                 )
               else
                 Row(
@@ -179,12 +187,11 @@ class _WfmDialog extends StatelessWidget {
                           side: const BorderSide(color: AppColors.border, width: 1.4),
                           foregroundColor: AppColors.textSecondary,
                         ),
-                        child: Text(cancelLabel!),
+                        child: _btnLabel(cancelLabel!),
                       ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
-                      flex: 5,
                       child: ElevatedButton(
                         onPressed: () => Navigator.of(context).pop(true),
                         style: ElevatedButton.styleFrom(
@@ -193,7 +200,7 @@ class _WfmDialog extends StatelessWidget {
                           minimumSize: const Size.fromHeight(52),
                           elevation: destructive ? 0 : 1,
                         ),
-                        child: Text(confirmLabel),
+                        child: _btnLabel(confirmLabel),
                       ),
                     ),
                   ],

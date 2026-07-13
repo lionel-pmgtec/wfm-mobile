@@ -44,15 +44,17 @@ class EsitoRepositoryImpl implements EsitoRepository {
       final id = await remote.submitEsito(esito);
       await local.saveEsitoDraft(esito.copyWith(localStatus: LocalSyncStatus.synced));
       return Success(id);
-    } catch (e) {
-      // Errore di rete -> accoda comunque (offline-first).
+    } catch (_) {
+      // Errore di rete -> accoda comunque (offline-first). Nessun messaggio
+      // grezzo: l'operazione è semplicemente "in attesa" finché torna la rete.
       await sync.enqueue(SyncOperation(
         id: 'esito-${esito.workOrderCode}-${DateTime.now().millisecondsSinceEpoch}',
         type: SyncOperationType.submitEsito,
         entityId: esito.workOrderCode,
         createdAt: DateTime.now(),
-        lastError: e.toString(),
       ));
+      await local.saveEsitoDraft(
+          esito.copyWith(localStatus: LocalSyncStatus.pendingUpload));
       return const Success('PENDING');
     }
   }

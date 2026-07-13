@@ -6,9 +6,12 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../core/router/app_routes.dart';
+import '../../../core/services/excel_export_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/widgets.dart';
+import '../../../domain/entities/entities.dart';
+import '../../../domain/repositories/work_order_repository.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/connectivity_provider.dart';
 import '../../providers/core_providers.dart';
@@ -24,7 +27,6 @@ class SettingsScreen extends ConsumerWidget {
     final user = ref.watch(authControllerProvider.notifier).user;
     final online = ref.watch(connectivityStatusProvider);
     final pending = ref.watch(pendingSyncCountProvider).valueOrNull ?? 0;
-    final config = ref.watch(appConfigProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Impostazioni')),
@@ -91,6 +93,24 @@ class SettingsScreen extends ConsumerWidget {
                   onChanged: (v) => ctrl.setPhotoQuality(v ?? 'media'),
                 ),
               ),
+              const Divider(height: 1),
+              _ScaleTile(
+                icon: Icons.format_size,
+                title: 'Dimensione testo',
+                scale: settings.textScale,
+                onDecrease: ctrl.decreaseTextScale,
+                onIncrease: ctrl.increaseTextScale,
+                onReset: ctrl.resetTextScale,
+              ),
+              const Divider(height: 1),
+              _ScaleTile(
+                icon: Icons.image_aspect_ratio_outlined,
+                title: 'Dimensione icone',
+                scale: settings.iconScale,
+                onDecrease: ctrl.decreaseIconScale,
+                onIncrease: ctrl.increaseIconScale,
+                onReset: ctrl.resetIconScale,
+              ),
             ]),
           ),
           const SectionHeader(title: 'STRUTTURA ORGANIZZATIVA'),
@@ -98,8 +118,21 @@ class SettingsScreen extends ConsumerWidget {
             child: Column(children: [
               _info('Centro di Lavoro', user?.workCenter.isNotEmpty == true ? user!.workCenter : '—'),
               _info('Squadra', user?.squadra ?? '—'),
-              _info('Tecnico VV', user?.tecnicoVV ?? '—'),
+              _info('Tecnico', user?.tecnicoVV ?? '—'),
             ]),
+          ),
+          const SectionHeader(title: 'DATI (TEST)'),
+          WfmCard(
+            child: ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.table_view_outlined,
+                  color: AppColors.primary),
+              title: const Text('Esporta database (Excel)'),
+              subtitle: const Text(
+                  'Salva OdL, avvisi e preventivi in un file .xlsx per verifica'),
+              trailing: const Icon(Icons.download_rounded),
+              onTap: () => _exportExcel(context, ref),
+            ),
           ),
           const SectionHeader(title: 'SESSIONE'),
           WfmCard(
@@ -107,9 +140,6 @@ class SettingsScreen extends ConsumerWidget {
               _info('Utente', user?.fullName ?? '—'),
               _info('CID', user?.cid ?? '—'),
               _info('Ruolo', user?.role.label ?? '—'),
-              _info('Ambiente', config.flavor.name.toUpperCase()),
-              _info('Sorgente dati', config.useMockData ? 'Mock' : 'Middleware'),
-              _info('Versione', 'WFM Mobile v1.0.0'),
               _info('Ultima sincr.', Fmt.dateTime(DateTime.now())),
             ]),
           ),
@@ -135,6 +165,33 @@ class SettingsScreen extends ConsumerWidget {
     );
   }
 
+  Future<void> _exportExcel(BuildContext context, WidgetRef ref) async {
+    showSapToast(context, 'Esportazione in corso…');
+    try {
+      final woRes = await ref
+          .read(workOrderRepositoryProvider)
+          .getWorkOrders(filter: const WorkOrderFilter());
+      final avRes =
+          await ref.read(notificationRepositoryProvider).getAvvisi();
+      final extRepo = ref.read(avvisoExtensionRepositoryProvider);
+      final keys = await extRepo.savedAvvisi();
+      final exts = <AvvisoExtension>[];
+      for (final k in keys) {
+        exts.add(await extRepo.get(k));
+      }
+      final dest = await ExcelExportService.instance.exportDatabase(
+        ordini: woRes.valueOrNull ?? const [],
+        avvisi: avRes.valueOrNull ?? const [],
+        extensions: exts,
+      );
+      if (!context.mounted) return;
+      showSapToast(context, 'Database esportato: $dest');
+    } catch (e) {
+      if (!context.mounted) return;
+      showSapToast(context, 'Errore export: $e', isError: true);
+    }
+  }
+
   Widget _info(String label, String value) => Padding(
         padding: const EdgeInsets.symmetric(vertical: 6),
         child: Row(children: [
@@ -145,4 +202,95 @@ class SettingsScreen extends ConsumerWidget {
                   .copyWith(fontWeight: FontWeight.w600)),
         ]),
       );
+}
+
+/// Controllo generico per aumentare/diminuire un fattore di scala (testo/icone).
+class _ScaleTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final double scale;
+  final VoidCallback onDecrease;
+  final VoidCallback onIncrease;
+  final VoidCallback onReset;
+  const _ScaleTile({
+    required this.icon,
+    required this.title,
+    required this.scale,
+    required this.onDecrease,
+    required this.onIncrease,
+    required this.onReset,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final atMin = scale <= AppSettings.minScale + 0.001;
+    final atMax = scale >= AppSettings.maxScale - 0.001;
+    final isDefault = (scale - 1.0).abs() < 0.001;
+    final percent = '${(scale * 100).round()}%';
+
+    // Layout su due righe: l'etichetta occupa tutta la larghezza (niente più
+    // testo spezzato lettera per lettera), i controlli stanno sotto.
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Icon(icon),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(title, style: AppTextStyles.bodyLarge),
+                    Text(
+                      isDefault
+                          ? 'Predefinita ($percent)'
+                          : 'Personalizzata ($percent)',
+                      style: AppTextStyles.bodyMedium
+                          .copyWith(color: AppColors.textSecondary),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              IconButton(
+                tooltip: 'Diminuisci',
+                icon: const Icon(Icons.remove_circle_outline),
+                onPressed: atMin ? null : onDecrease,
+              ),
+              Expanded(
+                child: Text(
+                  percent,
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  softWrap: false,
+                  overflow: TextOverflow.visible,
+                  style: AppTextStyles.bodyLarge
+                      .copyWith(fontWeight: FontWeight.w700),
+                ),
+              ),
+              IconButton(
+                tooltip: 'Aumenta',
+                icon: const Icon(Icons.add_circle_outline),
+                onPressed: atMax ? null : onIncrease,
+              ),
+              IconButton(
+                tooltip: 'Ripristina',
+                icon: const Icon(Icons.restart_alt),
+                onPressed: isDefault ? null : onReset,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
 }

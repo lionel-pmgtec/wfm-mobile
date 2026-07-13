@@ -7,6 +7,7 @@ import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/widgets/widgets.dart';
+import '../widgets/odl_actions_menu.dart';
 import '../../../../domain/entities/entities.dart';
 
 /// Provider locale (in-memory) per la lista sospensioni di un OdL/Avviso.
@@ -38,7 +39,7 @@ class SospensioniScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final list = ref.watch(sospensioniProvider(code));
     return Scaffold(
-      appBar: AppBar(title: Text('Sospensioni · $code')),
+      appBar: AppBar(title: Text('Sospensioni · $code'), actions: [OdlActionsMenu(code: code)]),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _openEditor(context, ref),
         icon: const Icon(Icons.add),

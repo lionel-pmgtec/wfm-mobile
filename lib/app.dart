@@ -5,11 +5,12 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/router/app_router.dart';
 import 'core/services/geolocation_service.dart';
+import 'core/services/new_items_poll_service.dart';
 import 'core/services/push_notification_service.dart';
 import 'core/theme/app_theme.dart';
-import 'presentation/providers/core_providers.dart';
 import 'presentation/providers/notifications_provider.dart';
 import 'presentation/providers/settings_provider.dart';
+import 'presentation/providers/sync_provider.dart';
 
 class WfmApp extends ConsumerStatefulWidget {
   const WfmApp({super.key});
@@ -20,7 +21,6 @@ class WfmApp extends ConsumerStatefulWidget {
 
 class _WfmAppState extends ConsumerState<WfmApp> {
   StreamSubscription? _tapSub;
-  bool _simulatorStarted = false;
 
   @override
   void initState() {
@@ -28,6 +28,14 @@ class _WfmAppState extends ConsumerState<WfmApp> {
 
     // Inizializza il notifier per registrare onReceived sul servizio push.
     ref.read(notificationsProvider.notifier);
+
+    // Attiva il polling dei nuovi OdL/Avvisi (parte al login, stop al logout):
+    // rileva gli elementi creati lato Cruscotto e mostra una notifica locale.
+    ref.read(newItemsPollServiceProvider);
+
+    // Attiva il processore della coda offline: al ritorno della connettività
+    // reinvia automaticamente le operazioni accodate mentre si era offline.
+    ref.read(syncProcessorProvider);
 
     // Ascolta i tap sulle notifiche OS → naviga al percorso corretto.
     _tapSub = PushNotificationService.instance.onTap.listen((notif) {
@@ -39,20 +47,6 @@ class _WfmAppState extends ConsumerState<WfmApp> {
   }
 
   @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-
-    // Avvia il simulatore mock solo una volta e solo in modalità mock.
-    if (!_simulatorStarted) {
-      _simulatorStarted = true;
-      final config = ref.read(appConfigProvider);
-      if (config.useMockData) {
-        MockNotificationSimulator.start();
-      }
-    }
-  }
-
-  @override
   void dispose() {
     _tapSub?.cancel();
     super.dispose();
@@ -61,17 +55,26 @@ class _WfmAppState extends ConsumerState<WfmApp> {
   @override
   Widget build(BuildContext context) {
     final router = ref.watch(goRouterProvider);
-    final themeMode = ref.watch(settingsProvider).themeMode;
+    final settings = ref.watch(settingsProvider);
 
     return MaterialApp.router(
       title: 'SAP Work Manager — WFM Mobile',
       debugShowCheckedModeBanner: false,
-      theme: buildAppTheme(),
-      darkTheme: buildAppTheme(),
-      themeMode: themeMode,
+      theme: buildAppTheme(iconScale: settings.iconScale),
+      darkTheme: buildAppTheme(iconScale: settings.iconScale),
+      themeMode: settings.themeMode,
       routerConfig: router,
-      builder: (context, child) =>
-          _PermissionRequestWrapper(child: child!),
+      builder: (context, child) {
+        // Applica il fattore di scala del testo scelto nelle Impostazioni a
+        // tutta l'app, ignorando l'eventuale valore di sistema per coerenza.
+        final mq = MediaQuery.of(context);
+        return MediaQuery(
+          data: mq.copyWith(
+            textScaler: TextScaler.linear(settings.textScale),
+          ),
+          child: _PermissionRequestWrapper(child: child!),
+        );
+      },
     );
   }
 }
@@ -102,3 +105,10 @@ class _PermissionRequestWrapperState
   @override
   Widget build(BuildContext context) => widget.child;
 }
+
+
+
+
+
+
+

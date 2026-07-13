@@ -1,7 +1,5 @@
 // Stato in-app delle notifiche push ricevute.
 
-import 'dart:async';
-
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/services/push_notification_service.dart';
@@ -123,35 +121,3 @@ AppNotification notifSincronizzazione(String messaggio) => AppNotification(
       body: messaggio,
       receivedAt: DateTime.now(),
     );
-
-// ─── Simulatore mock (solo in modalità mock/dev) ───────────────────────────
-// Invia notifiche di test dopo N secondi dall'avvio dell'app.
-
-class MockNotificationSimulator {
-  static void start() {
-    // 1° notifica: nuovo ODL dopo 6 secondi
-    Timer(const Duration(seconds: 6), () async {
-      await sendNotification(notifNuovoOdl(
-        workOrderCode: '50674999',
-        descrizione: 'Verifica perdita — richiesta urgente',
-        luogo: 'ANCONA · VIA FLAMINIA 12',
-      ));
-    });
-
-    // 2° notifica: nuovo avviso dopo 18 secondi
-    Timer(const Duration(seconds: 18), () async {
-      await sendNotification(notifNuovoAvviso(
-        numeroAvviso: '10000155',
-        descrizione: 'Consumo anomalo rilevato — zona industriale',
-      ));
-    });
-
-    // 3° notifica: promemoria dopo 35 secondi
-    Timer(const Duration(seconds: 35), () async {
-      await sendNotification(notifPromemoria(
-        workOrderCode: '50674709',
-        minutiMancanti: '15',
-      ));
-    });
-  }
-}

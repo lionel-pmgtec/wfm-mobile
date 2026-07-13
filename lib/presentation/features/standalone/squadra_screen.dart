@@ -112,7 +112,6 @@ class _SquadraScreenState extends ConsumerState<SquadraScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        leading: const BackButton(),
         title: const Text('Squadra / Magazzino'),
         bottom: TabBar(
           controller: _tab,

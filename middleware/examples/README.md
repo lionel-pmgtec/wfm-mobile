@@ -2,14 +2,14 @@
 
 ## Endpoint
 ```
-POST http://localhost:8080/workflow/avviso-with-odl
+POST http://localhost:8080/api/v1/workflow/avviso-with-odl
 Content-Type: application/json
 ```
 
 ## Esempio rapido — curl
 
 ```bash
-curl -X POST http://localhost:8080/workflow/avviso-with-odl \
+curl -X POST http://localhost:8080/api/v1/workflow/avviso-with-odl \
   -H "Content-Type: application/json" \
   --data @create-avviso-with-odl.json
 ```
@@ -58,9 +58,16 @@ POST /notifications/{numeroAvviso}/generate-work-order
 
 ### Creare solo l'OdL
 ```bash
-POST /work-orders
+curl -X POST http://localhost:8080/api/v1/work-orders \
+  -H "Content-Type: application/json" \
+  --data @create-odl.json
 ```
-con il body dell'OdL.
+Usa il file `create-odl.json` (body completo di un OdL pronto da testare).
+Note:
+- Se `externalCode` è assente/vuoto, il middleware genera il codice (sequence interno).
+- Se `operations` è assente/vuoto, viene applicato il **template standard** (3 operazioni).
+
+Risposta attesa: **201 Created** con l'OdL creato (codice generato + operazioni del template).
 
 ### Recupare la lista
 ```bash
@@ -73,6 +80,15 @@ GET /work-orders
 GET /notifications/{numeroAvviso}
 GET /work-orders/{externalCode}
 ```
+
+## Persistenza (Excel)
+
+Non esistono più dati di seed transazionali: **Avvisi e OdL partono vuoti**. Ogni
+oggetto creato via questi endpoint viene scritto nel file Excel
+`data/wfm-database.xlsx` (schede `Avvisi`, `ODL`, `Esiti`). Le sole anagrafiche
+di riferimento (materiali, magazzini, cause, equipment, tecnici…) sono
+pre-caricate al primo avvio. Per ripartire da zero, fermare il server ed
+eliminare `data/wfm-database.xlsx`.
 
 ## Note importanti
 
@@ -94,6 +110,40 @@ GET /work-orders/{externalCode}
 ## Tipi OdL supportati
 - `ATTI` — Attivazione fornitura
 - `DISA` — Disattivazione fornitura
+- `SOST` — Sostituzione contatore
 - `ZA01` — Manutenzione servizio idrico
 - `ZA02` — Manutenzione acqua
 - `PA` — Generazione preventivo
+
+## Indice dei file di esempio
+
+### Avviso + OdL — `POST /api/v1/workflow/avviso-with-odl`
+| File | Categoria | `tipo` avviso | `woType` OdL |
+|------|-----------|---------------|--------------|
+| `create-avviso-pronto-intervento.json` | Pronto Intervento | `ZA01` | `ZA01` |
+| `create-avviso-with-odl.json` | Pronto Intervento | `ZF-PF` | `ZA02` |
+| `create-avviso-preventivo.json` | Richiesta di Preventivo | `PA` | `PA` |
+
+### Solo OdL — `POST /api/v1/work-orders`
+| File | `woType` | Flusso app |
+|------|----------|------------|
+| `create-odl.json` | `ATTI` | Attivazione (sigillo + lettura iniziale) |
+| `create-odl-disa.json` | `DISA` | Disattivazione (lettura finale + chiusura) |
+| `create-odl-sostituzione.json` | `SOST` | Sostituzione contatore (lettura rimozione + nuovo misuratore) |
+
+Esempio curl (uno qualsiasi dei file sopra):
+```bash
+# Avviso + OdL
+curl -X POST http://localhost:8080/api/v1/workflow/avviso-with-odl \
+  -H "Content-Type: application/json" --data @create-avviso-preventivo.json
+
+# Solo OdL
+curl -X POST http://localhost:8080/api/v1/work-orders \
+  -H "Content-Type: application/json" --data @create-odl-disa.json
+```
+
+> In tutti gli esempi `technicianCID` / `cidAssegnato` = **VAIOTTIM**, così l'OdL
+> compare al tecnico di test loggato (e, se le push FCM sono attive, arriva la
+> notifica alla creazione).
+
+

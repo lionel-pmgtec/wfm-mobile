@@ -24,12 +24,12 @@ class AuthRepositoryImpl implements AuthRepository {
   @override
   Future<Result<AppUser>> login(String cid, String password) async {
     try {
-      final user = await remote.login(cid, password);
-      _user = user;
-      _token = 'token-${DateTime.now().millisecondsSinceEpoch}';
-      _expiry = DateTime.now().add(const Duration(hours: 8));
+      final session = await remote.login(cid, password);
+      _user = session.user;
+      _token = session.token;
+      _expiry = session.expiresAt;
       onTokenChanged?.call(_token);
-      return Success(user);
+      return Success(session.user);
     } catch (e) {
       return Err(_map(e));
     }

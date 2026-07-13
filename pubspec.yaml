@@ -22,6 +22,9 @@ dependencies:
   dio: ^5.4.0
   retrofit: ^4.1.0
 
+  # Rilevamento connettività reale (WiFi/dati) per la modalità offline
+  connectivity_plus: ^6.0.5
+
   # Secure storage (token SAP)
   flutter_secure_storage: ^9.0.0
 
@@ -50,8 +53,9 @@ dependencies:
   # Geolocalizzazione (Play/Stop OdL, foto, mappa)
   geolocator: ^13.0.1
 
-  # Background sync periodico (ogni 15 min)
-  workmanager: ^0.5.2
+  # NB: workmanager (background sync 15 min) rimosso: la 0.5.2 rompe la build
+  # Android (embedding v1). Da reintrodurre con embedding v2 al collegamento
+  # del middleware. Vedi lib/core/services/background_sync_service.dart.
 
   # Compressione foto
   flutter_image_compress: ^2.3.0

@@ -38,6 +38,7 @@ class SyncOperation {
   String get typeLabel => switch (type) {
         SyncOperationType.submitEsito => 'Invio esito',
         SyncOperationType.updateStatus => 'Aggiornamento stato',
+        SyncOperationType.updateWorkOrder => 'Salvataggio OdL',
         SyncOperationType.uploadAttachment => 'Caricamento allegato',
         SyncOperationType.submitMeterReading => 'Lettura contatore',
         SyncOperationType.submitMaterials => 'Impegno materiali',

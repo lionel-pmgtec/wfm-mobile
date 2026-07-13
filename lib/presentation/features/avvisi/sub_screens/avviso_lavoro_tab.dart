@@ -153,19 +153,19 @@ class _FlussoSection extends ConsumerWidget {
           ctaLabel:
               prev == null || !prev.hasMateriali ? 'Apri' : 'Modifica',
           onCta: () => context.push(
-              AppRoutes.preventivoAvvisoPath(avviso.numeroAvviso)),
+              AppRoutes.preventivoPath(avviso.numeroAvviso)),
         ),
         _FlussoStage(
           icon: Icons.draw_outlined,
           title: 'Firma cliente',
           subtitle: prev?.firma != null
-              ? '${prev!.firma!.nomeFirmatario} · ${prev.firma!.dataFormattata}'
+              ? 'Firma acquisita · ${prev!.firma!.dataFormattata}'
               : (prev?.hasMateriali == true
                   ? 'Pronta da acquisire'
                   : 'Prima aggiungi i materiali'),
           done: prev?.firma != null,
-          ctaLabel: prev?.firma != null ? 'Rifirma' : 'Firma',
-          enabled: prev?.hasMateriali == true,
+          ctaLabel: prev?.firma != null ? 'Firmato' : 'Firma',
+          enabled: prev?.hasMateriali == true && prev?.firma == null,
           onCta: () =>
               context.push(AppRoutes.preventivoFirmaPath(avviso.numeroAvviso)),
         ),

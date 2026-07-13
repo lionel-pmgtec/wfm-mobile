@@ -7,7 +7,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
  * Punto di ingresso del middleware WFM.
  *
  * Espone un'API REST/JSON consumata dall'app Flutter WFM Mobile e (in seguito)
- * traduce le chiamate in SOAP verso SAP. Per l'MVP usa uno store in memoria.
+ * traduce le chiamate in SOAP verso SAP. Per l'MVP persiste i dati (Avvisi,
+ * ODL, Esiti) su un file Excel (vedi ExcelStore + wfm.excel.path).
  *
  * Avvio:  mvn spring-boot:run
  * Base URL: http://localhost:8080/api/v1

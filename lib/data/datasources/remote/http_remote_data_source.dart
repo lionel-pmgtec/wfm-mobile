@@ -1,5 +1,4 @@
-// Implementazione REST verso il MIDDLEWARE (Dio). Attiva quando
-// AppConfig.useMockData == false.
+// Implementazione REST verso il MIDDLEWARE (Dio). Unica sorgente dati dell'app.
 //
 // Ogni endpoint REST è tradotto dal middleware in una chiamata SOAP verso SAP
 // (cfr. specifiche §8.1). Mapping endpoint -> WS SOAP indicato nei commenti.
@@ -30,12 +29,14 @@ class HttpRemoteDataSource implements WfmRemoteDataSource {
   static const _tamCodes = '/anagrafica/tam-codes';
   static const _causes = '/anagrafica/causes';
   static const _solutions = '/anagrafica/solutions';
+  static const _equipment = '/anagrafica/equipment';
+  static const _tecnici = '/anagrafica/tecnici';
 
   @override
-  Future<AppUser> login(String cid, String password) async {
+  Future<AuthSession> login(String cid, String password) async {
     final r = await _dio.post(_login, data: {'cid': cid, 'password': password});
     final j = r.data as Map<String, dynamic>;
-    return AppUser(
+    final user = AppUser(
       cid: j['cid'] ?? cid.toUpperCase(),
       nome: j['nome'] ?? '',
       cognome: j['cognome'] ?? '',
@@ -43,6 +44,21 @@ class HttpRemoteDataSource implements WfmRemoteDataSource {
       role: UserRole.tecnico,
       workCenter: j['workCenter'] ?? '',
       squadra: j['squadra'],
+    );
+    // Token di sessione emesso dal middleware (Bearer). Scadenza da `expiresAt`
+    // (ISO 8601) o `expiresIn` (secondi); fallback alla durata configurata.
+    final token = (j['token'] ?? j['accessToken'] ?? '').toString();
+    final expiresAt = j['expiresAt'] != null
+        ? DateTime.tryParse(j['expiresAt'].toString())
+        : (j['expiresIn'] != null
+            ? DateTime.now()
+                .add(Duration(seconds: (j['expiresIn'] as num).toInt()))
+            : null);
+    return AuthSession(
+      user: user,
+      token: token,
+      expiresAt:
+          expiresAt ?? DateTime.now().add(client.config.sessionDuration),
     );
   }
 
@@ -109,6 +125,11 @@ class HttpRemoteDataSource implements WfmRemoteDataSource {
   }
 
   @override
+  Future<void> deleteWorkOrder(String externalCode) async {
+    await _dio.delete('$_workOrders/$externalCode');
+  }
+
+  @override
   Future<List<NotificationAvviso>> getAvvisi({String? query}) async {
     final r = await _dio.get(_avvisi, queryParameters: {if (query != null) 'q': query});
     final list = (r.data['notifications'] as List? ?? r.data as List);
@@ -139,6 +160,11 @@ class HttpRemoteDataSource implements WfmRemoteDataSource {
   }
 
   @override
+  Future<void> deleteAvviso(String numero) async {
+    await _dio.delete('$_avvisi/$numero');
+  }
+
+  @override
   Future<String> submitEsito(Esito esito) async {
     // -> submitEsito (S13 + E55)
     final r = await _dio.post(_esiti, data: esitoToJson(esito));
@@ -148,20 +174,31 @@ class HttpRemoteDataSource implements WfmRemoteDataSource {
   @override
   Future<List<Attachment>> getAttachments(String workOrderCode) async {
     final r = await _dio.get('$_workOrders/$workOrderCode/attachments');
-    // Mapping allegati lasciato al backend; per ora lista vuota se assente.
     final list = (r.data['attachments'] as List? ?? const []);
     return list.cast<Map<String, dynamic>>().map((j) {
+      // Il middleware restituisce una url relativa (/work-orders/.../file):
+      // la rendiamo assoluta così Image.network può caricarla.
+      final rawUrl = (j['url'] ?? '').toString();
+      final fullUrl = rawUrl.isEmpty || rawUrl.startsWith('http')
+          ? rawUrl
+          : '${client.config.middlewareBaseUrl}$rawUrl';
       return Attachment(
         id: j['id']?.toString() ?? '',
         workOrderCode: workOrderCode,
         type: AttachmentType.documento,
-        filePath: j['url'] ?? '',
+        filePath: fullUrl,
         fileName: j['fileName'] ?? '',
+        mimeType: (j['mimeType'] ?? 'image/jpeg').toString(),
         capturedAt: DateTime.tryParse(j['capturedAt'] ?? '') ?? DateTime.now(),
         author: j['author'] ?? '',
         uploadStatus: UploadStatus.uploaded,
       );
     }).toList();
+  }
+
+  @override
+  Future<void> deleteAttachment(String workOrderCode, String attachmentId) async {
+    await _dio.delete('$_workOrders/$workOrderCode/attachments/$attachmentId');
   }
 
   @override
@@ -173,8 +210,14 @@ class HttpRemoteDataSource implements WfmRemoteDataSource {
       'file': await MultipartFile.fromFile(attachment.filePath,
           filename: attachment.fileName),
     });
-    await _dio.post('$_esiti/attachments', data: form);
-    return attachment.copyWith(uploadStatus: UploadStatus.uploaded);
+    final r = await _dio.post('$_esiti/attachments', data: form);
+    // Adotta l'id assegnato dal middleware così la copia locale e quella remota
+    // coincidono (niente doppioni quando la lista fonde locale + remoto).
+    final serverId = (r.data is Map) ? r.data['id']?.toString() : null;
+    return attachment.copyWith(
+      id: serverId ?? attachment.id,
+      uploadStatus: UploadStatus.uploaded,
+    );
   }
 
   @override
@@ -211,5 +254,22 @@ class HttpRemoteDataSource implements WfmRemoteDataSource {
   Future<List<CodeLabel>> getSolutionCodes() async {
     final r = await _dio.get(_solutions);
     return (r.data as List).map((e) => codeLabelFromJson(e)).toList();
+  }
+
+  @override
+  Future<Equipment?> getEquipment({String? matricola, String? barcode}) async {
+    final r = await _dio.get(_equipment, queryParameters: {
+      if (matricola != null && matricola.isNotEmpty) 'matricola': matricola,
+      if (barcode != null && barcode.isNotEmpty) 'barcode': barcode,
+    });
+    if (r.data == null) return null;
+    return equipmentFromJson(r.data as Map<String, dynamic>);
+  }
+
+  @override
+  Future<List<AppUser>> getTechnicians({String? query}) async {
+    final r = await _dio.get(_tecnici,
+        queryParameters: {if (query != null && query.isNotEmpty) 'q': query});
+    return (r.data as List).map((e) => technicianFromJson(e)).toList();
   }
 }

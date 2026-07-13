@@ -63,7 +63,6 @@ class _GeneraOrdineScreenState extends ConsumerState<GeneraOrdineScreen> {
     final async = ref.watch(avvisoDetailProvider(widget.numero));
     return Scaffold(
       appBar: AppBar(
-        leading: const BackButton(),
         title: const Text('Genera OdL da avviso'),
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(8),
@@ -311,7 +310,8 @@ class _GeneraOrdineScreenState extends ConsumerState<GeneraOrdineScreen> {
       success: (wo) {
         showSapToast(
             context, 'OdL ${wo.externalCode} creato da avviso ${widget.numero}');
-        context.go(AppRoutes.workOrderDetailPath(wo.externalCode));
+        context.pushReplacement(
+            AppRoutes.workOrderDetailPath(wo.externalCode));
       },
       failure: (f) => showSapToast(context, f.message, isError: true),
     );

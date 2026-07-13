@@ -7,6 +7,7 @@ import '../../../core/constants/app_constants.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/widgets.dart';
+import '../work_orders/widgets/odl_actions_menu.dart';
 import '../../../domain/entities/entities.dart';
 import '../../providers/appointments_provider.dart';
 
@@ -18,7 +19,7 @@ class AppointmentsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final appointments = ref.watch(appointmentsProvider(code));
     return Scaffold(
-      appBar: AppBar(title: Text('Appuntamenti · OdL $code')),
+      appBar: AppBar(title: Text('Appuntamenti · OdL $code'), actions: [OdlActionsMenu(code: code)]),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _openEditor(context, ref),
         icon: const Icon(Icons.event_available),

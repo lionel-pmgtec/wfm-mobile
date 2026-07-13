@@ -8,7 +8,7 @@ import java.util.UUID;
 
 /**
  * Autenticazione (M1). In produzione: WS-Security UsernameToken verso SAP
- * (specifiche §8.2). Qui restituiamo un token JWT-like fittizio.
+ * (specifiche). Qui restituiamo un token JWT-like fittizio.
  */
 @RestController
 @RequestMapping("/auth")
@@ -33,3 +33,4 @@ public class AuthController {
         return ResponseEntity.noContent().build();
     }
 }
+

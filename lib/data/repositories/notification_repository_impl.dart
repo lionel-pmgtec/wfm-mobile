@@ -44,4 +44,14 @@ class NotificationRepositoryImpl implements NotificationRepository {
       return Err(ServerFailure(e.toString()));
     }
   }
+
+  @override
+  Future<Result<void>> deleteAvviso(String numeroAvviso) async {
+    try {
+      await remote.deleteAvviso(numeroAvviso);
+      return const Success<void>(null);
+    } catch (e) {
+      return Err(ServerFailure(e.toString()));
+    }
+  }
 }

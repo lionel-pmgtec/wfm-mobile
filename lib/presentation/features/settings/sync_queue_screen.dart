@@ -18,7 +18,6 @@ class SyncQueueScreen extends ConsumerWidget {
     final async = ref.watch(syncQueueProvider);
     return Scaffold(
       appBar: AppBar(
-        leading: const BackButton(),
         title: const Text('Sincronizzazione'),
         actions: [
           IconButton(
@@ -61,12 +60,37 @@ class _SyncItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (icon, color) = switch (op.status) {
-      SyncStatus.pending => (Icons.schedule, AppColors.accentOrange),
-      SyncStatus.inProgress => (Icons.sync, AppColors.primary),
-      SyncStatus.success => (Icons.check_circle, AppColors.accentGreen),
-      SyncStatus.failed => (Icons.error_outline, AppColors.accentRed),
+    final (icon, color, statusLabel) = switch (op.status) {
+      SyncStatus.pending => (
+          Icons.schedule_rounded,
+          AppColors.accentOrange,
+          'In attesa di connessione'
+        ),
+      SyncStatus.inProgress => (
+          Icons.sync_rounded,
+          AppColors.primary,
+          'Invio in corso…'
+        ),
+      SyncStatus.success => (
+          Icons.check_circle_rounded,
+          AppColors.accentGreen,
+          'Sincronizzato'
+        ),
+      SyncStatus.failed => (
+          Icons.error_outline_rounded,
+          AppColors.accentRed,
+          'Azione richiesta'
+        ),
     };
+
+    // Riga di dettaglio: rassicurante se in attesa, il motivo (già "umano") se
+    // fallito. Mai il testo grezzo dell'eccezione.
+    final detail = switch (op.status) {
+      SyncStatus.pending => 'Verrà reinviato automaticamente al ritorno della rete',
+      SyncStatus.failed => op.lastError ?? 'Riprova o contatta il supporto',
+      _ => null,
+    };
+
     return WfmCard(
       child: Row(children: [
         Icon(icon, color: color),
@@ -76,22 +100,25 @@ class _SyncItem extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(op.typeLabel, style: AppTextStyles.headingSmall),
+              const SizedBox(height: 2),
               Text('Rif. ${op.entityId} · ${Fmt.dateTime(op.createdAt)}',
-                  style: AppTextStyles.bodySmall),
-              if (op.lastError != null)
-                Text(op.lastError!,
-                    maxLines: 1,
+                  style: AppTextStyles.bodySmall
+                      .copyWith(color: AppColors.textSecondary)),
+              const SizedBox(height: 4),
+              Text(statusLabel,
+                  style: AppTextStyles.labelSmall.copyWith(
+                      color: color, fontWeight: FontWeight.w600)),
+              if (detail != null)
+                Text(detail,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: AppTextStyles.bodySmall
-                        .copyWith(color: AppColors.accentRed)),
-              if (op.retryCount > 0)
-                Text('Tentativi: ${op.retryCount}',
-                    style: AppTextStyles.labelSmall),
+                        .copyWith(color: AppColors.textSecondary)),
             ],
           ),
         ),
         IconButton(
-          tooltip: 'Annulla',
+          tooltip: 'Rimuovi dalla coda',
           icon: const Icon(Icons.close, color: AppColors.textHint),
           onPressed: onCancel,
         ),

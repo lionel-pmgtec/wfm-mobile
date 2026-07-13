@@ -29,6 +29,7 @@ import '../../../../core/utils/formatters.dart';
 import '../../../../core/widgets/widgets.dart';
 import '../../../../domain/entities/entities.dart';
 import '../../../providers/avviso_extension_provider.dart';
+import '../../../providers/avvisi_provider.dart';
 import '../widgets/avviso_widgets.dart';
 
 class AvvisoDatiTab extends ConsumerWidget {
@@ -39,6 +40,7 @@ class AvvisoDatiTab extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final isPI = avviso.categoria == AvvisoCategory.prontoIntervento;
     final ext = ref.watch(avvisoExtensionProvider(avviso.numeroAvviso));
+    final editing = ref.watch(avvisoEditModeProvider(avviso.numeroAvviso));
     return ListView(
       padding: kPagePadding,
       children: [
@@ -118,6 +120,20 @@ class AvvisoDatiTab extends ConsumerWidget {
               preventivo: ext.preventivo,
             ),
           ),
+
+        // ── ELABORAZIONE (operatore — editabile inline con la matita) ─
+        WfmCollapsibleSection(
+          // La key dipende da `editing`: alla pressione della matita la
+          // sezione si ri-crea espansa, così l'operatore vede subito i campi.
+          key: ValueKey('elaborazione-$editing'),
+          title: 'ELABORAZIONE',
+          icon: Icons.edit_note_outlined,
+          initiallyExpanded: editing,
+          child: _ElaborazioneSection(
+            avviso: avviso,
+            elaborazione: ext.elaborazione,
+          ),
+        ),
 
         const SizedBox(height: 80),
       ],
@@ -297,7 +313,6 @@ class _ClientePI extends StatelessWidget {
           SapLockedField(label: 'Referente', value: avviso.referente ?? ''),
           SapLockedField(label: 'Telefono', value: c.telefono ?? ''),
           SapLockedField(label: 'Cellulare', value: avviso.cellulare ?? ''),
-          SapLockedField(label: 'Email', value: c.email ?? ''),
           SapLockedCheckbox(
               label: 'Contratto Attivo', value: avviso.contrattoAttivo),
           SapLockedField(
@@ -339,7 +354,6 @@ class _ClienteRP extends StatelessWidget {
               value: c.codiceFiscale ?? avviso.codiceFiscaleCliente ?? ''),
           SapLockedField(label: 'Partita IVA', value: c.partitaIva ?? ''),
           SapLockedField(label: 'Telefono', value: c.telefono ?? ''),
-          SapLockedField(label: 'Email', value: c.email ?? ''),
           SapLockedField(
               label: 'Sede Tecnica', value: avviso.sedeTecnica ?? ''),
           SapLockedField(
@@ -409,11 +423,6 @@ class _IndirizzoBlocco extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SapLockedField(
-            label: 'Indirizzo Completo',
-            value: address.full,
-            fullWidth: true),
-        const SizedBox(height: 6),
         FormGrid(children: [
           SapLockedField(label: 'Via', value: address.street),
           SapLockedField(label: 'Numero Civico', value: address.streetNumber),
@@ -426,6 +435,13 @@ class _IndirizzoBlocco extends StatelessWidget {
           if (areaTecnica != null)
             SapLockedField(label: 'Area Tecnica', value: areaTecnica!),
         ]),
+        if (address.additionalInfo.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          SapLockedField(
+              label: 'Informazioni Aggiuntive',
+              value: address.additionalInfo,
+              fullWidth: true),
+        ],
         if (showGps && address.hasCoordinates) ...[
           const SizedBox(height: 6),
           SapLockedField(
@@ -436,7 +452,7 @@ class _IndirizzoBlocco extends StatelessWidget {
         if (address.hasCoordinates) ...[
           const SizedBox(height: 8),
           OutlinedButton.icon(
-            onPressed: () => context.push(AppRoutes.map),
+            onPressed: () => context.go(AppRoutes.map),
             icon: const Icon(Icons.map_outlined, size: 16),
             label: const Text('Apri in mappa'),
           ),
@@ -466,15 +482,11 @@ class _IndirizzoOggettoPI extends StatelessWidget {
             fullWidth: true,
             hideIfEmpty: false),
         const SizedBox(height: 6),
-        SapLockedField(
-            label: 'Indirizzo Oggetto',
-            value: addr.full,
-            fullWidth: true),
-        const SizedBox(height: 6),
         FormGrid(children: [
           SapLockedField(label: 'Via Oggetto', value: addr.street),
           SapLockedField(label: 'Numero Civico', value: addr.streetNumber),
           SapLockedField(label: 'CAP', value: addr.cap),
+          SapLockedField(label: 'Localita', value: addr.localita),
           SapLockedField(label: 'Comune', value: addr.city),
           SapLockedField(label: 'Provincia', value: addr.provincia),
           SapLockedField(label: 'Equipment', value: avviso.equipment ?? ''),
@@ -482,6 +494,13 @@ class _IndirizzoOggettoPI extends StatelessWidget {
           SapLockedField(
               label: 'Punto Misura', value: avviso.puntoMisura ?? ''),
         ]),
+        if (addr.additionalInfo.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          SapLockedField(
+              label: 'Informazioni Aggiuntive',
+              value: addr.additionalInfo,
+              fullWidth: true),
+        ],
         if ((avviso.noteAccesso ?? '').isNotEmpty) ...[
           const SizedBox(height: 6),
           SapLockedField(
@@ -553,17 +572,22 @@ class _AddrBlock extends StatelessWidget {
                 color: AppColors.textSecondary,
                 letterSpacing: 0.6)),
         const SizedBox(height: 6),
-        SapLockedField(
-            label: 'Indirizzo', value: address.full, fullWidth: true),
-        const SizedBox(height: 4),
         FormGrid(children: [
           SapLockedField(label: 'Via', value: address.street),
           SapLockedField(label: 'Civico', value: address.streetNumber),
           SapLockedField(label: 'CAP', value: address.cap),
+          SapLockedField(label: 'Localita', value: address.localita),
           SapLockedField(label: 'Comune', value: address.city),
           SapLockedField(label: 'Provincia', value: address.provincia),
           if (telefono != null) SapLockedField(label: 'Telefono', value: telefono!),
         ]),
+        if (address.additionalInfo.isNotEmpty) ...[
+          const SizedBox(height: 4),
+          SapLockedField(
+              label: 'Informazioni Aggiuntive',
+              value: address.additionalInfo,
+              fullWidth: true),
+        ],
         if (showGps && address.hasCoordinates) ...[
           const SizedBox(height: 4),
           SapLockedField(
@@ -1081,6 +1105,257 @@ class _DerivedCheckbox extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ════════════════════════════════════════════════════════════════════
+// ELABORAZIONE (campi operatore — editabili inline con la matita)
+// ════════════════════════════════════════════════════════════════════
+
+/// Sezione "Elaborazione" — dati operatore (NON SAP), modificabili in place.
+///
+/// In sola lettura mostra i valori correnti; quando l'operatore preme la
+/// matita ([avvisoEditModeProvider] = true) i campi diventano editabili e
+/// ogni modifica viene persistita automaticamente in [AvvisoExtension]
+/// (stesso pattern auto-save di [_DatiPreventivoRP]). Sostituisce la vecchia
+/// pagina "Elabora avviso" full-screen.
+class _ElaborazioneSection extends ConsumerStatefulWidget {
+  final NotificationAvviso avviso;
+  final AvvisoElaborazione? elaborazione;
+  const _ElaborazioneSection({required this.avviso, this.elaborazione});
+
+  @override
+  ConsumerState<_ElaborazioneSection> createState() =>
+      _ElaborazioneSectionState();
+}
+
+class _ElaborazioneSectionState extends ConsumerState<_ElaborazioneSection> {
+  static const _statiUtente = [
+    'I0001 — Iniziato',
+    'I0002 — In esecuzione',
+    'I0003 — Sospeso',
+    'I0005 — Chiuso',
+    'I0006 — Annullato',
+  ];
+  static const _prioritaList = [
+    '0 — Altro, no pericolo',
+    '1 — Bassa',
+    '2 — Media',
+    '3 — Alta',
+    '4 — Critica',
+  ];
+  static const _esitoVerList = [
+    '-NONE-',
+    'OK — Verifica positiva',
+    'NO — Verifica negativa',
+    'PD — Pendente',
+  ];
+
+  late final TextEditingController _sedeTecCtrl;
+  late final TextEditingController _equipmentCtrl;
+  late final TextEditingController _pressioneCtrl;
+  late final TextEditingController _noteCtrl;
+  String? _statoUtente;
+  String? _priorita;
+  String _esito = '-NONE-';
+  bool _fermoMacchina = false;
+
+  @override
+  void initState() {
+    super.initState();
+    final e = widget.elaborazione;
+    _sedeTecCtrl = TextEditingController(
+        text: e?.sedeTecnica ?? widget.avviso.sedeTecnica ?? '');
+    _equipmentCtrl = TextEditingController(
+        text: e?.equipment ?? widget.avviso.equipment ?? '');
+    _pressioneCtrl = TextEditingController(text: e?.pressioneBar ?? '');
+    _noteCtrl = TextEditingController(text: e?.note ?? '');
+    _statoUtente = e?.statoUtente ??
+        _statiUtente.firstWhere(
+            (s) => s.contains(widget.avviso.stato),
+            orElse: () => _statiUtente.first);
+    _priorita = e?.priorita ??
+        _prioritaList.firstWhere(
+            (p) => p.startsWith(widget.avviso.priorita),
+            orElse: () => _prioritaList.first);
+    _esito = e?.esitoVer ?? '-NONE-';
+    _fermoMacchina = e?.fermoMacchina ?? false;
+    // Auto-save su ogni modifica testuale (come _DatiPreventivoRP).
+    for (final c in [_sedeTecCtrl, _equipmentCtrl, _pressioneCtrl, _noteCtrl]) {
+      c.addListener(_persist);
+    }
+  }
+
+  @override
+  void dispose() {
+    _sedeTecCtrl.dispose();
+    _equipmentCtrl.dispose();
+    _pressioneCtrl.dispose();
+    _noteCtrl.dispose();
+    super.dispose();
+  }
+
+  void _persist() {
+    ref
+        .read(avvisoExtensionProvider(widget.avviso.numeroAvviso).notifier)
+        .setElaborazione(AvvisoElaborazione(
+          statoUtente: _statoUtente,
+          priorita: _priorita,
+          sedeTecnica: _sedeTecCtrl.text,
+          equipment: _equipmentCtrl.text,
+          fermoMacchina: _fermoMacchina,
+          pressioneBar: _pressioneCtrl.text,
+          esitoVer: _esito,
+          note: _noteCtrl.text,
+          updatedAt: DateTime.now(),
+        ));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final editing =
+        ref.watch(avvisoEditModeProvider(widget.avviso.numeroAvviso));
+    return editing ? _buildEdit() : _buildRead();
+  }
+
+  Widget _buildRead() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Row(children: [
+          Icon(Icons.edit_outlined, size: 14, color: AppColors.textHint),
+          SizedBox(width: 6),
+          Expanded(
+            child: Text(
+              'Premi la matita in alto per elaborare questi campi.',
+              style: TextStyle(
+                  fontSize: 11,
+                  fontStyle: FontStyle.italic,
+                  color: AppColors.textSecondary),
+            ),
+          ),
+        ]),
+        const SizedBox(height: 8),
+        FormGrid(children: [
+          FieldRow(
+              label: 'Stato Utente',
+              value: _statoUtente ?? '',
+              hideIfEmpty: true),
+          FieldRow(
+              label: 'Priorità', value: _priorita ?? '', hideIfEmpty: true),
+          FieldRow(
+              label: 'Sede Tecnica',
+              value: _sedeTecCtrl.text,
+              hideIfEmpty: true),
+          FieldRow(
+              label: 'Equipment',
+              value: _equipmentCtrl.text,
+              hideIfEmpty: true),
+          FieldRow(
+              label: 'Pressione (bar)',
+              value: _pressioneCtrl.text,
+              hideIfEmpty: true),
+          FieldRow(
+              label: 'Esito VER',
+              value: _esito == '-NONE-' ? '' : _esito,
+              hideIfEmpty: true),
+          FieldRow(
+              label: 'Fermo Macchina',
+              value: _fermoMacchina ? 'Sì' : 'No'),
+        ]),
+        if (_noteCtrl.text.isNotEmpty) ...[
+          const SizedBox(height: 6),
+          FieldRow(label: 'Note', value: _noteCtrl.text, fullWidth: true),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildEdit() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        DropdownButtonFormField<String>(
+          initialValue: _statoUtente,
+          isExpanded: true,
+          decoration: const InputDecoration(labelText: 'Stato utente'),
+          items: _statiUtente
+              .map((s) => DropdownMenuItem(value: s, child: Text(s)))
+              .toList(),
+          onChanged: (v) {
+            setState(() => _statoUtente = v);
+            _persist();
+          },
+        ),
+        const SizedBox(height: 10),
+        DropdownButtonFormField<String>(
+          initialValue: _priorita,
+          isExpanded: true,
+          decoration: const InputDecoration(labelText: 'Priorità'),
+          items: _prioritaList
+              .map((p) => DropdownMenuItem(value: p, child: Text(p)))
+              .toList(),
+          onChanged: (v) {
+            setState(() => _priorita = v);
+            _persist();
+          },
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _sedeTecCtrl,
+          decoration: const InputDecoration(labelText: 'Sede tecnica'),
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _equipmentCtrl,
+          decoration: const InputDecoration(labelText: 'Equipment'),
+        ),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Fermo macchina'),
+          value: _fermoMacchina,
+          onChanged: (v) {
+            setState(() => _fermoMacchina = v);
+            _persist();
+          },
+        ),
+        const Divider(height: 20),
+        const Text('NORMATIVA 655',
+            style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: AppColors.textSecondary,
+                letterSpacing: 0.6)),
+        const SizedBox(height: 8),
+        TextField(
+          controller: _pressioneCtrl,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(
+              labelText: 'Pressione (bar)',
+              prefixIcon: Icon(Icons.compress_outlined)),
+        ),
+        const SizedBox(height: 10),
+        DropdownButtonFormField<String>(
+          initialValue: _esito,
+          isExpanded: true,
+          decoration: const InputDecoration(labelText: 'Esito VER'),
+          items: _esitoVerList
+              .map((e) => DropdownMenuItem(value: e, child: Text(e)))
+              .toList(),
+          onChanged: (v) {
+            setState(() => _esito = v ?? '-NONE-');
+            _persist();
+          },
+        ),
+        const SizedBox(height: 10),
+        TextField(
+          controller: _noteCtrl,
+          maxLines: 4,
+          decoration: const InputDecoration(
+              labelText: 'Note', alignLabelWithHint: true),
+        ),
+      ],
     );
   }
 }
