@@ -8,11 +8,7 @@ import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import java.io.ByteArrayOutputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
+import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
@@ -86,7 +82,7 @@ public class ExcelStore {
         this.attachmentsDir = attachmentsDir;
     }
 
-    // ─── Ciclo di vita ────────────────────────────────────────────────────────
+    // ─── Ciclo di vita -------------------------------------------------------------
 
     @PostConstruct
     void init() {
@@ -168,7 +164,7 @@ public class ExcelStore {
                 .ifPresent(max -> notifSequence.set(Math.max(notifSequence.get(), max)));
     }
 
-    // ─── Persistenza ──────────────────────────────────────────────────────────
+    // ─── Persistenza -------------------------------------------------------------
 
     private void persist() {
         synchronized (lock) {
@@ -331,7 +327,7 @@ public class ExcelStore {
         }
     }
 
-    // ─── Query ODL ────────────────────────────────────────────────────────────
+    // ─── Query ODL -------------------------------------------------------------
 
     public List<Dto.WorkOrder> findOrders(String status, String q, String date) {
         return orders.values().stream()
@@ -358,9 +354,9 @@ public class ExcelStore {
         return Optional.ofNullable(orders.get(code));
     }
 
-    // ─── Mutazioni ODL ────────────────────────────────────────────────────────
+    // ─── Mutazioni ODL -------------------------------------------------------------
 
-    /** Crea o aggiorna un OdL. Se externalCode e vuoto, ne genera uno. */
+    /** Crea o aggiorne un ODL. Se externalCode è vuoto, ne genera uno. */
     public Dto.WorkOrder upsert(Dto.WorkOrder incoming) {
         String code = (incoming.externalCode() == null || incoming.externalCode().isBlank())
                 ? String.valueOf(sequence.incrementAndGet())
@@ -448,7 +444,7 @@ public class ExcelStore {
         return updated;
     }
 
-    // ─── Notifiche ────────────────────────────────────────────────────────────
+    // ─── Notifiche -------------------------------------------------------------
 
     public List<Dto.Notification> findNotifications(String q) {
         return notifications.values().stream()
@@ -641,7 +637,7 @@ public class ExcelStore {
                 n.technicianCID(), n.interruzioneFornitura());
     }
 
-    // ─── Esiti ────────────────────────────────────────────────────────────────
+    // ─── Esiti -------------------------------------------------------------
 
     /** Persiste un esito intervento (M5) e lo collega all'OdL. */
     public String saveEsito(Map<String, Object> esito) {
@@ -660,7 +656,7 @@ public class ExcelStore {
         return esitoId;
     }
 
-    // ─── Allegati (M8) ──────────────────────────────────────────────────────────
+    // ─── Allegati (M8) -------------------------------------------------------------
 
     /** Salva un allegato: scrive il file su disco e ne registra i metadati. */
     public Map<String, Object> saveAttachment(String workOrderCode, String type,
@@ -741,7 +737,7 @@ public class ExcelStore {
         return true;
     }
 
-    // ─── Anagrafiche ──────────────────────────────────────────────────────────
+    // ─── Anagrafiche -------------------------------------------------------------
 
     public List<Dto.MaterialItem> materials(String q) {
         if (q == null || q.isBlank()) return materialsCatalog;
@@ -779,7 +775,7 @@ public class ExcelStore {
                 .toList();
     }
 
-    // ─── Default anagrafiche ──────────────────────────────────────────────────
+    // ─── Default anagrafiche -------------------------------------------------------------
 
     private void seedReferenceDefaults() {
         materialsCatalog = new ArrayList<>(List.of(
@@ -825,7 +821,7 @@ public class ExcelStore {
                         "tecnicoSenior", "WC02", "Squadra Sud")));
     }
 
-    // ─── Helper POI / JSON ────────────────────────────────────────────────────
+    // ─── Helper POI / JSON -------------------------------------------------------------
 
     private static List<Dto.Operation> templateOperations(String cid, String date, String workCenter) {
         return List.of(

@@ -116,23 +116,22 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
     );
   }
 
-  // ── Logo VIVA SERVIZI (wordmark testuale su una riga, come il logo ufficiale
+  // ── Logo VIVA SERVIZI (immagine ufficiale) ────────────────────────────────
   Widget _buildVivaServiziLogo() {
     return SizedBox(
-      // Altezza contenuta: il testo occupa ~60px, quindi non lasciamo mezzo
-      // riquadro vuoto sotto. L'alone (più grande) sfora ma è trasparente ai
-      // bordi, quindi non crea spazio morto: il blocco sotto risale.
-      height: 150,
+      // Altezza pari all'immagine del logo: l'alone (più grande) sfora sopra e
+      // sotto ma è trasparente ai bordi, quindi non crea spazio morto e il
+      // blocco sottostante risale — layout compatto anche su smartphone.
+      height: 190,
       child: Stack(
         clipBehavior: Clip.none,
         alignment: Alignment.center,
         children: [
-          // Alone perfettamente circolare (bordi invisibili: alpha→0). È un
-          // quadrato fisso, così il gradiente radiale resta un CERCHIO e non
-          // viene stirato in ellisse dal testo largo.
+          // Alone perfettamente circolare (bordi invisibili: alpha→0), come per
+          // gli altri elementi grafici della pagina.
           Container(
-            width: 280,
-            height: 280,
+            width: 400,
+            height: 340,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: RadialGradient(
@@ -144,45 +143,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
               ),
             ),
           ),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 300),
-            child: const FittedBox(
-              fit: BoxFit.scaleDown,
-              child: Text.rich(
-              TextSpan(children: [
-            TextSpan(
-              text: 'viva',
-              style: const TextStyle(
-                fontSize: 150,
-                fontWeight: FontWeight.w900,
-                fontStyle: FontStyle.italic,
-                letterSpacing: -4,
-                height: 1.0,
-                color: Color(0xFFF39200), // arancione VIVA
-              ),
-            ),
-            TextSpan(
-              text: ' servizi',
-              style: const TextStyle(
-                fontSize: 100,
-                fontWeight: FontWeight.w600,
-                fontStyle: FontStyle.italic,
-                letterSpacing: -0.5,
-                height: 1.0,
-                color: Color(0xFF1F6FB2), // blu SERVIZI
-              ),
-            ),
-              ]),
-              textAlign: TextAlign.center,
-              maxLines: 1,
-            ),
-            ),
+          Image.asset(
+            'assets/images/logo.png',
+            height: 190,
+            fit: BoxFit.contain,
           ),
         ],
       ),
     );
   }
-
+  
   // ── Pannello di branding ──────────────────────────────────────────────────
   Widget _buildBrandingPanel() {
     return Column(
