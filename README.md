@@ -1,40 +1,44 @@
-# WFM Mobile
+# WFM Mobile — Viva Servizi
 
-Applicazione Flutter per tablet dedicata alla gestione degli Ordini di Lavoro / Avvisi connessa a SAP (Work Manager), con un middleware Spring Boot che espone un'API REST/JSON sopra i servizi SOAP di SAP.
+Applicazione **Flutter per tablet** per la gestione sul campo di **Ordini di
+Lavoro (OdL)** e **Avvisi** di manutenzione, connessa a SAP tramite il **backend
+unico del cruscotto** (Node/TypeScript). Il tecnico vede e lavora **solo gli
+oggetti a lui assegnati**.
 
 ```
-[App Flutter] ◄── REST/JSON ──► [Middleware Spring Boot] ◄── SOAP/XML ──► [SAP DG1]
-                                          │                          ZWFMT_SERVIZIO_PM
-                                          ▼                            (sola lettura)
-                                data/wfm-database.xlsx
-                        anagrafiche + giornale delle scritture
+[App Flutter]  ◄── REST/JSON (/api/v1) + SSE (/api/stream) ──►  [Backend-WFM (Node, :4000)]  ◄── SOAP/XML ──►  [SAP DG1]
+   tablet            (login, ordini, avvisi, esiti,                 store su file:                     ZWFMT_SERVIZIO_PM
+                      stato, anagrafiche, realtime)                 state / assignments / tecnici
 ```
+
 
 ## Stack
 
-- **Mobile** : Flutter 3 (Dart >= 3.0), Riverpod, go_router, Dio, Hive, mobile_scanner, flutter_map, Firebase Messaging, Workmanager, pdf/printing.
-- **Middleware** : Spring Boot 3.2 (**Java 17**), springdoc OpenAPI, Apache POI, firebase-admin. Il client SOAP verso SAP usa `java.net.http.HttpClient` del JDK: **nessuna dipendenza SOAP** (niente JAX-WS/CXF).
+- **Mobile** — Flutter 3 (Dart ≥ 3), Riverpod, go_router, Dio, Hive,
+  mobile_scanner, flutter_map, Firebase Messaging, Workmanager, pdf/printing.
+- **Backend** — `Backend-WFM-VIVA/` (Node/TS, Express, porta 4000): riceve i dati
+  SAP (push SOAP o pull `selezione`), li normalizza in JSON e li distribuisce a
+  **cruscotto** e **tablet** via REST + **SSE**. Store su file (non è un DB).
+  *Sviluppato dal collega: non va modificato dall'app.*
 
-## Struttura
+## Struttura del repo
 
 ```
 .
-├── lib/                # App Flutter (core / data / domain / presentation)
-├── assets/             # Immagini e icone incluse nell'app
-├── android/  ios/  web/  test/
-├── middleware/         # API REST/JSON Spring Boot (ponte verso SAP SOAP)
-├── INTEGRAZIONE.md     # Analisi del servizio SAP + richieste aperte al team SAP
-├── PIANO_SAP.md        # Piano del collegamento SAP (archivio, con scostamenti)
+├── lib/                  # App Flutter (core / data / domain / presentation)
+├── assets/               # Immagini e icone (logo Viva Servizi incluso)
+├── android/ ios/ web/ test/
+├── Backend-WFM-VIVA/     # Backend unico del cruscotto (Node) — solo lettura per noi
 └── pubspec.yaml
 ```
 
-## Ambito funzionale (V1)
+## Ambito funzionale
 
-L'app copre i moduli **M1–M14** del Capitolato:
+L'app copre i moduli **M1–M14** del capitolato:
 
 | | Modulo | | Modulo |
 |---|---|---|---|
-| M1 | Autenticazione | M8 | Allegati (foto/documenti/firme) |
+| M1 | Autenticazione (CID + token) | M8 | Allegati (foto/documenti/firme) |
 | M2 | Elenco OdL | M9 | Avvisi (+ preventivo/firma/PDF) |
 | M3 | Dettaglio OdL (schede) | M10 | Creazione OdL sul campo |
 | M4 | Ciclo di vita OdL | M11 | Modalità offline + coda sync |
@@ -42,9 +46,9 @@ L'app copre i moduli **M1–M14** del Capitolato:
 | M6 | Contatori | M13 | Notifiche push |
 | M7 | Componenti e materiali | M14 | Impostazioni locali |
 
-I moduli **M15–M18** (RQTI, Determina 5 / bilancio idrico, Lavori cliente
-standalone, Inventario veicoli) sono evoluzioni successive e **non** fanno parte
-di questa V1.
+> Alcune azioni (creazione OdL/avviso dal campo, upload allegati, genera-OdL-da-avviso)
+> oggi il backend le rifiuta con **`501`**: gli oggetti nascono in SAP. L'app le
+> mostra come "non disponibili".
 
 ## Architettura dell'app
 
@@ -54,63 +58,51 @@ inversione delle dipendenze centralizzata in
 
 - **Navigazione** — guscio persistente
   ([`AppShell`](lib/presentation/features/shell/app_shell.dart)) con
-  `StatefulShellRoute`: `NavigationRail` su tablet e `NavigationBar` su
-  smartphone, quattro destinazioni primarie (Home, Ordini, Avvisi, Mappa). Le
-  schermate di dettaglio e i sotto-flussi si aprono a schermo intero sul root
-  navigator.
-- **Offline-first** — cache locale + coda di sincronizzazione persistente,
-  con retry esponenziale in background (Workmanager, ogni 15 min).
-- **Sorgente dati remota** — **nessun mock**: l'unica implementazione di
-  [`WfmRemoteDataSource`](lib/data/datasources/remote/remote_data_source.dart)
-  è [`HttpRemoteDataSource`](lib/data/datasources/remote/http_remote_data_source.dart)
-  (Dio con interceptor Bearer + retry). Il login restituisce una `AuthSession`
-  (utente + token di sessione + scadenza).
-- **Deserializzazione manuale** — i mapper stanno in
-  [`mappers.dart`](lib/data/models/mappers.dart). **Nessun codegen**: non esiste
-  nessun `.g.dart` e non c'è nessun `build_runner` da lanciare.
+  `StatefulShellRoute`: sidebar su tablet, `NavigationBar` su smartphone; quattro
+  destinazioni (Home, Ordini, Avvisi, Mappa). Dettagli e sotto-flussi a schermo intero.
+- **Offline-first** — cache locale + coda di sincronizzazione persistente, retry
+  in background (Workmanager).
+- **Realtime** — [`SseService`](lib/core/network/sse_service.dart) consuma
+  `GET /api/stream`: quando il pianificatore assegna/cambia stato dal cruscotto,
+  le liste del tablet si aggiornano da sole (evento `assegnazioni`).
+- **Sorgente dati remota** — **nessun mock**: unica implementazione
+  [`HttpRemoteDataSource`](lib/data/datasources/remote/http_remote_data_source.dart)
+  (Dio con interceptor Bearer + retry). Mapper manuali in
+  [`mappers.dart`](lib/data/models/mappers.dart), **nessun codegen** (`.g.dart`).
 
-## Sorgente dati: SAP o Excel
+## Integrazione col backend
 
-Il middleware legge ordini e avvisi da **SAP** oppure dall'**Excel**, secondo
-`wfm.sap.enabled`. Il default è `false` → Excel, così l'ambiente di sviluppo
-senza credenziali SAP funziona da subito.
+L'app parla con ** backend** (`:4000`). In
+[`app_config.dart`](lib/core/config/app_config.dart) si imposta **una sola riga**,
+`backendBaseUrl` (solo l'origine host:porta); da lì derivano i due percorsi dello
+**stesso** server:
 
-| | `SAP_ENABLED=false` (default) | `SAP_ENABLED=true` |
-|---|---|---|
-| Ordini / Avvisi | letti dall'Excel | letti da **SAP DG1** (`ZWFMT_SERVIZIO_PM`) |
-| Anagrafiche | Excel | Excel (SAP non le espone) |
-| Scritture (stato, note, esiti, allegati) | Excel | Excel — **il servizio SAP è di sola lettura** |
-| Capabilities | tutto attivo | solo ciò che SAP alimenta davvero |
+| Getter | Path | Uso |
+|--------|------|-----|
+| `apiBaseUrl` | `<backend>/api/v1` | dati, login, esiti, stato, anagrafiche (contratto tablet) |
+| `streamBaseUrl` | `<backend>/api` | realtime SSE (`GET /api/stream`) |
 
-### Il vincolo che spiega l'architettura
+`backendBaseUrl` per target di esecuzione:
 
-`ZWFMT_SERVIZIO_PM` è **di sola lettura** ed espone **13 campi per l'ordine e 11
-per l'avviso**, contro i 46 e 68 dei DTO. Mancano fra gli altri **cliente,
-indirizzi, appuntamento e tecnico assegnato**.
+| Target | Valore |
+|--------|--------|
+| Tablet fisico (Wi-Fi) | `http://<IP-LAN-del-PC>:4000` (NON `localhost`) |
+| Web / Desktop (stesso PC) | `http://localhost:4000` |
+| Emulatore Android (AVD) | `http://10.0.2.2:4000` |
 
-Da qui due scelte:
+> Cleartext HTTP: gli IP di sviluppo vanno elencati in
+> [`network_security_config.xml`](android/app/src/main/res/xml/network_security_config.xml).
 
-- **Nessun dato finto.** In modalità SAP l'Excel non riempie i buchi: i campi
-  assenti restano vuoti e l'app li mostra **spenti, con il motivo**, invece di
-  far credere che il dato non esista su quell'ordine.
-- **L'Excel è il giornale locale delle scritture** (stato, note) in attesa del
-  servizio di scrittura SAP. A ogni lettura SAP resta la verità su tutto il resto.
+### Modello ad assegnazioni (importante)
 
-Analisi completa e richieste aperte verso il team SAP: **[INTEGRAZIONE.md](INTEGRAZIONE.md)**.
+Il tablet mostra **solo gli oggetti assegnati** al CID del token. Perché un OdL
+compaia servono, lato **cruscotto/pianificatore**:
 
-### Riattivare un campo quando SAP lo esporrà
+1. `POST /api/refresh` — carica i dati SAP nel backend (richiede VPN).
+2. `POST /api/assegnazioni` — assegna l'oggetto a un tecnico (CID).
 
-`GET /api/v1/capabilities` dice all'app quali sezioni sono alimentate. Per
-riaccenderne una basta una riga in `middleware/src/main/resources/application.yml`:
-
-```yaml
-wfm:
-  capabilities:
-    fields:
-      odl.cliente: true
-```
-
-e un riavvio del middleware. **L'app non si ricompila.**
+Senza assegnazioni la lista è **vuota**: è corretto, non è un bug. Passi e comandi
+pronti in **[GUIDA_OPERATIVA.md](GUIDA_OPERATIVA.md)**.
 
 ## Avviare l'app
 
@@ -119,41 +111,51 @@ flutter pub get
 flutter run
 ```
 
-L'URL del middleware si imposta in
-[`app_config.dart`](lib/core/config/app_config.dart) → `middlewareBaseUrl`
-(es. `http://10.0.2.2:8080/api/v1` su emulatore Android). Il flag `useMockData`
-**non esiste più**: l'unica sorgente è il middleware.
+Poi imposta `backendBaseUrl` in [`app_config.dart`](lib/core/config/app_config.dart)
+secondo il target (tabella sopra). Non esiste più nessun flag `useMockData`: l'unica
+sorgente è il backend.
 
-## Avviare il middleware
+## Avviare il backend
 
 ```bash
-cd middleware
-mvn spring-boot:run
+cd Backend-WFM-VIVA
+npm install
+npm run dev        # sviluppo con reload (tsx)
 ```
 
-> Su questa macchina `mvn` non è nel PATH e **non c'è il wrapper `mvnw`**: usare
-> il Maven incluso in IntelliJ —
-> `& "C:\Program Files\JetBrains\IntelliJ IDEA <ver>\plugins\maven\lib\maven3\bin\mvn.cmd" spring-boot:run`
+- **API tablet** : `http://localhost:4000/api/v1`
+- **Realtime SSE** : `http://localhost:4000/api/stream`
+- **Health** : `http://localhost:4000/api/health`
 
-Modalità SAP (la password non va mai nel repo):
+Prerequisiti: **VPN Vivaservizi** attiva (per `POST /api/refresh` verso SAP),
+`data/tecnici.json` con i CID di login.
 
-```powershell
-$env:SAP_ENABLED="true"; $env:SAP_SOAP_USER="<utente>"; $env:SAP_SOAP_PASSWORD="<password>"
-mvn spring-boot:run
+## Anagrafica tecnici e login
+
+Il login accetta **solo CID presenti** in `Backend-WFM-VIVA/data/tecnici.json`
+(la password **non** è verificata : qualsiasi password ). Formato:
+
+```json
+[
+  { "cid": "MROSSI", "nome": "Mario", "cognome": "Rossi", "workCenter": "SP1", "squadra": "Squadra A", "email": "mario.rossi@vivaservizi.local" }
+]
 ```
 
-- **Base API** : `http://localhost:8080/api/v1`
-- **Swagger UI** : `http://localhost:8080/api/v1/swagger-ui.html`
-
-Dettagli, endpoint e collezione Postman: [middleware/README.md](middleware/README.md).
+```json
+[
+  { "cid": "LBIANCHI", "nome": "Luca", "cognome": "Bianchi", "workCenter": "SP1", "squadra": "Squadra B", "email": "luca.bianchi@vivaservizi.local" }
+]
+```
 
 ## Test
 
 ```bash
-flutter test                                  # app
-mvn -f middleware/pom.xml test                # middleware (25 test SAP)
+flutter test        # unit + widget (verdi)
 ```
 
-> **Noto**: i 2 test di `test/widget_test.dart` (Login) falliscono — cercano
-> `'Accesso SAP'` e delle `Key()` rimosse dalla refonte UI in corso su
-> `login_screen.dart`. Vanno riallineati alla nuova schermata.
+## Limiti noti (dichiarati dal backend)
+
+- L'**esito** si ferma nel backend: manca la scrittura verso SAP (`submitEsito` SOAP).
+- **Allegati / creazione dal campo** → `501` (gli oggetti nascono in SAP).
+- **Push FCM** non attive: aggiornamento via SSE / polling.
+- **Sessioni in memoria**: al riavvio del backend i tablet rifanno login.

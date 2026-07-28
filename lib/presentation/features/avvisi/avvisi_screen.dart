@@ -88,10 +88,9 @@ class _AvvisiScreenState extends ConsumerState<AvvisiScreen> {
         title: const Text('Avvisi di Servizio'),
         actions: [
           IconButton(
-            tooltip: 'Aggiorna da SAP',
+            tooltip: 'Aggiorna',
             icon: const Icon(Icons.refresh_rounded),
             onPressed: () async {
-              showSapToast(context, 'Aggiornamento da SAP…');
               try {
                 await ref.read(refreshFromSapProvider)();
               } catch (_) {

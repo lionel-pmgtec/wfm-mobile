@@ -45,9 +45,8 @@ class _WorkOrdersScreenState extends ConsumerState<WorkOrdersScreen> {
         current.copyWith(query: q);
   }
 
-  /// Chiede al cruscotto di ri-estrarre da SAP e ricarica la lista.
+  /// Ricarica dal backend gli ordini assegnati (nuove assegnazioni, stati).
   Future<void> _refreshFromSap() async {
-    showSapToast(context, 'Aggiornamento da SAP…');
     try {
       await ref.read(refreshFromSapProvider)();
     } catch (_) {
@@ -162,7 +161,7 @@ class _WorkOrdersScreenState extends ConsumerState<WorkOrdersScreen> {
             ],
           ),
           IconButton(
-            tooltip: 'Aggiorna da SAP',
+            tooltip: 'Aggiorna',
             icon: const Icon(Icons.refresh_rounded),
             onPressed: _refreshFromSap,
           ),

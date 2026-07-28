@@ -3,12 +3,19 @@ enum AppFlavor { dev, qa, prod }
 class AppConfig {
   final AppFlavor flavor;
 
-  /// URL di base del BACKEND DEL COLLEGA (cruscotto, Node) — usato per tutte le
-  /// LETTURE (liste/dettaglio ODL e avvisi) e il realtime SSE. È il backend
-  /// principale: SAP spinge i dati qui, l'app li legge in `/api/*`.
-  final String cruscottoBaseUrl;
+  /// Il backend ha due percorsi: uno per i dati e uno per il realtime.
+  /// I percorsi qui sotto sono dello stesso server, cambia solo la base:
+  ///   • `/api/v1` → dati, scritture, auth, esiti, anagrafiche (contratto tablet)
+  ///   • `/api`    → realtime SSE (`GET /api/stream`), fuori da `/api/v1`
+  final String backendBaseUrl;
 
-  /// sap-client trasmesso negli header verso il middleware.
+  /// Base REST del tablet: `<backend>/api/v1`.
+  String get apiBaseUrl => '$backendBaseUrl/api/v1';
+
+  /// Base del realtime SSE: `<backend>/api` (lo stream è `/api/stream`).
+  String get streamBaseUrl => '$backendBaseUrl/api';
+
+  /// sap-client trasmesso negli header verso il backend.
   final String sapClient;
 
   /// Durata validità del token di sessione .
@@ -23,7 +30,7 @@ class AppConfig {
 
   const AppConfig({
     required this.flavor,
-    required this.cruscottoBaseUrl,
+    required this.backendBaseUrl,
     this.sapClient = '100',
     this.sessionDuration = const Duration(hours: 8),
     this.connectTimeout = const Duration(seconds: 20),
@@ -31,33 +38,27 @@ class AppConfig {
     this.backgroundSyncInterval = const Duration(minutes: 15),
   });
 
+
+  // Host per target di esecuzione:
+  //   • Web / Desktop (stesso PC) -> localhost
+  //   • Emulatore Android (AVD)   -> 10.0.2.2
+  //   • Tablet fisico Wi-Fi       -> IP del PC (DHCP: cambia! `ipconfig`, porta 4000 nel firewall)
   static const AppConfig dev = AppConfig(
     flavor: AppFlavor.dev,
-    // Scegliere l'host in base al target di esecuzione:
-    //   • Web / Desktop            -> http://localhost:8080/api/v1
-    //   • Emulatore Android (AVD)  -> http://10.0.2.2:8080/api/v1
-    //   • Dispositivo fisico Wi-Fi -> http://<IP-PC>:8080/api/v1
-    //
-    // ATTENZIONE: l'IP del PC è assegnato in DHCP e CAMBIA. Quando l'app dice
-    // "Il server non risponde" mentre il middleware è avviato, è quasi sempre
-    // questo: ricontrollare con `ipconfig` e aggiornare la riga qui sotto.
-    // (Wi-Fi del PC il 2026-07-17: 192.168.1.8 — prima era 192.168.1.93.)
-    //
-    // Il telefono deve essere sulla STESSA Wi-Fi e la porta 8080 aperta nel firewall
-    //middlewareBaseUrl: 'http://localhost:8080/api/v1',
-    // Backend del collega (letture + SSE). Stesso host, porta 4000, base /api.
-    // Aggiornare l'IP insieme a middlewareBaseUrl quando cambia (DHCP).
-    cruscottoBaseUrl: 'http://192.168.1.93:4000/api',
+    // Tablet : per usare il tablet fisico, bisogna configurare lindirizzo IP del PC fisico sulla Wi-Fi, e non usare localhost.
+    // Il tablet deve essere connesso alla stessa rete Wi-Fi del PC, e il firewall del PC deve permettere le connessioni in ingresso sulla porta 4000. 
+    // Web/Desktop sullo stesso PC -> 'http://localhost:4000'.
+    backendBaseUrl: 'http://192.168.1.93:4000',
   );
 
   static const AppConfig qa = AppConfig(
     flavor: AppFlavor.qa,
-    cruscottoBaseUrl: 'https://wfm-cruscotto.qa.local/api',
+    backendBaseUrl: 'https://wfm-cruscotto.qa.local',
   );
 
   static const AppConfig prod = AppConfig(
     flavor: AppFlavor.prod,
-    cruscottoBaseUrl: 'https://wfm-cruscotto.client.com/api',
+    backendBaseUrl: 'https://wfm-cruscotto.client.com',
   );
 
   bool get isProd => flavor == AppFlavor.prod;

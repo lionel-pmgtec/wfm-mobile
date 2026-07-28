@@ -81,6 +81,14 @@ class HomeScreen extends ConsumerWidget {
               ),
               const SizedBox(height: kSpacingMd),
             ],
+            _WelcomeHeader(
+              greeting: _greeting(),
+              name: (user?.nome ?? '').trim().isEmpty
+                  ? 'Tecnico'
+                  : (user?.nome ?? '').trim(),
+              subtitle: _headerSubtitle(stats.valueOrNull),
+            ),
+            const SizedBox(height: kSpacingLg),
             const Text('Riepilogo di oggi', style: AppTextStyles.headingMedium),
             const SizedBox(height: kSpacingMd),
             stats.when(
@@ -130,14 +138,37 @@ class HomeScreen extends ConsumerWidget {
     );
   }
 
+  /// Saluto in base all'ora del dispositivo.
+  String _greeting() {
+    final h = DateTime.now().hour;
+    if (h < 12) return 'Buongiorno';
+    if (h < 18) return 'Buon pomeriggio';
+    return 'Buonasera';
+  }
+
+  /// Riga di sintesi sotto il saluto, ricavata dai contatori.
+  String _headerSubtitle(Map<WorkOrderStatus, int>? m) {
+    if (m == null) return 'Ecco la tua giornata';
+    final inEsec = m[WorkOrderStatus.inEsecuzione] ?? 0;
+    final assegnati = m[WorkOrderStatus.ricevuto] ?? 0;
+    final daFare = inEsec + assegnati;
+    if (inEsec > 0) {
+      return '$inEsec ${inEsec == 1 ? 'ordine' : 'ordini'} in esecuzione';
+    }
+    if (daFare > 0) {
+      return '$daFare ${daFare == 1 ? 'ordine' : 'ordini'} da fare oggi';
+    }
+    return 'Nessun ordine assegnato';
+  }
+
   Widget _statsGrid(Map<WorkOrderStatus, int> m) {
     final items = [
-      (WorkOrderStatus.ricevuto, Icons.inbox_outlined),
-      (WorkOrderStatus.inEsecuzione, Icons.play_circle_outline),
-      (WorkOrderStatus.inPausa, Icons.pause_circle_outline),
-      (WorkOrderStatus.sospeso, Icons.stop_circle_outlined),
-      (WorkOrderStatus.completato, Icons.check_circle_outline),
-      (WorkOrderStatus.inviatoSAP, Icons.send_outlined),
+      (WorkOrderStatus.ricevuto, Icons.inbox_rounded),
+      (WorkOrderStatus.inEsecuzione, Icons.play_arrow_rounded),
+      (WorkOrderStatus.inPausa, Icons.pause_rounded),
+      (WorkOrderStatus.sospeso, Icons.stop_rounded),
+      (WorkOrderStatus.completato, Icons.check_rounded),
+      (WorkOrderStatus.inviatoSAP, Icons.send_rounded),
     ];
     return GridView.count(
       crossAxisCount: 3,
@@ -145,36 +176,47 @@ class HomeScreen extends ConsumerWidget {
       physics: const NeverScrollableScrollPhysics(),
       mainAxisSpacing: kSpacingMd,
       crossAxisSpacing: kSpacingMd,
-      childAspectRatio: 1.6,
+      childAspectRatio: 1.15,
       children: items.map((e) {
         final style = getStatusStyle(e.$1.label);
-        return WfmCard(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          child: Row(
+        final count = m[e.$1] ?? 0;
+        final active = count > 0;
+        return Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: active ? style.background : AppColors.surface,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(
+              color: active
+                  ? style.color.withValues(alpha: 0.35)
+                  : AppColors.border,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width: 38,
-                height: 38,
-                decoration:
-                    BoxDecoration(color: style.background, shape: BoxShape.circle),
-                child: Icon(e.$2, size: 30, color: style.color),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Text('${m[e.$1] ?? 0}',
-                        style: const TextStyle(
-                            fontSize: 20, fontWeight: FontWeight.w800)),
-                    Text(e.$1.label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: AppTextStyles.bodySmall),
-                  ],
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: active ? style.color : style.background,
+                  shape: BoxShape.circle,
                 ),
+                child: Icon(e.$2,
+                    size: 20, color: active ? Colors.white : style.color),
               ),
+              const Spacer(),
+              Text('$count',
+                  style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                      height: 1,
+                      color: active ? style.color : AppColors.textPrimary)),
+              const SizedBox(height: 2),
+              Text(e.$1.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.bodySmall),
             ],
           ),
         );
@@ -190,7 +232,15 @@ class HomeScreen extends ConsumerWidget {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, color: AppColors.primary, size: 26),
+          Container(
+            width: 46,
+            height: 46,
+            decoration: const BoxDecoration(
+              color: AppColors.primarySurface,
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: AppColors.primary, size: 24),
+          ),
           const SizedBox(height: 8),
           Text(label,
               maxLines: 1,
@@ -217,5 +267,79 @@ class HomeScreen extends ConsumerWidget {
       await ref.read(authControllerProvider.notifier).logout();
       if (context.mounted) context.go(AppRoutes.login);
     }
+  }
+}
+
+/// Intestazione di benvenuto con gradiente: saluto + nome + sintesi giornata.
+class _WelcomeHeader extends StatelessWidget {
+  final String greeting;
+  final String name;
+  final String subtitle;
+  const _WelcomeHeader({
+    required this.greeting,
+    required this.name,
+    required this.subtitle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppColors.primary,
+            Color.lerp(AppColors.primary, Colors.black, 0.28)!,
+          ],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.primary.withValues(alpha: 0.28),
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text('$greeting, $name 👋',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 19,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white)),
+                const SizedBox(height: 4),
+                Text(subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                        fontSize: 13, color: Colors.white70)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.16),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.water_drop_rounded,
+                color: Colors.white, size: 24),
+          ),
+        ],
+      ),
+    );
   }
 }

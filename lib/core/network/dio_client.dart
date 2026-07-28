@@ -24,7 +24,7 @@ class DioClient {
   DioClient({required this.config, this.tokenProvider}) {
     dio = Dio(
       BaseOptions(
-        baseUrl: config.middlewareBaseUrl,
+        baseUrl: config.apiBaseUrl,
         connectTimeout: config.connectTimeout,
         receiveTimeout: config.receiveTimeout,
         headers: {
@@ -43,7 +43,7 @@ class DioClient {
 
     dioRead = Dio(
       BaseOptions(
-        baseUrl: config.cruscottoBaseUrl,
+        baseUrl: config.streamBaseUrl,
         connectTimeout: config.connectTimeout,
         receiveTimeout: config.receiveTimeout,
         headers: {'Accept': 'application/json'},

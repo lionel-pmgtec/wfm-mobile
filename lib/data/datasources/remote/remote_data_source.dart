@@ -17,11 +17,6 @@ abstract interface class WfmRemoteDataSource {
   /// Registrazione token push presso il Cruscotto.
   Future<void> registerDeviceToken(String cid, String fcmToken);
 
-  /// Chiede al backend del collega (cruscotto) di ri-estrarre da SAP e
-  /// ripopolare il suo store. Serve perché il cruscotto parte vuoto finché SAP
-  /// non spinge i dati: questa è l'azione "Aggiorna" che scatena il PULL.
-  Future<void> refreshFromCruscotto();
-
   // Work orders (M2/M3/M4/M10)
   Future<List<WorkOrder>> getWorkOrders(WorkOrderFilter filter);
   Future<WorkOrder> getWorkOrderDetail(String externalCode);

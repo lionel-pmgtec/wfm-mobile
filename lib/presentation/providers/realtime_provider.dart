@@ -1,6 +1,8 @@
-// Realtime: aggancia l'SSE del backend del collega e aggiorna le liste in
-// tempo reale. Quando SAP spinge nuovi ordini/avvisi, il backend emette un
-// evento e qui invalidiamo i provider delle liste così la UI si ricarica sola.
+// Realtime: aggancia l'SSE del backend (GET /api/stream) e aggiorna le liste in
+// tempo reale. Il tablet vede solo gli oggetti ASSEGNATI: quando il pianificatore
+// assegna/cambia stato dal cruscotto il backend emette l'evento `assegnazioni`,
+// e quando arrivano nuovi dati SAP emette `ordini`/`avvisi`/`snapshot`. Qui
+// invalidiamo i provider delle liste così la UI si ricarica da sola.
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -13,44 +15,37 @@ import 'avvisi_provider.dart';
 /// perché parta; alla dismissione chiude lo stream.
 final realtimeProvider = Provider<SseService>((ref) {
   final client = ref.watch(dioClientProvider);
+  // L'SSE sta su base /api (dioRead), NON su /api/v1 (dio): GET /api/stream.
   final sse = SseService(client.dioRead);
+
+  void ricaricaOrdini() {
+    ref.invalidate(workOrdersProvider);
+    ref.invalidate(dashboardStatsProvider);
+  }
 
   final sub = sse.events.listen((e) {
     switch (e.event) {
+      case 'assegnazioni':
+        // Il pianificatore ha assegnato/cambiato stato: cambia il lavoro del
+        // tecnico (sia ordini che avvisi possono comparire/sparire).
+        ricaricaOrdini();
+        ref.invalidate(avvisiProvider);
+        break;
       case 'ordini':
-        ref.invalidate(workOrdersProvider);
-        ref.invalidate(dashboardStatsProvider);
+        ricaricaOrdini();
         break;
       case 'avvisi':
         ref.invalidate(avvisiProvider);
         break;
       case 'snapshot':
       case 'reset':
-        // Snapshot iniziale o azzeramento: ricarica tutto.
-        ref.invalidate(workOrdersProvider);
-        ref.invalidate(dashboardStatsProvider);
+        ricaricaOrdini();
         ref.invalidate(avvisiProvider);
         break;
     }
   });
 
   sse.start();
-
-  // Caricamento iniziale automatico: il cruscotto parte vuoto finché SAP non
-  // spinge i dati, quindi all'avvio della sessione chiediamo una volta il pull
-  // da SAP, così le liste si popolano da sole senza premere "Aggiorna".
-  // (Il pulsante resta per ricontrollare a mano quando serve.)
-  Future.microtask(() async {
-    try {
-      await ref.read(remoteDataSourceProvider).refreshFromCruscotto();
-      ref.invalidate(workOrdersProvider);
-      ref.invalidate(dashboardStatsProvider);
-      ref.invalidate(avvisiProvider);
-    } catch (_) {
-      // VPN/backend non pronti: resta il pulsante "Aggiorna da SAP" manuale.
-    }
-  });
-
   ref.onDispose(() {
     sub.cancel();
     sse.close();
@@ -58,14 +53,16 @@ final realtimeProvider = Provider<SseService>((ref) {
   return sse;
 });
 
-/// Azione "Aggiorna da SAP": chiede al cruscotto di ri-estrarre da SAP e
-/// ricarica le liste. Il cruscotto parte vuoto finché SAP non spinge i dati,
-/// quindi questa è l'azione che li fa comparire.
+/// Azione "Aggiorna": ri-legge dal backend le liste (nuove assegnazioni, stati
+/// aggiornati). NON tocca SAP: il pull da SAP è azione del pianificatore
+/// (cruscotto), non del tablet.
 final refreshFromSapProvider = Provider<Future<void> Function()>((ref) {
   return () async {
-    await ref.read(remoteDataSourceProvider).refreshFromCruscotto();
     ref.invalidate(workOrdersProvider);
     ref.invalidate(dashboardStatsProvider);
     ref.invalidate(avvisiProvider);
+    // Attende il completamento della ri-lettura ordini, così il pull-to-refresh
+    // mostra lo spinner finché i dati non sono pronti.
+    await ref.read(workOrdersProvider.future);
   };
 });

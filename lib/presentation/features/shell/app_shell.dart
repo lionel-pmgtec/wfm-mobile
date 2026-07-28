@@ -125,15 +125,15 @@ class _WfmSidebar extends ConsumerWidget {
       color: AppColors.surface,
       child: Column(
         children: [
-          // Header blu della stessa altezza della AppBar (status bar + toolbar).
+          // Header blu della stessa altezza della AppBar (status bar + toolbar),
+          // col logo Viva Servizi (bianco/arancio, pensato per sfondo blu).
           Container(
             height: topInset + _kToolbarHeight,
             width: double.infinity,
             color: AppColors.primary,
-            padding: EdgeInsets.only(top: topInset),
+            padding: EdgeInsets.only(top: topInset + 6, bottom: 6, left: 8, right: 8),
             alignment: Alignment.center,
-            child: Icon(Icons.water_drop_rounded,
-                color: Colors.white, size: 35 * iconScale),
+            child: Image.asset('assets/images/logo.png', fit: BoxFit.contain),
           ),
           const SizedBox(height: 10),
           for (var i = 0; i < _destinations.length; i++)
@@ -207,19 +207,32 @@ class _SidebarItem extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+        padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 6),
         child: Column(
           children: [
-            Container(
-              height: 34,
-              width: 60,
+            // Voce attiva: pill blu piena con icona bianca (evidente); le altre
+            // trasparenti con icona grigia.
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              height: 40,
+              width: 64,
               alignment: Alignment.center,
               decoration: BoxDecoration(
-                color: selected ? AppColors.primarySurface : Colors.transparent,
-                borderRadius: BorderRadius.circular(17),
+                color: selected ? AppColors.primary : Colors.transparent,
+                borderRadius: BorderRadius.circular(14),
+                boxShadow: selected
+                    ? [
+                        BoxShadow(
+                          color: AppColors.primary.withValues(alpha: 0.35),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ]
+                    : null,
               ),
               child: Icon(selected ? dest.selectedIcon : dest.icon,
-                  color: color, size: 24 * iconScale),
+                  color: selected ? Colors.white : AppColors.textSecondary,
+                  size: 24 * iconScale),
             ),
             const SizedBox(height: 4),
             Text(dest.label,
@@ -229,7 +242,7 @@ class _SidebarItem extends StatelessWidget {
                 style: TextStyle(
                     fontSize: 10.5,
                     color: color,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400)),
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w400)),
           ],
         ),
       ),
