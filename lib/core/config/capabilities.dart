@@ -1,17 +1,4 @@
-// Quali sezioni dell'app sono davvero alimentate dalla sorgente dati attiva.
-//
-// Perché esiste: il servizio SAP ZWFMT_SERVIZIO_PM espone 13 campi per l'ordine
-// e 11 per l'avviso, mentre l'app ne usa rispettivamente 46 e 68. Senza questa
-// dichiarazione le schermate si svuoterebbero in silenzio — peggio ancora,
-// `hideIfEmpty` farebbe sparire intere sezioni senza spiegare al tecnico se il
-// dato manca o se il servizio non lo espone.
-//
-// Chi decide è il middleware, non l'app: è lui a sapere da dove arrivano i dati.
-// Il giorno in cui SAP aggiunge i campi cliente, si accende una riga di YAML lato
-// middleware e si riavvia. L'app non si ricompila.
 
-/// Chiavi note. Sono stringhe anche lato middleware: qui stanno raccolte per
-/// evitare che un refuso in una schermata disattivi in silenzio una sezione.
 class Cap {
   Cap._();
 

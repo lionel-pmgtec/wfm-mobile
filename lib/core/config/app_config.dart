@@ -3,11 +3,6 @@ enum AppFlavor { dev, qa, prod }
 class AppConfig {
   final AppFlavor flavor;
 
-  /// URL di base del MIO MIDDLEWARE (Java, REST/JSON) — usato per le SCRITTURE
-  /// (login, stato ODL, esiti, allegati, anagrafiche) finché il backend del
-  /// collega non le implementa.
-  final String middlewareBaseUrl;
-
   /// URL di base del BACKEND DEL COLLEGA (cruscotto, Node) — usato per tutte le
   /// LETTURE (liste/dettaglio ODL e avvisi) e il realtime SSE. È il backend
   /// principale: SAP spinge i dati qui, l'app li legge in `/api/*`.
@@ -28,7 +23,6 @@ class AppConfig {
 
   const AppConfig({
     required this.flavor,
-    required this.middlewareBaseUrl,
     required this.cruscottoBaseUrl,
     this.sapClient = '100',
     this.sessionDuration = const Duration(hours: 8),
@@ -49,8 +43,7 @@ class AppConfig {
     // questo: ricontrollare con `ipconfig` e aggiornare la riga qui sotto.
     // (Wi-Fi del PC il 2026-07-17: 192.168.1.8 — prima era 192.168.1.93.)
     //
-    // Il telefono deve essere sulla STESSA Wi-Fi e la porta 8080 aperta nel firewall.
-    middlewareBaseUrl: 'http://192.168.1.93:8080/api/v1',
+    // Il telefono deve essere sulla STESSA Wi-Fi e la porta 8080 aperta nel firewall
     //middlewareBaseUrl: 'http://localhost:8080/api/v1',
     // Backend del collega (letture + SSE). Stesso host, porta 4000, base /api.
     // Aggiornare l'IP insieme a middlewareBaseUrl quando cambia (DHCP).
@@ -59,13 +52,11 @@ class AppConfig {
 
   static const AppConfig qa = AppConfig(
     flavor: AppFlavor.qa,
-    middlewareBaseUrl: 'https://wfm-middleware.qa.local/api/v1',
     cruscottoBaseUrl: 'https://wfm-cruscotto.qa.local/api',
   );
 
   static const AppConfig prod = AppConfig(
     flavor: AppFlavor.prod,
-    middlewareBaseUrl: 'https://wfm-middleware.client.com/api/v1',
     cruscottoBaseUrl: 'https://wfm-cruscotto.client.com/api',
   );
 
