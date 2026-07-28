@@ -1,11 +1,15 @@
-// Categoria e sottotipo di Avviso di Servizio (spec aziendale).
+// Categoria e sottotipo di Avviso di Servizio.
 //
-// L'app gestisce SOLO 5 tipologie:
-//   • PRONTO INTERVENTO : ZF-PF, ZA01, ZF-ZF01, ZA02
-//   • RICHIESTA DI PREVENTIVO : PA
+// **SAP è la fonte di verità.** I codici di questo registry sono quelli veri
+// letti da DG1, non quelli ipotizzati in fase di specifica: la specifica
+// prevedeva ZF-PF, ZA01, ZF-ZF01, ZA02, PA, e sul centro SP1 (2026-07-17,
+// finestra 90 giorni, 55 avvisi) **nessuno di questi cinque esiste**. Gli avvisi
+// reali sono ZP, IS e RA, e finivano tutti nel fallback "tipo sconosciuto".
 //
-// Per aggiungere un nuovo tipo nel futuro: bastera aggiungere una riga
-// nel registry [AvvisoSubType.all].
+// Il registry NON è chiuso: quando SAP introduce un tipo, si aggiunge una riga
+// in [AvvisoSubType.all]. Un codice assente non rompe nulla — ricade sul
+// fallback di [fromCode] — ma resta invisibile, ed è così che i cinque tipi
+// sbagliati sono sopravvissuti fino ai primi dati veri.
 
 import 'package:flutter/material.dart';
 
@@ -49,8 +53,75 @@ class AvvisoSubType {
     this.allowsCreationFromApp = false,
   });
 
-  /// Registry dei 5 sottotipi gestiti dall'app.
+  /// Registry dei sottotipi gestiti dall'app.
+  ///
+  /// In testa i codici **realmente presenti su DG1**; sotto quelli di specifica,
+  /// mai osservati sui dati veri e tenuti solo per compatibilità.
   static const List<AvvisoSubType> all = [
+    // ══ CODICI REALI — rilevati su SP1 il 2026-07-17 ═════════════════
+    AvvisoSubType(
+      code: 'ZP',
+      label: 'Perdite Idriche',
+      // 47 avvisi su 55, tutti "Perdite Idriche", collegati a ordini SOPA/ZA02
+      // di perdita: è a tutti gli effetti un pronto intervento.
+      category: AvvisoCategory.prontoIntervento,
+      icon: Icons.water_drop_outlined,
+      allowsCreationFromApp: true,
+    ),
+    AvvisoSubType(
+      code: 'IS',
+      label: 'Interruzione Servizio',
+      // 5 avvisi, tutti con descrizione "Prova ..." — sono messaggi di test
+      // lasciati su DG1. Il significato del codice è DA CONFERMARE: la
+      // categoria qui è un'ipotesi, non un dato.
+      category: AvvisoCategory.prontoIntervento,
+      icon: Icons.report_problem_outlined,
+    ),
+    AvvisoSubType(
+      code: 'RA',
+      label: 'Richiesta abbuono',
+      // 3 avvisi, "Richiesta abbuono fondo di garanzia": è una pratica
+      // amministrativa, NON un intervento di campo. Nessuna delle due categorie
+      // dell'app lo descrive davvero. Resta prontoIntervento perché è ciò che
+      // il fallback faceva già, ma è una scelta DA VALIDARE col metodo:
+      // forse questi avvisi non dovrebbero nemmeno arrivare al tecnico.
+      category: AvvisoCategory.prontoIntervento,
+      icon: Icons.receipt_long_outlined,
+    ),
+
+    // ══ ALTRI CODICI REALI — rilevati su SP1 il 2026-07-23 ════════════
+    // Estrazione 2025→2026: oltre a ZP/IS/RA compaiono anche questi. Prima
+    // finivano nel fallback "tipo sconosciuto" e mostravano il codice grezzo.
+    AvvisoSubType(
+      code: 'ZN',
+      // 44 avvisi — secondo tipo più frequente dopo ZP. Manutenzione fognaria.
+      label: 'Manutenzione Fognatura',
+      category: AvvisoCategory.prontoIntervento,
+      icon: Icons.water_damage_outlined,
+    ),
+    AvvisoSubType(
+      code: 'ZH',
+      // 10 avvisi. Semantica non confermata: etichetta provvisoria, DA VALIDARE.
+      label: 'Segnalazione idrica (ZH)',
+      category: AvvisoCategory.prontoIntervento,
+      icon: Icons.water_drop_outlined,
+    ),
+    AvvisoSubType(
+      code: 'ZM',
+      // Manutenzione H2O (censimento IW58). 1 avviso su SP1.
+      label: 'Manutenzione Acqua',
+      category: AvvisoCategory.prontoIntervento,
+      icon: Icons.opacity_outlined,
+    ),
+    AvvisoSubType(
+      code: 'ZF',
+      // Fognatura. 1 avviso su SP1. Etichetta prudente, DA VALIDARE.
+      label: 'Fognatura (ZF)',
+      category: AvvisoCategory.prontoIntervento,
+      icon: Icons.water_damage_outlined,
+    ),
+
+    // ══ CODICI DI SPECIFICA — mai osservati sui dati reali ═══════════
     // ── PRONTO INTERVENTO (4 sottotipi) ──────────────────────────────
     AvvisoSubType(
       code: 'ZF-PF',

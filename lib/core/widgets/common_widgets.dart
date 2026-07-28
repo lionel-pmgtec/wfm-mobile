@@ -88,6 +88,17 @@ class FieldRow extends StatelessWidget {
   /// Permette ai form di adattarsi al tipo di OdL nascondendo i campi inutili.
   final bool hideIfEmpty;
 
+  /// Il campo esiste nell'app ma la sorgente dati attiva non lo alimenta.
+  ///
+  /// Diverso da "vuoto": vuoto significa che il dato manca su quell'oggetto,
+  /// non disponibile significa che il servizio non lo espone affatto. Il campo
+  /// resta visibile ma spento, con il motivo nel tooltip — e vince su
+  /// [hideIfEmpty], altrimenti sparirebbe proprio nel caso che deve spiegare.
+  final bool unavailable;
+
+  /// Motivo mostrato nel tooltip quando [unavailable] è true.
+  final String? unavailableReason;
+
   const FieldRow({
     super.key,
     required this.label,
@@ -98,14 +109,18 @@ class FieldRow extends StatelessWidget {
     this.controller,
     this.maxLines = 1,
     this.hideIfEmpty = false,
+    this.unavailable = false,
+    this.unavailableReason,
   });
 
   @override
   Widget build(BuildContext context) {
     final displayValue = controller?.text ?? value;
-    if (hideIfEmpty && !editable && displayValue.trim().isEmpty) {
+    if (hideIfEmpty && !editable && !unavailable && displayValue.trim().isEmpty) {
       return const SizedBox.shrink();
     }
+
+    if (unavailable) return _buildUnavailable();
 
     return Container(
       width: fullWidth ? double.infinity : null,
@@ -153,6 +168,50 @@ class FieldRow extends StatelessWidget {
       ),
     );
   }
+
+  /// Campo spento: stessa forma, colori smorzati, "n/d" al posto del valore e
+  /// il motivo raggiungibile con un tocco prolungato sull'icona.
+  Widget _buildUnavailable() {
+    final reason = unavailableReason ?? 'Dati non disponibile';
+    return Opacity(
+      opacity: 0.55,
+      child: Container(
+        width: fullWidth ? double.infinity : null,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppColors.surfaceVariant,
+          border: Border.all(color: AppColors.border, style: BorderStyle.solid),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label.toUpperCase(), style: AppTextStyles.fieldLabel),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'n/d',
+                    style: AppTextStyles.fieldValueReadOnly.copyWith(
+                      color: AppColors.textSecondary,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                ),
+                Tooltip(
+                  message: reason,
+                  triggerMode: TooltipTriggerMode.tap,
+                  child: const Icon(Icons.info_outline,
+                      size: 16, color: AppColors.textSecondary),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 // ─── FORM GRID (responsive 2 colonne) ────────────────────────────────────────
@@ -169,10 +228,16 @@ class FormGrid extends StatelessWidget {
   /// gli stessi attributi tramite duck-typing dinamico (es. SapLockedField).
   /// Questo evita "buchi" nella griglia 2 colonne quando un wrapper si
   /// auto-nasconde con SizedBox.shrink().
+  ///
+  /// `unavailable` vince sempre su `hideIfEmpty`: un campo che la sorgente non
+  /// alimenta ha per definizione il valore vuoto, e senza questa eccezione
+  /// verrebbe filtrato qui — cioè proprio nel caso che deve essere spiegato al
+  /// tecnico. Il filtro va tenuto allineato a FieldRow.build.
   List<Widget> _visibleChildren() {
     return children.where((w) {
       // Caso diretto : FieldRow.
       if (w is FieldRow) {
+        if (w.unavailable) return true;
         final displayValue = w.controller?.text ?? w.value;
         if (w.hideIfEmpty && !w.editable && displayValue.trim().isEmpty) {
           return false;
@@ -181,6 +246,13 @@ class FormGrid extends StatelessWidget {
       }
       // Caso wrapper : verifica via duck-typing se il widget ha
       // un getter `hideIfEmpty` (bool) e `value` (String) ed è vuoto.
+      // Un wrapper che espone anche `unavailable` (bool) segue la stessa regola.
+      try {
+        final dynamic dyn = w;
+        if (dyn.unavailable as bool) return true;
+      } catch (_) {
+        // Wrapper senza il getter `unavailable`: si continua col filtro normale.
+      }
       try {
         final dynamic dyn = w;
         final hideIfEmpty = dyn.hideIfEmpty as bool;
@@ -225,6 +297,88 @@ class FormGrid extends StatelessWidget {
       children:
           visible.expand((w) => [w, const SizedBox(height: 12)]).toList()
             ..removeLast(),
+    );
+  }
+}
+
+// ─── CAPABILITY GATE (sezione non alimentata dalla sorgente) ─────────────────
+
+/// Disattiva una sezione senza cancellarne il codice.
+///
+/// Quando [enabled] è false il contenuto continua a essere costruito, ma
+/// smorzato e non toccabile, sotto una riga che spiega perché. Serve a due cose
+/// insieme: dire al tecnico che il dato non c'è *perché il servizio non lo
+/// espone* (≠ "è vuoto"), e tenere il codice della sezione vivo e compilato,
+/// pronto a riaccendersi quando SAP esporrà i campi. Nessuna riga da
+/// ripristinare, nessun blocco commentato che marcisce.
+class CapabilityGate extends StatelessWidget {
+  final bool enabled;
+
+  /// Motivo mostrato quando [enabled] è false.
+  final String reason;
+
+  final Widget child;
+
+  /// Se true, la sezione disattivata sparisce del tutto invece di restare
+  /// visibile e spenta. Da usare solo dove un banner sarebbe rumore.
+  final bool hideWhenDisabled;
+
+  const CapabilityGate({
+    super.key,
+    required this.enabled,
+    required this.reason,
+    required this.child,
+    this.hideWhenDisabled = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (enabled) return child;
+    if (hideWhenDisabled) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _UnavailableBanner(reason: reason),
+        const SizedBox(height: 8),
+        // Il contenuto resta costruito: si spegne, non si cancella.
+        IgnorePointer(child: Opacity(opacity: 0.4, child: child)),
+      ],
+    );
+  }
+}
+
+class _UnavailableBanner extends StatelessWidget {
+  final String reason;
+  const _UnavailableBanner({required this.reason});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.surfaceVariant,
+        border: Border.all(color: AppColors.border),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.info_outline, size: 16, color: AppColors.textSecondary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              reason,
+              style: const TextStyle(
+                fontSize: 11,
+                height: 1.4,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

@@ -1,21 +1,26 @@
 // Indicatore visivo "Dato SAP — sola lettura".
 //
-// **Importante** : SapLockedField NON è uno StatelessWidget ma una
-// *factory* che restituisce direttamente un FieldRow, così che FormGrid
-// possa riconoscere il flag `hideIfEmpty` e filtrare correttamente i
-// campi vuoti dalla griglia (niente buchi).
+// **Importante** : i getter pubblici `label`, `value`, `hideIfEmpty` e
+// `unavailable` fanno parte del contratto — FormGrid li legge via duck-typing
+// per filtrare i campi vuoti dalla griglia (niente buchi nelle 2 colonne).
+// Rinominarli o renderli privati rompe il layout in silenzio.
 
 import 'package:flutter/material.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/widgets.dart';
 
-/// Factory che ritorna un [FieldRow] decorato con icona "lucchetto" SAP.
+/// [FieldRow] decorato con icona "lucchetto" SAP.
 class SapLockedField extends StatelessWidget {
   final String label;
   final String value;
   final bool fullWidth;
   final bool hideIfEmpty;
+
+  /// Il servizio SAP attivo non espone questo campo: si mostra spento anziché
+  /// vuoto. Vedi [FieldRow.unavailable].
+  final bool unavailable;
+  final String? unavailableReason;
 
   const SapLockedField({
     super.key,
@@ -23,22 +28,12 @@ class SapLockedField extends StatelessWidget {
     required this.value,
     this.fullWidth = false,
     this.hideIfEmpty = true,
+    this.unavailable = false,
+    this.unavailableReason,
   });
 
   @override
-  Widget build(BuildContext context) {
-    return FieldRow(
-      label: label,
-      value: value,
-      fullWidth: fullWidth,
-      hideIfEmpty: hideIfEmpty,
-      trailing: const Tooltip(
-        message: 'Dato SAP — sola lettura',
-        child: Icon(Icons.lock_outline,
-            size: 14, color: AppColors.textHint),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => asFieldRow();
 
   /// Variante "field row diretto" — usata da FormGrid per il filtraggio
   /// automatico. Non chiamare direttamente, lascia che FormGrid faccia da sé.
@@ -47,11 +42,17 @@ class SapLockedField extends StatelessWidget {
         value: value,
         fullWidth: fullWidth,
         hideIfEmpty: hideIfEmpty,
-        trailing: const Tooltip(
-          message: 'Dato SAP — sola lettura',
-          child: Icon(Icons.lock_outline,
-              size: 14, color: AppColors.textHint),
-        ),
+        unavailable: unavailable,
+        unavailableReason: unavailableReason,
+        // Il lucchetto non serve su un campo che il servizio non espone: lì
+        // l'icona è già quella del motivo.
+        trailing: unavailable
+            ? null
+            : const Tooltip(
+                message: 'Dato SAP — sola lettura',
+                child: Icon(Icons.lock_outline,
+                    size: 14, color: AppColors.textHint),
+              ),
       );
 }
 

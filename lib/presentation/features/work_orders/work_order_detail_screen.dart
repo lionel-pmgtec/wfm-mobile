@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../../core/config/capabilities.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/router/app_routes.dart';
 import '../../../core/services/geolocation_service.dart';
@@ -17,6 +18,7 @@ import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/widgets.dart';
 import '../../../domain/entities/entities.dart';
 import '../../providers/attachments_provider.dart';
+import '../../providers/capabilities_provider.dart';
 import '../../providers/work_orders_provider.dart';
 import 'widgets/lifecycle_action_bar.dart';
 import 'widgets/odl_actions_menu.dart';
@@ -131,12 +133,39 @@ class _DetailViewState extends ConsumerState<_DetailView>
 //   6. AMPLIAMENTO (impianto + contratto)
 //   7. PIANIFICAZIONE
 
-class _DettaglioTab extends StatelessWidget {
+class _DettaglioTab extends ConsumerWidget {
   final WorkOrder order;
   const _DettaglioTab({required this.order});
 
+  /// Sezione con intestazione, spenta quando la sorgente dati non la alimenta.
+  ///
+  /// Tre casi distinti, che prima si confondevano in uno solo:
+  ///  - alimentata e con dati        -> intestazione + contenuto;
+  ///  - alimentata ma senza dati     -> niente (il form si adatta al tipo di OdL,
+  ///                                    comportamento storico);
+  ///  - non alimentata dalla sorgente -> intestazione + spiegazione + contenuto
+  ///                                    spento. Il codice resta vivo: riaccendere
+  ///                                    la capability lato middleware lo riporta
+  ///                                    in funzione senza ricompilare l'app.
+  List<Widget> _section({
+    required bool enabled,
+    required String reason,
+    required bool hasData,
+    required String title,
+    required Widget child,
+  }) {
+    if (enabled && !hasData) return const [];
+    return [
+      SectionHeader(title: title),
+      CapabilityGate(enabled: enabled, reason: reason, child: child),
+    ];
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final caps = ref.watch(capabilitiesProvider);
+    final reason = caps.unavailableReason;
+
     return ListView(
       padding: kPagePadding,
       children: [
@@ -200,6 +229,12 @@ class _DettaglioTab extends StatelessWidget {
                   : order.subTam,
               hideIfEmpty: true),
           FieldRow(label: 'Stato ODL', value: order.status.label),
+          // Stringa stato reale SAP (CO_STTXT): distingue RIL. (aperto) da
+          // TECO (chiuso tecnicamente), info che lo status applicativo perde.
+          FieldRow(
+              label: 'Stato SAP',
+              value: order.statoSap ?? '',
+              hideIfEmpty: true),
           FieldRow(
               label: 'Priorità',
               value: order.priorita,
@@ -221,13 +256,17 @@ class _DettaglioTab extends StatelessWidget {
               label: 'CID Assegnato',
               value: order.cidAssegnato ?? '',
               hideIfEmpty: true,
-              trailing: IconButton(
-                tooltip: 'Cambia CID',
-                icon: const Icon(Icons.swap_horiz_rounded,
-                    size: 18, color: AppColors.primary),
-                onPressed: () =>
-                    context.push(AppRoutes.cambioCidPath(order.externalCode)),
-              )),
+              unavailable: !caps.has(Cap.odlRisorse),
+              unavailableReason: reason,
+              trailing: caps.has(Cap.odlRisorse) && caps.has(Cap.writeSap)
+                  ? IconButton(
+                      tooltip: 'Cambia CID',
+                      icon: const Icon(Icons.swap_horiz_rounded,
+                          size: 18, color: AppColors.primary),
+                      onPressed: () => context
+                          .push(AppRoutes.cambioCidPath(order.externalCode)),
+                    )
+                  : null),
           FieldRow(
               label: 'Centro Pianificazione',
               value: order.centroPianificazione,
@@ -239,11 +278,15 @@ class _DettaglioTab extends StatelessWidget {
           FieldRow(
               label: 'Data Appuntamento',
               value: Fmt.date(order.appointmentDate),
-              hideIfEmpty: true),
+              hideIfEmpty: true,
+              unavailable: !caps.has(Cap.odlAppuntamento),
+              unavailableReason: reason),
           FieldRow(
               label: 'Ora Appuntamento',
               value: order.appointmentStartTime,
-              hideIfEmpty: true),
+              hideIfEmpty: true,
+              unavailable: !caps.has(Cap.odlAppuntamento),
+              unavailableReason: reason),
           FieldRow(
               label: 'Settore Contabile',
               value: order.accountingSector,
@@ -251,9 +294,13 @@ class _DettaglioTab extends StatelessWidget {
         ]),
 
         // ── 2. CLIENTE ──────────────────────────────────────────────
-        if (!order.customer.isEmpty || (order.referente ?? '').isNotEmpty) ...[
-          const SectionHeader(title: 'CLIENTE'),
-          FormGrid(children: [
+        // Non esposto da ZWFMT_SERVIZIO_PM: servirebbero i partner IHPA + ADRC.
+        ..._section(
+          enabled: caps.has(Cap.odlCliente),
+          reason: reason,
+          hasData: !order.customer.isEmpty || (order.referente ?? '').isNotEmpty,
+          title: 'CLIENTE',
+          child: FormGrid(children: [
             FieldRow(
                 label: 'Codice Cliente',
                 value: order.codiceCliente ?? order.customer.codCli ?? '',
@@ -283,43 +330,62 @@ class _DettaglioTab extends StatelessWidget {
                 value: order.customer.email ?? '',
                 hideIfEmpty: true),
           ]),
-        ],
+        ),
 
         // ── 3. INDIRIZZI ────────────────────────────────────────────
+        // Non esposti da ZWFMT_SERVIZIO_PM: servirebbero ILOA + ADRC.
         const SectionHeader(title: 'INDIRIZZI'),
-        FieldRow(
-          label: 'Indirizzo Cliente',
-          value: order.address.full,
-          fullWidth: true,
-          trailing: order.address.hasCoordinates
-              ? IconButton(
-                  icon: const Icon(Icons.map_outlined,
-                      color: AppColors.primary),
-                  onPressed: () => context.go(AppRoutes.map))
-              : null,
-        ),
-        if (order.indirizzoOggetto != null) ...[
-          const SizedBox(height: 8),
-          FieldRow(
-              label: 'Indirizzo Oggetto',
-              value: order.indirizzoOggetto!.full,
-              fullWidth: true),
-        ],
-        if (order.indirizzoIntervento != null) ...[
-          const SizedBox(height: 8),
-          FieldRow(
-            label: 'Indirizzo Intervento',
-            value: order.indirizzoIntervento!.full,
-            fullWidth: true,
-            trailing: order.indirizzoIntervento!.hasCoordinates
-                ? IconButton(
-                    icon: const Icon(Icons.map_outlined,
-                        color: AppColors.primary),
-                    onPressed: () => context.go(AppRoutes.map))
-                : null,
+        CapabilityGate(
+          enabled: caps.has(Cap.odlIndirizzi),
+          reason: reason,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              FieldRow(
+                label: 'Indirizzo Cliente',
+                value: order.address.full,
+                fullWidth: true,
+                trailing: order.address.hasCoordinates
+                    ? IconButton(
+                        icon: const Icon(Icons.map_outlined,
+                            color: AppColors.primary),
+                        onPressed: () => context.go(AppRoutes.map))
+                    : null,
+              ),
+              if (order.indirizzoOggetto != null) ...[
+                const SizedBox(height: 8),
+                FieldRow(
+                    label: 'Indirizzo Oggetto',
+                    value: order.indirizzoOggetto!.full,
+                    fullWidth: true),
+              ],
+              if (order.indirizzoIntervento != null) ...[
+                const SizedBox(height: 8),
+                FieldRow(
+                  label: 'Indirizzo Intervento',
+                  value: order.indirizzoIntervento!.full,
+                  fullWidth: true,
+                  trailing: order.indirizzoIntervento!.hasCoordinates
+                      ? IconButton(
+                          icon: const Icon(Icons.map_outlined,
+                              color: AppColors.primary),
+                          onPressed: () => context.go(AppRoutes.map))
+                      : null,
+                ),
+              ],
+              const SizedBox(height: 8),
+              FormGrid(children: [
+                FieldRow(
+                    label: 'Coordinate GPS',
+                    value: (order.indirizzoIntervento ?? order.address)
+                        .gpsCoordinates,
+                    hideIfEmpty: true),
+              ]),
+            ],
           ),
-        ],
+        ),
         const SizedBox(height: 8),
+        // Fuori dal gate: sede tecnica ed equipment SAP li espone davvero.
         FormGrid(children: [
           FieldRow(
               label: 'Ubicazione Tecnica',
@@ -328,11 +394,6 @@ class _DettaglioTab extends StatelessWidget {
           FieldRow(
               label: 'Equipment',
               value: order.equipment,
-              hideIfEmpty: true),
-          FieldRow(
-              label: 'Coordinate GPS',
-              value: (order.indirizzoIntervento ?? order.address)
-                  .gpsCoordinates,
               hideIfEmpty: true),
         ]),
 
@@ -350,7 +411,9 @@ class _DettaglioTab extends StatelessWidget {
           FieldRow(
               label: 'Matricola',
               value: order.matricola ?? order.meter?.matricola ?? '',
-              hideIfEmpty: true),
+              hideIfEmpty: true,
+              unavailable: !caps.has(Cap.odlContatore),
+              unavailableReason: reason),
           FieldRow(
               label: 'Ubicazione Tecnica',
               value: order.ubicazione,
@@ -361,50 +424,78 @@ class _DettaglioTab extends StatelessWidget {
               hideIfEmpty: true),
         ]),
 
-        if (order.hasMeter) ...[
-          const SectionHeader(title: 'CONTATORE'),
-          FormGrid(children: [
-            FieldRow(label: 'Matricola', value: order.meter!.matricola),
-            FieldRow(label: 'Marca/Modello', value: order.meter!.displayName),
-            FieldRow(
-                label: 'Calibro',
-                value: order.meter!.caliber,
-                hideIfEmpty: true),
-            FieldRow(
-                label: 'Ubicazione',
-                value: order.meter!.location,
-                hideIfEmpty: true),
-            FieldRow(
-                label: 'Ultima Lettura',
-                value: order.meter!.lastReading?.toString() ?? '',
-                hideIfEmpty: true),
-            FieldRow(
-                label: 'Data Lettura',
-                value: Fmt.date(order.meter!.lastReadingDate),
-                hideIfEmpty: true),
-          ]),
-        ],
+        // ── CONTATORE ───────────────────────────────────────────────
+        // Non esposto da ZWFMT_SERVIZIO_PM: servirebbero i punti di misura
+        // IMPTT/IMRG. Senza, ATTI/SOST/DISA restano senza letture.
+        ..._section(
+          enabled: caps.has(Cap.odlContatore),
+          reason: reason,
+          hasData: order.hasMeter,
+          title: 'CONTATORE',
+          child: order.hasMeter
+              ? FormGrid(children: [
+                  FieldRow(label: 'Matricola', value: order.meter!.matricola),
+                  FieldRow(
+                      label: 'Marca/Modello', value: order.meter!.displayName),
+                  FieldRow(
+                      label: 'Calibro',
+                      value: order.meter!.caliber,
+                      hideIfEmpty: true),
+                  FieldRow(
+                      label: 'Ubicazione',
+                      value: order.meter!.location,
+                      hideIfEmpty: true),
+                  FieldRow(
+                      label: 'Ultima Lettura',
+                      value: order.meter!.lastReading?.toString() ?? '',
+                      hideIfEmpty: true),
+                  FieldRow(
+                      label: 'Data Lettura',
+                      value: Fmt.date(order.meter!.lastReadingDate),
+                      hideIfEmpty: true),
+                ])
+              // Capability spenta e nessun contatore: si mostra la forma della
+              // sezione, spenta, invece di far sparire tutto senza spiegazione.
+              : FormGrid(children: [
+                  FieldRow(
+                      label: 'Matricola',
+                      value: '',
+                      unavailable: true,
+                      unavailableReason: reason),
+                  FieldRow(
+                      label: 'Ultima Lettura',
+                      value: '',
+                      unavailable: true,
+                      unavailableReason: reason),
+                ]),
+        ),
 
         // ── 5. RISORSE ──────────────────────────────────────────────
+        // Tecnico assegnato e squadra non sono esposti: servirebbe IHPA.
+        // È anche il motivo per cui manca il filtro "i miei ODL".
         const SectionHeader(title: 'RISORSE'),
-        FormGrid(children: [
-          FieldRow(
-              label: 'Tecnico Assegnato',
-              value: order.cidAssegnato ?? '',
-              hideIfEmpty: true),
-          FieldRow(
-              label: 'Squadra',
-              value: order.squadra,
-              hideIfEmpty: true),
-          FieldRow(
-              label: 'Responsabile',
-              value: order.responsabile ?? '',
-              hideIfEmpty: true),
-          FieldRow(
-              label: 'Fornitore Esterno',
-              value: order.fornitoreEsterno ?? '',
-              hideIfEmpty: true),
-        ]),
+        CapabilityGate(
+          enabled: caps.has(Cap.odlRisorse),
+          reason: reason,
+          child: FormGrid(children: [
+            FieldRow(
+                label: 'Tecnico Assegnato',
+                value: order.cidAssegnato ?? '',
+                hideIfEmpty: true),
+            FieldRow(
+                label: 'Squadra',
+                value: order.squadra,
+                hideIfEmpty: true),
+            FieldRow(
+                label: 'Responsabile',
+                value: order.responsabile ?? '',
+                hideIfEmpty: true),
+            FieldRow(
+                label: 'Fornitore Esterno',
+                value: order.fornitoreEsterno ?? '',
+                hideIfEmpty: true),
+          ]),
+        ),
         const SizedBox(height: 8),
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -443,27 +534,39 @@ class _DettaglioTab extends StatelessWidget {
         ),
 
         // ── 6. AMPLIAMENTO ──────────────────────────────────────────
-        if ((order.impiantoDis ?? '').isNotEmpty ||
-            (order.contratto ?? '').isNotEmpty) ...[
-          const SectionHeader(title: 'AMPLIAMENTO'),
-          FormGrid(children: [
+        ..._section(
+          enabled: caps.has(Cap.odlAmpliamento),
+          reason: reason,
+          hasData: (order.impiantoDis ?? '').isNotEmpty ||
+              (order.contratto ?? '').isNotEmpty,
+          title: 'AMPLIAMENTO',
+          child: FormGrid(children: [
             FieldRow(
                 label: 'Impianto Disattivazione',
                 value: order.impiantoDis ?? '',
-                hideIfEmpty: true),
+                hideIfEmpty: true,
+                unavailable: !caps.has(Cap.odlAmpliamento),
+                unavailableReason: reason),
             FieldRow(
                 label: 'Contratto',
                 value: order.contratto ?? '',
-                hideIfEmpty: true),
+                hideIfEmpty: true,
+                unavailable: !caps.has(Cap.odlAmpliamento),
+                unavailableReason: reason),
           ]),
-        ],
+        ),
 
         // ── 7. PIANIFICAZIONE ──────────────────────────────────────
-        if ((order.ultimoCicloManutenzione ?? '').isNotEmpty ||
-            (order.postManut ?? '').isNotEmpty ||
-            order.dataEsec != null) ...[
-          const SectionHeader(title: 'PIANIFICAZIONE'),
-          FormGrid(children: [
+        // Data Esecuzione arriva da SAP (CO_GSTRP): la sezione è alimentata.
+        ..._section(
+          enabled: caps.has(Cap.odlPianificazione),
+          reason: reason,
+          hasData: (order.ultimoCicloManutenzione ?? '').isNotEmpty ||
+              (order.postManut ?? '').isNotEmpty ||
+              order.dataEsec != null ||
+              order.dataFine != null,
+          title: 'PIANIFICAZIONE',
+          child: FormGrid(children: [
             FieldRow(
                 label: 'Ultimo Ciclo Manutenzione',
                 value: order.ultimoCicloManutenzione ?? '',
@@ -477,18 +580,31 @@ class _DettaglioTab extends StatelessWidget {
                 label: 'Data Esecuzione',
                 value: Fmt.date(order.dataEsec),
                 hideIfEmpty: true),
+            // Data fine prevista SAP (CO_GLTRP): valorizzata al 100% e diversa
+            // dall'inizio in ~1 ordine su 3.
+            FieldRow(
+                label: 'Data Fine Prevista',
+                value: Fmt.date(order.dataFine),
+                hideIfEmpty: true),
           ]),
-        ],
+        ),
 
         // ── NOTE OPERATIVE ────────────────────────────────────────
-        if (order.notes.trim().isNotEmpty) ...[
-          const SectionHeader(title: 'NOTE'),
-          FieldRow(
+        // Il testo lungo non sta in AUFK ma in STXH/STXL e richiede una
+        // chiamata separata a READ_TEXT: ZWFMT_SERVIZIO_PM non lo espone.
+        ..._section(
+          enabled: caps.has(Cap.odlNote),
+          reason: reason,
+          hasData: order.notes.trim().isNotEmpty,
+          title: 'NOTE',
+          child: FieldRow(
               label: 'Nota Ordine',
               value: order.notes,
               fullWidth: true,
-              maxLines: 4),
-        ],
+              maxLines: 4,
+              unavailable: !caps.has(Cap.odlNote),
+              unavailableReason: reason),
+        ),
 
         // ── SEZIONI INLINE (Attività · Appuntamenti · Sospensioni ·
         //                    Preventivo collegato · Firme) ─────────
@@ -504,11 +620,15 @@ class _DettaglioTab extends StatelessWidget {
             _QuickActionChip(
                 icon: Icons.event_outlined,
                 label: 'Appuntamenti',
+                enabled: caps.has(Cap.odlAppuntamento),
+                disabledReason: reason,
                 onTap: () =>
                     context.push(AppRoutes.appointmentsPath(order.externalCode))),
             _QuickActionChip(
                 icon: Icons.history_rounded,
                 label: 'Storico',
+                enabled: caps.has(Cap.odlAppuntamento),
+                disabledReason: reason,
                 onTap: () => context.push(
                     AppRoutes.storicoAppuntamentiPath(order.externalCode))),
             _QuickActionChip(
@@ -529,6 +649,8 @@ class _DettaglioTab extends StatelessWidget {
             _QuickActionChip(
                 icon: Icons.inventory_2_outlined,
                 label: 'Componente',
+                enabled: caps.has(Cap.odlMateriali),
+                disabledReason: reason,
                 onTap: () => context
                     .push(AppRoutes.addComponentePath(order.externalCode))),
           ],
@@ -545,11 +667,33 @@ class _QuickActionChip extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
-  const _QuickActionChip(
-      {required this.icon, required this.label, required this.onTap});
+
+  /// Spento quando la sorgente dati non alimenta ciò su cui l'azione lavora:
+  /// aprire la schermata mostrerebbe solo campi vuoti.
+  final bool enabled;
+  final String? disabledReason;
+
+  const _QuickActionChip({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.enabled = true,
+    this.disabledReason,
+  });
 
   @override
   Widget build(BuildContext context) {
+    if (!enabled) {
+      return Tooltip(
+        message: disabledReason ?? 'Dati non disponibile',
+        triggerMode: TooltipTriggerMode.tap,
+        child: Opacity(opacity: 0.4, child: _chip(onTap: null)),
+      );
+    }
+    return _chip(onTap: onTap);
+  }
+
+  Widget _chip({required VoidCallback? onTap}) {
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(8),
@@ -623,12 +767,12 @@ class _ChiusuraTab extends StatelessWidget {
                 const Icon(Icons.flag_rounded, color: AppColors.primary),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text('Concludi l\'intervento',
+                  child: const Text('Concludi l\'intervento',
                       style: AppTextStyles.headingSmall),
                 ),
               ]),
               const SizedBox(height: 8),
-              Text(
+              const Text(
                   'Per chiudere l\'OdL compila e invia l\'esito. Contiene tutte le '
                   'informazioni di chiusura:',
                   style: AppTextStyles.bodyMedium),
@@ -1201,24 +1345,46 @@ class _DateField extends StatelessWidget {
 
 // ─── SCHEDA COMPONENTI ─────────────────────────────────────────────────────
 
-class _ComponentiTab extends StatelessWidget {
+class _ComponentiTab extends ConsumerWidget {
   final WorkOrder order;
   const _ComponentiTab({required this.order});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final caps = ref.watch(capabilitiesProvider);
+    final materialiDisponibili = caps.has(Cap.odlMateriali);
+
     final addButton = Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       child: SizedBox(
         width: double.infinity,
         child: ElevatedButton.icon(
-          onPressed: () =>
-              context.push(AppRoutes.addComponentePath(order.externalCode)),
+          onPressed: materialiDisponibili
+              ? () => context.push(AppRoutes.addComponentePath(order.externalCode))
+              : null,
           icon: const Icon(Icons.add),
           label: const Text('Aggiungi materiale'),
         ),
       ),
     );
+
+    // I materiali pianificati stanno in RESB, che il servizio SAP esclude di
+    // proposito: dirlo è meglio che lasciar credere che l'OdL non ne abbia.
+    if (!materialiDisponibili && order.plannedMaterials.isEmpty) {
+      return Column(
+        children: [
+          Expanded(
+            child: EmptyState(
+              title: 'Materiali non disponibili',
+              subtitle: caps.unavailableReason,
+              icon: Icons.inventory_2_outlined,
+            ),
+          ),
+          addButton,
+        ],
+      );
+    }
+
     if (order.plannedMaterials.isEmpty) {
       return Column(
         children: [

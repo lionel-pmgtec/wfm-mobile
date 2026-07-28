@@ -1,16 +1,26 @@
 // Contratto della sorgente dati remota (middleware REST/JSON).
 // Unica implementazione: HttpRemoteDataSource (parla col Cruscotto/backend).
 
+import '../../../core/config/capabilities.dart';
 import '../../../domain/entities/entities.dart';
 import '../../../domain/repositories/work_order_repository.dart';
 
 abstract interface class WfmRemoteDataSource {
+  /// Quali sezioni la sorgente dati attiva alimenta davvero.
+  /// Il middleware lo sa perché conosce la sorgente; l'app no.
+  Future<Capabilities> getCapabilities();
+
   // Auth (M1)
   Future<AuthSession> login(String cid, String password);
   Future<void> logout();
 
   /// Registrazione token push presso il Cruscotto.
   Future<void> registerDeviceToken(String cid, String fcmToken);
+
+  /// Chiede al backend del collega (cruscotto) di ri-estrarre da SAP e
+  /// ripopolare il suo store. Serve perché il cruscotto parte vuoto finché SAP
+  /// non spinge i dati: questa è l'azione "Aggiorna" che scatena il PULL.
+  Future<void> refreshFromCruscotto();
 
   // Work orders (M2/M3/M4/M10)
   Future<List<WorkOrder>> getWorkOrders(WorkOrderFilter filter);

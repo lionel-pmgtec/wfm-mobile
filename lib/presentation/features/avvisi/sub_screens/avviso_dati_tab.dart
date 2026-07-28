@@ -22,6 +22,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../../core/config/capabilities.dart';
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/router/app_routes.dart';
 import '../../../../core/theme/app_theme.dart';
@@ -30,6 +31,7 @@ import '../../../../core/widgets/widgets.dart';
 import '../../../../domain/entities/entities.dart';
 import '../../../providers/avviso_extension_provider.dart';
 import '../../../providers/avvisi_provider.dart';
+import '../../../providers/capabilities_provider.dart';
 import '../widgets/avviso_widgets.dart';
 
 class AvvisoDatiTab extends ConsumerWidget {
@@ -41,11 +43,21 @@ class AvvisoDatiTab extends ConsumerWidget {
     final isPI = avviso.categoria == AvvisoCategory.prontoIntervento;
     final ext = ref.watch(avvisoExtensionProvider(avviso.numeroAvviso));
     final editing = ref.watch(avvisoEditModeProvider(avviso.numeroAvviso));
+    final caps = ref.watch(capabilitiesProvider);
+    final reason = caps.unavailableReason;
+
+    // Riorganizzazione (2026-07-23): in alto ciò che SAP alimenta davvero
+    // (dati avviso, dati tecnici, elaborazione operatore); in fondo, collassate,
+    // le sezioni che ZWFMT_S_AVVISO NON popola (Cliente, Indirizzi, Gestione
+    // Intervento — servirebbero IHPA/ADRC/ILOA). Prima era il contrario: molte
+    // sezioni vuote in evidenza e i pochi dati reali sepolti in fondo.
     return ListView(
       padding: kPagePadding,
       children: [
         CategoryBanner(sottotipo: avviso.sottotipo),
         const SizedBox(height: 12),
+
+        // ═══ DATI ALIMENTATI DA SAP ═══════════════════════════════════
 
         // ── DATI AVVISO ─────────────────────────────────────────────
         WfmCollapsibleSection(
@@ -56,59 +68,13 @@ class AvvisoDatiTab extends ConsumerWidget {
               : _DatiAvvisoRP(avviso: avviso),
         ),
 
-        // ── CLIENTE ─────────────────────────────────────────────────
-        if (!avviso.customer.isEmpty || (avviso.referente ?? '').isNotEmpty)
-          WfmCollapsibleSection(
-            title: 'CLIENTE',
-            icon: Icons.person_outline,
-            child: isPI
-                ? _ClientePI(avviso: avviso)
-                : _ClienteRP(avviso: avviso),
-          ),
-
-        // ── INDIRIZZI (PI: 2 indirizzi separati ; RP: 3 indirizzi) ──
-        if (isPI) ...[
-          WfmCollapsibleSection(
-            title: 'INDIRIZZO AVVISO',
-            icon: Icons.place_outlined,
-            child: _IndirizzoBlocco(
-              address: avviso.address,
-              telefonoExtra: avviso.indirizzoAvvisoTelefono,
-              areaTecnica: avviso.areaTecnica,
-              showGps: true,
-            ),
-          ),
-          if (avviso.indirizzoOggetto != null ||
-              (avviso.sedeTecnica ?? '').isNotEmpty)
-            WfmCollapsibleSection(
-              title: 'INDIRIZZO OGGETTO',
-              icon: Icons.engineering_outlined,
-              child: _IndirizzoOggettoPI(avviso: avviso),
-              initiallyExpanded: false,
-            ),
-        ] else
-          WfmCollapsibleSection(
-            title: 'INDIRIZZI',
-            icon: Icons.place_outlined,
-            child: _IndirizziRP(avviso: avviso),
-          ),
-
-        // ── DATI TECNICI ────────────────────────────────────────────
+        // ── DATI TECNICI (sede tecnica, centro manut., equipment) ───
+        // Portati in alto: contengono i campi realmente valorizzati da SAP.
         WfmCollapsibleSection(
           title: 'DATI TECNICI',
           icon: Icons.precision_manufacturing_outlined,
-          initiallyExpanded: false,
           child: _DatiTecnici(avviso: avviso),
         ),
-
-        // ── GESTIONE INTERVENTO (solo PI) ───────────────────────────
-        if (isPI)
-          WfmCollapsibleSection(
-            title: 'GESTIONE INTERVENTO',
-            icon: Icons.local_shipping_outlined,
-            initiallyExpanded: false,
-            child: _GestioneIntervento(avviso: avviso),
-          ),
 
         // ── DATI PREVENTIVO (solo RP) ───────────────────────────────
         if (!isPI)
@@ -135,8 +101,121 @@ class AvvisoDatiTab extends ConsumerWidget {
           ),
         ),
 
+        // ═══ SEZIONI IN ATTESA DI MAPPATURA SAP ═══════════════════════
+        // Oggi ZWFMT_S_AVVISO non le popola, ma il dev SAP le mapperà a breve
+        // (IHPA/ADRC per cliente e indirizzi): restano quindi sulla tablet,
+        // tenute in fondo e collassate finché non arrivano i dati.
+        const SizedBox(height: 8),
+        const _SapGapDivider(),
+
+        // ── CLIENTE ─────────────────────────────────────────────────
+        // ZWFMT_S_AVVISO non porta fuori nessun dato cliente: servirebbero
+        // i partner IHPA + ADRC.
+        if (!caps.has(Cap.avvisoCliente) ||
+            !avviso.customer.isEmpty ||
+            (avviso.referente ?? '').isNotEmpty)
+          WfmCollapsibleSection(
+            title: 'CLIENTE',
+            icon: Icons.person_outline,
+            initiallyExpanded: false,
+            child: CapabilityGate(
+              enabled: caps.has(Cap.avvisoCliente),
+              reason: reason,
+              child: isPI
+                  ? _ClientePI(avviso: avviso)
+                  : _ClienteRP(avviso: avviso),
+            ),
+          ),
+
+        // ── INDIRIZZI (PI: 2 indirizzi separati ; RP: 3 indirizzi) ──
+        // Nemmeno gli indirizzi sono esposti: servirebbero ILOA + ADRC.
+        if (isPI) ...[
+          WfmCollapsibleSection(
+            title: 'INDIRIZZO AVVISO',
+            icon: Icons.place_outlined,
+            initiallyExpanded: false,
+            child: CapabilityGate(
+              enabled: caps.has(Cap.avvisoIndirizzi),
+              reason: reason,
+              child: _IndirizzoBlocco(
+                address: avviso.address,
+                telefonoExtra: avviso.indirizzoAvvisoTelefono,
+                areaTecnica: avviso.areaTecnica,
+                showGps: true,
+              ),
+            ),
+          ),
+          if (!caps.has(Cap.avvisoIndirizzi) ||
+              avviso.indirizzoOggetto != null ||
+              (avviso.sedeTecnica ?? '').isNotEmpty)
+            WfmCollapsibleSection(
+              title: 'INDIRIZZO OGGETTO',
+              icon: Icons.engineering_outlined,
+              initiallyExpanded: false,
+              child: CapabilityGate(
+                enabled: caps.has(Cap.avvisoIndirizzi),
+                reason: reason,
+                child: _IndirizzoOggettoPI(avviso: avviso),
+              ),
+            ),
+        ] else
+          WfmCollapsibleSection(
+            title: 'INDIRIZZI',
+            icon: Icons.place_outlined,
+            initiallyExpanded: false,
+            child: CapabilityGate(
+              enabled: caps.has(Cap.avvisoIndirizzi),
+              reason: reason,
+              child: _IndirizziRP(avviso: avviso),
+            ),
+          ),
+
+        // ── GESTIONE INTERVENTO (solo PI) ───────────────────────────
+        if (isPI)
+          WfmCollapsibleSection(
+            title: 'GESTIONE INTERVENTO',
+            icon: Icons.local_shipping_outlined,
+            initiallyExpanded: false,
+            child: CapabilityGate(
+              enabled: caps.has(Cap.avvisoGestioneIntervento),
+              reason: reason,
+              child: _GestioneIntervento(avviso: avviso),
+            ),
+          ),
+
         const SizedBox(height: 80),
       ],
+    );
+  }
+}
+
+/// Separatore che segna dove finiscono i dati SAP e iniziano le sezioni
+/// non alimentate da ZWFMT_S_AVVISO (tenute in fondo, collassate).
+class _SapGapDivider extends StatelessWidget {
+  const _SapGapDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Padding(
+      padding: EdgeInsets.symmetric(vertical: 8),
+      child: Row(
+        children: [
+          Expanded(child: Divider()),
+          Padding(
+            padding: EdgeInsets.symmetric(horizontal: 8),
+            child: Text(
+              'IN ATTESA DI MAPPATURA SAP',
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.6,
+                color: AppColors.textHint,
+              ),
+            ),
+          ),
+          Expanded(child: Divider()),
+        ],
+      ),
     );
   }
 }
@@ -180,19 +259,22 @@ class _DatiAvvisoPI extends StatelessWidget {
           SapLockedField(
               label: 'Categoria',
               value: avviso.categoriaIntervento?.label ?? ''),
+          SapLockedField(label: 'Stato Avviso', value: avviso.statoTipo.label),
+          // Stato reale SAP (CO_STTXT): codici come MAPE/MELA che lo status
+          // applicativo appiattisce sempre a "Creato".
           SapLockedField(
-              label: 'Stato Avviso', value: avviso.statoTipo.label),
+              label: 'Stato SAP',
+              value: avviso.statoSap ?? '',
+              hideIfEmpty: true),
           SapLockedField(label: 'Priorita', value: avviso.priorita),
           SapLockedField(
               label: 'Canale Apertura',
               value: avviso.canaleApertura?.label ?? ''),
           SapLockedField(
-              label: 'Tipo Servizio',
-              value: avviso.tipoServizio?.label ?? ''),
+              label: 'Tipo Servizio', value: avviso.tipoServizio?.label ?? ''),
           SapLockedField(label: 'SLA Target', value: avviso.slaTarget ?? ''),
           SapLockedField(
-              label: 'Tempo Risposta',
-              value: avviso.tempoRispostaAtteso ?? ''),
+              label: 'Tempo Risposta', value: avviso.tempoRispostaAtteso ?? ''),
           SapLockedField(
               label: 'Codice Guasto', value: avviso.codiceGuasto ?? ''),
           SapLockedField(
@@ -256,11 +338,13 @@ class _DatiAvvisoRP extends StatelessWidget {
               hideIfEmpty: false),
           SapLockedField(label: 'CID', value: avviso.cid ?? ''),
           SapLockedField(label: 'Categoria', value: 'Richiesta Preventivo'),
+          SapLockedField(label: 'Stato Avviso', value: avviso.statoTipo.label),
           SapLockedField(
-              label: 'Stato Avviso', value: avviso.statoTipo.label),
+              label: 'Stato SAP',
+              value: avviso.statoSap ?? '',
+              hideIfEmpty: true),
           SapLockedField(
-              label: 'Data Richiesta',
-              value: Fmt.date(avviso.dataApertura)),
+              label: 'Data Richiesta', value: Fmt.date(avviso.dataApertura)),
           SapLockedField(
               label: 'Ora Richiesta', value: avviso.oraApertura ?? ''),
           SapLockedField(
@@ -300,8 +384,7 @@ class _ClientePI extends StatelessWidget {
               value: c.ragioneSociale ?? '',
               fullWidth: true)
         else
-          SapLockedField(
-              label: 'Cliente', value: c.fullName, fullWidth: true),
+          SapLockedField(label: 'Cliente', value: c.fullName, fullWidth: true),
         const SizedBox(height: 8),
         FormGrid(children: [
           SapLockedField(
@@ -342,8 +425,7 @@ class _ClienteRP extends StatelessWidget {
               value: c.ragioneSociale ?? '',
               fullWidth: true)
         else
-          SapLockedField(
-              label: 'Cliente', value: c.fullName, fullWidth: true),
+          SapLockedField(label: 'Cliente', value: c.fullName, fullWidth: true),
         const SizedBox(height: 8),
         FormGrid(children: [
           SapLockedField(
@@ -442,18 +524,18 @@ class _IndirizzoBlocco extends StatelessWidget {
               value: address.additionalInfo,
               fullWidth: true),
         ],
-        if (showGps && address.hasCoordinates) ...[
+/*         if (showGps && address.hasCoordinates) ...[
           const SizedBox(height: 6),
           SapLockedField(
               label: 'Coordinate GPS',
               value: address.gpsCoordinates,
               fullWidth: true),
-        ],
+        ], */
         if (address.hasCoordinates) ...[
           const SizedBox(height: 8),
           OutlinedButton.icon(
             onPressed: () => context.go(AppRoutes.map),
-            icon: const Icon(Icons.map_outlined, size: 16),
+            icon: const Icon(Icons.map_outlined, size: 20),
             label: const Text('Apri in mappa'),
           ),
         ],
@@ -533,8 +615,7 @@ class _IndirizziRP extends StatelessWidget {
         if (avviso.indirizzoOggetto != null) ...[
           const SizedBox(height: 12),
           _AddrBlock(
-              label: 'INDIRIZZO OGGETTO',
-              address: avviso.indirizzoOggetto!),
+              label: 'INDIRIZZO OGGETTO', address: avviso.indirizzoOggetto!),
         ],
         if (avviso.indirizzoLavoro != null) ...[
           const SizedBox(height: 12),
@@ -579,7 +660,8 @@ class _AddrBlock extends StatelessWidget {
           SapLockedField(label: 'Localita', value: address.localita),
           SapLockedField(label: 'Comune', value: address.city),
           SapLockedField(label: 'Provincia', value: address.provincia),
-          if (telefono != null) SapLockedField(label: 'Telefono', value: telefono!),
+          if (telefono != null)
+            SapLockedField(label: 'Telefono', value: telefono!),
         ]),
         if (address.additionalInfo.isNotEmpty) ...[
           const SizedBox(height: 4),
@@ -588,13 +670,13 @@ class _AddrBlock extends StatelessWidget {
               value: address.additionalInfo,
               fullWidth: true),
         ],
-        if (showGps && address.hasCoordinates) ...[
+        /* if (showGps && address.hasCoordinates) ...[
           const SizedBox(height: 4),
           SapLockedField(
               label: 'Coordinate GPS',
               value: address.gpsCoordinates,
               fullWidth: true),
-        ],
+        ], */
       ],
     );
   }
@@ -620,6 +702,11 @@ class _DatiTecnici extends StatelessWidget {
         FormGrid(children: [
           SapLockedField(
               label: 'Sede Tecnica', value: avviso.sedeTecnica ?? ''),
+          // Centro di manutenzione SAP (IWERK): valorizzato al 100%.
+          SapLockedField(
+              label: 'Centro Manutenzione',
+              value: avviso.centroManut ?? '',
+              hideIfEmpty: true),
           SapLockedField(
               label: 'Ubicazione Tecnica',
               value: avviso.ubicazioneTecnica ?? ''),
@@ -629,8 +716,7 @@ class _DatiTecnici extends StatelessWidget {
               label: 'Stato Equipment',
               value: avviso.statoEquipment?.label ?? ''),
           SapLockedField(
-              label: 'Categoria Tecnica',
-              value: avviso.categoriaTecnica ?? ''),
+              label: 'Categoria Tecnica', value: avviso.categoriaTecnica ?? ''),
           SapLockedField(
               label: 'Tipo Impianto', value: avviso.tipoImpianto ?? ''),
           SapLockedField(
@@ -638,8 +724,7 @@ class _DatiTecnici extends StatelessWidget {
           SapLockedField(
               label: 'Punto Misura', value: avviso.puntoMisura ?? ''),
           SapLockedField(
-              label: 'Codice Materiale',
-              value: avviso.codiceMateriale ?? ''),
+              label: 'Codice Materiale', value: avviso.codiceMateriale ?? ''),
           SapLockedField(label: 'Calibro', value: avviso.calibro ?? ''),
         ]),
       ],
@@ -701,8 +786,7 @@ class _GestioneIntervento extends StatelessWidget {
               label: 'Data Intervento',
               value: Fmt.date(avviso.dataInterventoRichiesta)),
           SapLockedField(
-              label: 'Fascia Oraria',
-              value: avviso.fasciaOraria?.label ?? ''),
+              label: 'Fascia Oraria', value: avviso.fasciaOraria?.label ?? ''),
           SapLockedField(
               label: 'Data Inizio Guasto',
               value: Fmt.date(avviso.dataInizioGuasto)),
@@ -728,8 +812,7 @@ class _GestioneIntervento extends StatelessWidget {
             const SizedBox(width: 8),
             Expanded(
                 child: SapLockedCheckbox(
-                    label: 'Reperibilita Attiva',
-                    value: avviso.reperibilita)),
+                    label: 'Reperibilita Attiva', value: avviso.reperibilita)),
           ],
         ),
         if ((avviso.motivoUrgenza ?? '').isNotEmpty) ...[
@@ -761,8 +844,7 @@ class _StatoOperativoBadge extends StatelessWidget {
         children: [
           Icon(stato.icon, size: 20, color: stato.color),
           const SizedBox(width: 10),
-          const Text('Stato Operativo: ',
-              style: AppTextStyles.bodyMedium),
+          const Text('Stato Operativo: ', style: AppTextStyles.bodyMedium),
           Text(stato.label,
               style: TextStyle(
                   fontSize: 14,
@@ -805,10 +887,9 @@ class _DatiPreventivoRPState extends ConsumerState<_DatiPreventivoRP> {
   void initState() {
     super.initState();
     final p = widget.preventivo;
-    _cidCtrl = TextEditingController(
-        text: p?.cidCollegato ?? widget.avviso.cid ?? '');
-    _tecnicoCtrl =
-        TextEditingController(text: p?.tecnicoSopralluogo ?? '');
+    _cidCtrl =
+        TextEditingController(text: p?.cidCollegato ?? widget.avviso.cid ?? '');
+    _tecnicoCtrl = TextEditingController(text: p?.tecnicoSopralluogo ?? '');
     _descrCtrl =
         TextEditingController(text: p?.descrizioneLavoriRichiesti ?? '');
     _tipo = p?.tipoRichiesta;
@@ -881,8 +962,8 @@ class _DatiPreventivoRPState extends ConsumerState<_DatiPreventivoRP> {
 
   @override
   Widget build(BuildContext context) {
-    final odlGen =
-        widget.preventivo?.odlGenerato == true || widget.avviso.hasOrdineCollegato;
+    final odlGen = widget.preventivo?.odlGenerato == true ||
+        widget.avviso.hasOrdineCollegato;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -893,15 +974,14 @@ class _DatiPreventivoRPState extends ConsumerState<_DatiPreventivoRP> {
             decoration: BoxDecoration(
               color: AppColors.primary.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                  color: AppColors.primary.withValues(alpha: 0.3)),
+              border:
+                  Border.all(color: AppColors.primary.withValues(alpha: 0.3)),
             ),
             child: Row(
               children: [
                 Icon(_tipo!.icon, size: 18, color: AppColors.primary),
                 const SizedBox(width: 8),
-                const Text('Tipo Richiesta: ',
-                    style: AppTextStyles.bodyMedium),
+                const Text('Tipo Richiesta: ', style: AppTextStyles.bodyMedium),
                 Expanded(
                   child: Text(_tipo!.label,
                       style: const TextStyle(
@@ -1078,8 +1158,7 @@ class _DerivedCheckbox extends StatelessWidget {
                     value: value,
                     onChanged: (_) {},
                     visualDensity: VisualDensity.compact,
-                    materialTapTargetSize:
-                        MaterialTapTargetSize.shrinkWrap,
+                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                     activeColor: AppColors.primary,
                   ),
                 ),
@@ -1090,9 +1169,7 @@ class _DerivedCheckbox extends StatelessWidget {
                   value ? 'Si' : 'No',
                   style: AppTextStyles.fieldValueReadOnly.copyWith(
                     fontWeight: FontWeight.w600,
-                    color: value
-                        ? AppColors.primary
-                        : AppColors.textSecondary,
+                    color: value ? AppColors.primary : AppColors.textSecondary,
                   ),
                 ),
               ),
@@ -1172,12 +1249,10 @@ class _ElaborazioneSectionState extends ConsumerState<_ElaborazioneSection> {
     _pressioneCtrl = TextEditingController(text: e?.pressioneBar ?? '');
     _noteCtrl = TextEditingController(text: e?.note ?? '');
     _statoUtente = e?.statoUtente ??
-        _statiUtente.firstWhere(
-            (s) => s.contains(widget.avviso.stato),
+        _statiUtente.firstWhere((s) => s.contains(widget.avviso.stato),
             orElse: () => _statiUtente.first);
     _priorita = e?.priorita ??
-        _prioritaList.firstWhere(
-            (p) => p.startsWith(widget.avviso.priorita),
+        _prioritaList.firstWhere((p) => p.startsWith(widget.avviso.priorita),
             orElse: () => _prioritaList.first);
     _esito = e?.esitoVer ?? '-NONE-';
     _fermoMacchina = e?.fermoMacchina ?? false;
@@ -1261,8 +1336,7 @@ class _ElaborazioneSectionState extends ConsumerState<_ElaborazioneSection> {
               value: _esito == '-NONE-' ? '' : _esito,
               hideIfEmpty: true),
           FieldRow(
-              label: 'Fermo Macchina',
-              value: _fermoMacchina ? 'Sì' : 'No'),
+              label: 'Fermo Macchina', value: _fermoMacchina ? 'Sì' : 'No'),
         ]),
         if (_noteCtrl.text.isNotEmpty) ...[
           const SizedBox(height: 6),

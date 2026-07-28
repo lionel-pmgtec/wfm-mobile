@@ -159,20 +159,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
       mainAxisAlignment: MainAxisAlignment.center,
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        const Text('SAP Work Manager',
+      const SizedBox(height: 10),
+        Text('Gestione Ordini di Lavoro sul campo',
             textAlign: TextAlign.center,
             style: TextStyle(
-                fontSize: 30,
-                fontWeight: FontWeight.w800,
-                color: Colors.white,
-                height: 1.1,
-                letterSpacing: -0.5)),
-        const SizedBox(height: 10),
-        Text('WFM Mobile — Gestione Ordini di Lavoro sul campo',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-                fontSize: 14,
-                height: 1.4,
+                fontSize: 25,
+                height: 2,
                 color: Colors.white.withValues(alpha: 0.72))),
       ],
     );
@@ -206,16 +198,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                 children: [
                   const Text('Bentornato',
                       style: TextStyle(
-                          fontSize: 30,
+                          fontSize: 35,
                           fontWeight: FontWeight.w800,
                           color: AppColors.textPrimary,
                           letterSpacing: -0.3)),
-                  const SizedBox(height: 6),
-                  const Text('Inserisci le credenziali SAP per accedere',
+                  const SizedBox(height: 10),
+                  const Text('Inserisci le credenziali per accedere',
                       style: TextStyle(
-                          fontSize: 15, color: AppColors.textSecondary)),
+                          fontSize: 20, color: AppColors.textSecondary)),
                   const SizedBox(height: 28),
-                  _label('Utente SAP (CID)'),
+                  _label('Utente (CID)'),
                   const SizedBox(height: 7),
                   TextFormField(
                     key: const Key('login_username'),
@@ -234,7 +226,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                   ),
                   const SizedBox(height: 20),
                   _label('Password'),
-                  const SizedBox(height: 7),
+                  const SizedBox(height: 8),
                   TextFormField(
                     key: const Key('login_password'),
                     controller: _passController,

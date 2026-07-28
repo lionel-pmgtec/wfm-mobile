@@ -4,17 +4,27 @@
 // (cfr. specifiche §8.1). Mapping endpoint -> WS SOAP indicato nei commenti.
 
 import 'package:dio/dio.dart';
+import '../../../core/config/capabilities.dart';
 import '../../../core/network/dio_client.dart';
 import '../../../domain/entities/entities.dart';
 import '../../../domain/repositories/work_order_repository.dart';
 import '../../models/mappers.dart';
+import '../../models/cruscotto_mappers.dart';
 import 'remote_data_source.dart';
 
 class HttpRemoteDataSource implements WfmRemoteDataSource {
   final DioClient client;
   HttpRemoteDataSource(this.client);
 
+  /// Verso il MIO middleware (Java): scritture, auth, anagrafiche.
   Dio get _dio => client.dio;
+
+  /// Verso il backend del COLLEGA (cruscotto): letture liste/dettaglio.
+  Dio get _read => client.dioRead;
+
+  /// Il backend del collega non pagina lato SAP: chiediamo un blocco ampio e la
+  /// paginazione/incrementale resta lato app.
+  static const int _readPageSize = 500;
 
   // ── Endpoint REST (middleware) ──────────────────────────────────────────
   static const _login = '/auth/login'; // -> WS-Security UsernameToken
@@ -31,6 +41,17 @@ class HttpRemoteDataSource implements WfmRemoteDataSource {
   static const _solutions = '/anagrafica/solutions';
   static const _equipment = '/anagrafica/equipment';
   static const _tecnici = '/anagrafica/tecnici';
+
+  @override
+  Future<Capabilities> getCapabilities() async {
+    // Le letture ora arrivano dal backend del collega (cruscotto), che espone
+    // l'INTERA struttura SAP (ordine + avviso con indirizzo, appuntamento,
+    // apparecchiatura, guasto, codifica…). Il vecchio gating era tarato sul
+    // perimetro ristretto del mio middleware: qui non serve più. Dichiariamo
+    // tutto disponibile — le sezioni senza dato si nascondono da sole, quelle
+    // con dato si mostrano. (Endpoint /capabilities del middleware non più usato.)
+    return Capabilities.allEnabled;
+  }
 
   @override
   Future<AuthSession> login(String cid, String password) async {
@@ -75,20 +96,59 @@ class HttpRemoteDataSource implements WfmRemoteDataSource {
   }
 
   @override
+  Future<void> refreshFromCruscotto() async {
+    // POST /api/refresh: il backend ri-estrae da SAP (selezione) e ripopola lo
+    // store. Poi emette lo snapshot SSE e le liste si ricaricano da sole.
+    await _read.post('/refresh');
+  }
+
+  // ── LETTURE: backend del collega (cruscotto, /api/odl · /api/avvisi) ──────
+  // Il contratto è diverso dal mio middleware: liste `{total,page,pageSize,items}`
+  // e record "SAP-shaped" (nomi MAIUSCOLI). Traduzione in cruscotto_mappers.dart.
+
+  @override
   Future<List<WorkOrder>> getWorkOrders(WorkOrderFilter filter) async {
-    final r = await _dio.get(_workOrders, queryParameters: {
-      if (filter.status != null) 'status': filter.status!.sapCode,
-      if (filter.query != null) 'q': filter.query,
-      if (filter.date != null) 'date': filter.date!.toIso8601String(),
+    final r = await _read.get('/odl', queryParameters: {
+      'pageSize': _readPageSize,
+      // Filtri supportati dal backend collega (gli altri li applichiamo qui).
+      if (filter.centro != null && filter.centro!.isNotEmpty)
+        'centro': filter.centro,
+      if (filter.dateFrom != null)
+        'dataDa': filter.dateFrom!.toIso8601String().split('T').first,
+      if (filter.dateTo != null)
+        'dataA': filter.dateTo!.toIso8601String().split('T').first,
     });
-    final list = (r.data['workOrders'] as List? ?? r.data as List);
-    return list.map((e) => workOrderFromJson(e as Map<String, dynamic>)).toList();
+    var list =
+        cruscottoItems(r.data).map(workOrderFromCruscotto).toList();
+
+    // Filtri applicati lato app: lo STATO del cruscotto è la stringa SAP grezza,
+    // non il codice applicativo, quindi status/testo si filtrano qui.
+    if (filter.status != null) {
+      list = list.where((w) => w.status == filter.status).toList();
+    }
+    final q = filter.query?.trim().toLowerCase();
+    if (q != null && q.isNotEmpty) {
+      list = list.where((w) =>
+          w.externalCode.toLowerCase().contains(q) ||
+          w.woTypeDescription.toLowerCase().contains(q) ||
+          w.sedeTecnica.toLowerCase().contains(q) ||
+          w.address.short.toLowerCase().contains(q)).toList();
+    }
+    if (filter.date != null) {
+      final d = filter.date!;
+      list = list.where((w) =>
+          w.appointmentDate != null &&
+          w.appointmentDate!.year == d.year &&
+          w.appointmentDate!.month == d.month &&
+          w.appointmentDate!.day == d.day).toList();
+    }
+    return list;
   }
 
   @override
   Future<WorkOrder> getWorkOrderDetail(String externalCode) async {
-    final r = await _dio.get('$_workOrders/$externalCode');
-    return workOrderFromJson(r.data as Map<String, dynamic>);
+    final r = await _read.get('/odl/$externalCode');
+    return workOrderFromCruscotto(r.data as Map<String, dynamic>);
   }
 
   @override
@@ -131,15 +191,22 @@ class HttpRemoteDataSource implements WfmRemoteDataSource {
 
   @override
   Future<List<NotificationAvviso>> getAvvisi({String? query}) async {
-    final r = await _dio.get(_avvisi, queryParameters: {if (query != null) 'q': query});
-    final list = (r.data['notifications'] as List? ?? r.data as List);
-    return list.map((e) => avvisoFromJson(e as Map<String, dynamic>)).toList();
+    final r = await _read.get('/avvisi', queryParameters: {'pageSize': _readPageSize});
+    var list = cruscottoItems(r.data).map(avvisoFromCruscotto).toList();
+    final q = query?.trim().toLowerCase();
+    if (q != null && q.isNotEmpty) {
+      list = list.where((a) =>
+          a.numeroAvviso.toLowerCase().contains(q) ||
+          a.descrizione.toLowerCase().contains(q) ||
+          (a.sedeTecnica ?? '').toLowerCase().contains(q)).toList();
+    }
+    return list;
   }
 
   @override
   Future<NotificationAvviso> getAvvisoDetail(String numero) async {
-    final r = await _dio.get('$_avvisi/$numero');
-    return avvisoFromJson(r.data as Map<String, dynamic>);
+    final r = await _read.get('/avvisi/$numero');
+    return avvisoFromCruscotto(r.data as Map<String, dynamic>);
   }
 
   @override

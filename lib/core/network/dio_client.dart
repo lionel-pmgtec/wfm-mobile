@@ -13,7 +13,13 @@ typedef TokenProvider = Future<String?> Function();
 class DioClient {
   final AppConfig config;
   final TokenProvider? tokenProvider;
+
+  /// Verso il MIO middleware (Java): SCRITTURE, auth, anagrafiche.
   late final Dio dio;
+
+  /// Verso il BACKEND DEL COLLEGA (cruscotto): LETTURE liste/dettaglio + SSE.
+  /// Nessun token: gli endpoint di lettura sono aperti (CORS lato backend).
+  late final Dio dioRead;
 
   DioClient({required this.config, this.tokenProvider}) {
     dio = Dio(
@@ -34,6 +40,16 @@ class DioClient {
       _RetryInterceptor(dio),
       if (!config.isProd) LogInterceptor(requestBody: false, responseBody: false),
     ]);
+
+    dioRead = Dio(
+      BaseOptions(
+        baseUrl: config.cruscottoBaseUrl,
+        connectTimeout: config.connectTimeout,
+        receiveTimeout: config.receiveTimeout,
+        headers: {'Accept': 'application/json'},
+      ),
+    );
+    dioRead.interceptors.add(_RetryInterceptor(dioRead));
   }
 }
 

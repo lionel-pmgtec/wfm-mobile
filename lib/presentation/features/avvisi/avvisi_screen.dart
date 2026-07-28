@@ -15,6 +15,7 @@ import '../../../domain/entities/entities.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/avviso_extension_provider.dart';
 import '../../providers/avvisi_provider.dart';
+import '../../providers/realtime_provider.dart';
 import 'widgets/avviso_widgets.dart';
 
 /// Categoria di filtro dashboard.
@@ -54,11 +55,29 @@ final avvisiViewFilterProvider =
 final avvisiCategoryFilterProvider =
     StateProvider<AvvisoCategory?>((ref) => null);
 
-class AvvisiScreen extends ConsumerWidget {
+class AvvisiScreen extends ConsumerStatefulWidget {
   const AvvisiScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<AvvisiScreen> createState() => _AvvisiScreenState();
+}
+
+class _AvvisiScreenState extends ConsumerState<AvvisiScreen> {
+  // Paginazione incrementale lato app (come per gli ODL): la lista si mostra a
+  // blocchi e il contatore riparte quando cambiano ricerca o filtri.
+  static const int _pageSize = 15;
+  int _visible = _pageSize;
+
+  @override
+  Widget build(BuildContext context) {
+    // Al cambio di ricerca/filtro la lista riparte dalla prima pagina.
+    void resetPage() {
+      if (_visible != _pageSize) setState(() => _visible = _pageSize);
+    }
+    ref.listen(avvisiViewFilterProvider, (_, __) => resetPage());
+    ref.listen(avvisiCategoryFilterProvider, (_, __) => resetPage());
+    ref.listen(avvisiQueryProvider, (_, __) => resetPage());
+
     final async = ref.watch(avvisiProvider);
     final view = ref.watch(avvisiViewFilterProvider);
     final categoria = ref.watch(avvisiCategoryFilterProvider);
@@ -68,6 +87,21 @@ class AvvisiScreen extends ConsumerWidget {
       appBar: AppBar(
         title: const Text('Avvisi di Servizio'),
         actions: [
+          IconButton(
+            tooltip: 'Aggiorna da SAP',
+            icon: const Icon(Icons.refresh_rounded),
+            onPressed: () async {
+              showSapToast(context, 'Aggiornamento da SAP…');
+              try {
+                await ref.read(refreshFromSapProvider)();
+              } catch (_) {
+                if (context.mounted) {
+                  showSapToast(context, 'Aggiornamento non riuscito',
+                      isError: true);
+                }
+              }
+            },
+          ),
           IconButton(
             tooltip: 'Filtri avanzati',
             icon: Badge(
@@ -142,7 +176,7 @@ class AvvisiScreen extends ConsumerWidget {
             ),
           Expanded(
             child: RefreshIndicator(
-              onRefresh: () async => ref.invalidate(avvisiProvider),
+              onRefresh: () async => ref.read(refreshFromSapProvider)(),
               child: async.when(
                 loading: () => const WfmLoading(),
                 error: (e, _) => WfmErrorState(
@@ -151,31 +185,44 @@ class AvvisiScreen extends ConsumerWidget {
                 data: (raw) {
                   final filtered = _applyFilters(
                       raw, view, categoria, user?.cid, ref);
-                  return filtered.isEmpty
-                      ? const EmptyState(
-                          title: 'Nessun avviso',
-                          subtitle:
-                              'Nessun avviso corrisponde ai filtri attuali.',
-                          icon: Icons.search_off)
-                      : ListView.builder(
-                          padding: const EdgeInsets.only(bottom: 24),
-                          itemCount: filtered.length,
-                          itemBuilder: (_, i) {
-                            final a = filtered[i];
-                            return Dismissible(
-                              key: ValueKey('avviso_${a.numeroAvviso}'),
-                              direction: DismissDirection.endToStart,
-                              background: const WfmSwipeDeleteBackground(),
-                              confirmDismiss: (_) => _confirmAndDeleteAvviso(
-                                  context, ref, a.numeroAvviso),
-                              child: _AvvisoItem(
-                                avviso: a,
-                                onTap: () => context.push(AppRoutes
-                                    .avvisoDetailPath(a.numeroAvviso)),
-                              ),
-                            );
-                          },
+                  if (filtered.isEmpty) {
+                    return const EmptyState(
+                        title: 'Nessun avviso',
+                        subtitle:
+                            'Nessun avviso corrisponde ai filtri attuali.',
+                        icon: Icons.search_off);
+                  }
+                  final visible = _visible >= filtered.length
+                      ? filtered.length
+                      : _visible;
+                  final hasMore = filtered.length > visible;
+                  return ListView.builder(
+                    padding: const EdgeInsets.only(bottom: 24),
+                    itemCount: visible + (hasMore ? 1 : 0),
+                    itemBuilder: (_, i) {
+                      if (i >= visible) {
+                        return _LoadMoreTile(
+                          shown: visible,
+                          total: filtered.length,
+                          onTap: () =>
+                              setState(() => _visible += _pageSize),
                         );
+                      }
+                      final a = filtered[i];
+                      return Dismissible(
+                        key: ValueKey('avviso_${a.numeroAvviso}'),
+                        direction: DismissDirection.endToStart,
+                        background: const WfmSwipeDeleteBackground(),
+                        confirmDismiss: (_) => _confirmAndDeleteAvviso(
+                            context, ref, a.numeroAvviso),
+                        child: _AvvisoItem(
+                          avviso: a,
+                          onTap: () => context.push(AppRoutes
+                              .avvisoDetailPath(a.numeroAvviso)),
+                        ),
+                      );
+                    },
+                  );
                 },
               ),
             ),
@@ -305,6 +352,33 @@ Future<bool> _confirmAndDeleteAvviso(
   );
 }
 
+/// Pulsante "Carica altri" per la paginazione incrementale della lista avvisi.
+class _LoadMoreTile extends StatelessWidget {
+  final int shown;
+  final int total;
+  final VoidCallback onTap;
+  const _LoadMoreTile(
+      {required this.shown, required this.total, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      child: Column(
+        children: [
+          Text('Mostrati $shown di $total', style: AppTextStyles.bodySmall),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: onTap,
+            icon: const Icon(Icons.expand_more_rounded, size: 18),
+            label: Text('Carica altri (${total - shown})'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _AvvisoItem extends ConsumerWidget {
   final NotificationAvviso avviso;
   final VoidCallback onTap;
@@ -365,10 +439,42 @@ class _AvvisoItem extends ConsumerWidget {
                       overflow: TextOverflow.ellipsis,
                       style: AppTextStyles.bodyLarge
                           .copyWith(fontWeight: FontWeight.w600)),
-                  const SizedBox(height: 2),
-                  Text(
-                      '${avviso.address.short} · ${Fmt.date(avviso.dataSegnalazione)}',
-                      style: AppTextStyles.bodySmall),
+                  const SizedBox(height: 4),
+                  // 📍 indirizzo · data. L'indirizzo non è ancora esposto da SAP
+                  // (ILOA/ADRC): fino ad allora resta la sola icona come segnaposto.
+                  Row(children: [
+                    const Icon(Icons.place_outlined,
+                        size: 13, color: AppColors.textHint),
+                    const SizedBox(width: 4),
+                    Expanded(
+                      child: Text(
+                        (avviso.address.short.isNotEmpty &&
+                                avviso.address.short != '—')
+                            ? '${avviso.address.short} · ${Fmt.date(avviso.dataSegnalazione)}'
+                            : '· ${Fmt.date(avviso.dataSegnalazione)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.bodySmall),
+                    ),
+                  ]),
+                  // Sede tecnica SAP: distingue avvisi con descrizione identica
+                  // (es. i batch di manutenzione programmata sullo stesso oggetto).
+                  if ((avviso.sedeTecnica ?? '').isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Row(children: [
+                      const Icon(Icons.engineering_outlined,
+                          size: 12, color: AppColors.textHint),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(avviso.sedeTecnica!,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTextStyles.bodySmall.copyWith(
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textSecondary)),
+                      ),
+                    ]),
+                  ],
                   if (hasPreventivo || hasFirma) ...[
                     const SizedBox(height: 6),
                     Row(children: [

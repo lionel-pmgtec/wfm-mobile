@@ -9,8 +9,17 @@ class WorkOrderFilter {
   final String? query;       // numero, indirizzo, cliente
   final DateTime? date;      // filtro per data appuntamento
   final String? squadra;     // filtro per squadra
-  final String? centroLavoro; // filtro per centro di lavoro
+  final String? centroLavoro; // filtro per centro di lavoro (ARBPL, operazioni)
   final String? tecnico;     // filtro per CID tecnico assegnato
+
+  // ── Estrazione SAP (finestra su DATA_CREAZ + centro di manutenzione) ──────
+  // A differenza di `date`/`centroLavoro` (filtri locali sul risultato), questi
+  // pilotano l'estrazione SAP a monte: servono a vedere gli ordini creati prima
+  // della finestra fissa di configurazione (giorni-indietro), che è il motivo
+  // per cui la lista mostrava pochissimi ordini.
+  final DateTime? dateFrom;  // IV_DATA_DA — data creazione minima
+  final DateTime? dateTo;    // IV_DATA_A  — data creazione massima
+  final String? centro;      // IWERK — centro di manutenzione
 
   const WorkOrderFilter({
     this.status,
@@ -19,6 +28,9 @@ class WorkOrderFilter {
     this.squadra,
     this.centroLavoro,
     this.tecnico,
+    this.dateFrom,
+    this.dateTo,
+    this.centro,
   });
 
   WorkOrderFilter copyWith({
@@ -28,11 +40,17 @@ class WorkOrderFilter {
     String? squadra,
     String? centroLavoro,
     String? tecnico,
+    DateTime? dateFrom,
+    DateTime? dateTo,
+    String? centro,
     bool clearStatus = false,
     bool clearDate = false,
     bool clearSquadra = false,
     bool clearCentroLavoro = false,
     bool clearTecnico = false,
+    bool clearDateFrom = false,
+    bool clearDateTo = false,
+    bool clearCentro = false,
   }) {
     return WorkOrderFilter(
       status: clearStatus ? null : (status ?? this.status),
@@ -41,6 +59,9 @@ class WorkOrderFilter {
       squadra: clearSquadra ? null : (squadra ?? this.squadra),
       centroLavoro: clearCentroLavoro ? null : (centroLavoro ?? this.centroLavoro),
       tecnico: clearTecnico ? null : (tecnico ?? this.tecnico),
+      dateFrom: clearDateFrom ? null : (dateFrom ?? this.dateFrom),
+      dateTo: clearDateTo ? null : (dateTo ?? this.dateTo),
+      centro: clearCentro ? null : (centro ?? this.centro),
     );
   }
 
@@ -50,7 +71,10 @@ class WorkOrderFilter {
       date == null &&
       (squadra == null || squadra!.isEmpty) &&
       (centroLavoro == null || centroLavoro!.isEmpty) &&
-      (tecnico == null || tecnico!.isEmpty);
+      (tecnico == null || tecnico!.isEmpty) &&
+      dateFrom == null &&
+      dateTo == null &&
+      (centro == null || centro!.isEmpty);
 
   int get activeFilterCount {
     int count = 0;
@@ -60,6 +84,9 @@ class WorkOrderFilter {
     if (squadra != null && squadra!.isNotEmpty) count++;
     if (centroLavoro != null && centroLavoro!.isNotEmpty) count++;
     if (tecnico != null && tecnico!.isNotEmpty) count++;
+    if (dateFrom != null) count++;
+    if (dateTo != null) count++;
+    if (centro != null && centro!.isNotEmpty) count++;
     return count;
   }
 }

@@ -1,4 +1,4 @@
-// PAGINA 3 — Elenco Ordini di Lavoro (M2).
+// PAGINA — Elenco Ordini di Lavoro .
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -11,6 +11,7 @@ import '../../../core/widgets/widgets.dart';
 import '../../../domain/entities/entities.dart';
 import '../../../domain/repositories/work_order_repository.dart';
 import '../../providers/connectivity_provider.dart';
+import '../../providers/realtime_provider.dart';
 import '../../providers/work_orders_provider.dart';
 import 'widgets/excel_import_sheet.dart';
 import 'widgets/odl_actions_menu.dart';
@@ -26,6 +27,12 @@ class _WorkOrdersScreenState extends ConsumerState<WorkOrdersScreen> {
   bool _searching = false;
   final _searchCtrl = TextEditingController();
 
+  // Paginazione incrementale lato app: SAP restituisce tutto in un colpo (nessuna
+  // paginazione server), quindi si mostra la lista a blocchi per non costruire
+  // centinaia di card in una volta. Il contatore riparte quando cambiano i filtri.
+  static const int _pageSize = 15;
+  int _visible = _pageSize;
+
   @override
   void dispose() {
     _searchCtrl.dispose();
@@ -38,9 +45,21 @@ class _WorkOrdersScreenState extends ConsumerState<WorkOrdersScreen> {
         current.copyWith(query: q);
   }
 
+  /// Chiede al cruscotto di ri-estrarre da SAP e ricarica la lista.
+  Future<void> _refreshFromSap() async {
+    showSapToast(context, 'Aggiornamento da SAP…');
+    try {
+      await ref.read(refreshFromSapProvider)();
+    } catch (_) {
+      if (mounted) {
+        showSapToast(context, 'Aggiornamento non riuscito', isError: true);
+      }
+    }
+  }
+
   /// Conferma + eliminazione di un OdL. Ritorna true se eliminato (l'item
   /// scompare); false se annullato o in errore (l'item resta).
-  Future<bool> _confirmAndDeleteOdl(String code) async {
+  Future<bool> _confirmAndDeleteOdl(String code) async { 
     final ok = await showWfmConfirmDialog(
       context: context,
       title: 'Eliminare l\'OdL?',
@@ -65,6 +84,10 @@ class _WorkOrdersScreenState extends ConsumerState<WorkOrdersScreen> {
 
   @override
   Widget build(BuildContext context) {
+    // Al cambio dei filtri la lista riparte dalla prima pagina.
+    ref.listen(workOrderFilterProvider, (_, __) {
+      if (_visible != _pageSize) setState(() => _visible = _pageSize);
+    });
     final ordersAsync = ref.watch(workOrdersProvider);
     final filter = ref.watch(workOrderFilterProvider);
     final online = ref.watch(connectivityStatusProvider);
@@ -114,7 +137,7 @@ class _WorkOrdersScreenState extends ConsumerState<WorkOrdersScreen> {
             children: [
               IconButton(
                 tooltip: 'Filtri avanzati',
-                icon: const Icon(Icons.filter_list_rounded),
+                icon: const Icon(Icons.tune_rounded),
                 onPressed: () => _showAdvancedFilters(context, filter),
               ),
               if (advancedCount > 0)
@@ -137,6 +160,11 @@ class _WorkOrdersScreenState extends ConsumerState<WorkOrdersScreen> {
                   ),
                 ),
             ],
+          ),
+          IconButton(
+            tooltip: 'Aggiorna da SAP',
+            icon: const Icon(Icons.refresh_rounded),
+            onPressed: _refreshFromSap,
           ),
           IconButton(
             tooltip: 'Importa Excel',
@@ -180,7 +208,7 @@ class _WorkOrdersScreenState extends ConsumerState<WorkOrdersScreen> {
           if (advancedCount > 0) _activeFiltersRow(filter),
           Expanded(
             child: RefreshIndicator(
-              onRefresh: () async => ref.invalidate(workOrdersProvider),
+              onRefresh: _refreshFromSap,
               child: ordersAsync.when(
                 loading: () => ListView.builder(
                   itemCount: 6,
@@ -192,36 +220,48 @@ class _WorkOrdersScreenState extends ConsumerState<WorkOrdersScreen> {
                       message: e.toString(),
                       onRetry: () => ref.invalidate(workOrdersProvider)),
                 ]),
-                data: (orders) => orders.isEmpty
-                    ? ListView(children: const [
-                        SizedBox(height: 80),
-                        EmptyState(
-                          title: 'Nessun OdL trovato',
-                          subtitle:
-                              'Modifica i filtri o aggiorna per sincronizzare con SAP.',
-                          icon: Icons.assignment_outlined,
-                        ),
-                      ])
-                    : ListView.builder(
-                        padding: const EdgeInsets.only(top: 6, bottom: 90),
-                        itemCount: orders.length,
-                        itemBuilder: (_, i) {
-                          final o = orders[i];
-                          return Dismissible(
-                            key: ValueKey('odl_${o.externalCode}'),
-                            direction: DismissDirection.endToStart,
-                            background: const WfmSwipeDeleteBackground(),
-                            confirmDismiss: (_) =>
-                                _confirmAndDeleteOdl(o.externalCode),
-                            child: _WorkOrderItem(
-                              order: o,
-                              onTap: () => context.push(
-                                  AppRoutes.workOrderDetailPath(
-                                      o.externalCode)),
-                            ),
-                          );
-                        },
+                data: (orders) {
+                  if (orders.isEmpty) {
+                    return ListView(children: const [
+                      SizedBox(height: 80),
+                      EmptyState(
+                        title: 'Nessun OdL trovato',
+                        subtitle:
+                            'Modifica i filtri o aggiorna per sincronizzare con SAP.',
+                        icon: Icons.assignment_outlined,
                       ),
+                    ]);
+                  }
+                  final visible =
+                      _visible >= orders.length ? orders.length : _visible;
+                  final hasMore = orders.length > visible;
+                  return ListView.builder(
+                    padding: const EdgeInsets.only(top: 6, bottom: 90),
+                    itemCount: visible + (hasMore ? 1 : 0),
+                    itemBuilder: (_, i) {
+                      if (i >= visible) {
+                        return _LoadMoreTile(
+                          shown: visible,
+                          total: orders.length,
+                          onTap: () => setState(() => _visible += _pageSize),
+                        );
+                      }
+                      final o = orders[i];
+                      return Dismissible(
+                        key: ValueKey('odl_${o.externalCode}'),
+                        direction: DismissDirection.endToStart,
+                        background: const WfmSwipeDeleteBackground(),
+                        confirmDismiss: (_) =>
+                            _confirmAndDeleteOdl(o.externalCode),
+                        child: _WorkOrderItem(
+                          order: o,
+                          onTap: () => context.push(
+                              AppRoutes.workOrderDetailPath(o.externalCode)),
+                        ),
+                      );
+                    },
+                  );
+                },
               ),
             ),
           ),
@@ -233,6 +273,9 @@ class _WorkOrdersScreenState extends ConsumerState<WorkOrdersScreen> {
   int _advancedFilterCount(WorkOrderFilter f) {
     int c = 0;
     if (f.date != null) c++;
+    if (f.dateFrom != null) c++;
+    if (f.dateTo != null) c++;
+    if (f.centro != null && f.centro!.isNotEmpty) c++;
     if (f.squadra != null && f.squadra!.isNotEmpty) c++;
     if (f.centroLavoro != null && f.centroLavoro!.isNotEmpty) c++;
     if (f.tecnico != null && f.tecnico!.isNotEmpty) c++;
@@ -241,6 +284,20 @@ class _WorkOrdersScreenState extends ConsumerState<WorkOrdersScreen> {
 
   Widget _activeFiltersRow(WorkOrderFilter filter) {
     final chips = <Widget>[];
+    if (filter.dateFrom != null || filter.dateTo != null) {
+      final da = filter.dateFrom != null ? Fmt.date(filter.dateFrom) : '…';
+      final a = filter.dateTo != null ? Fmt.date(filter.dateTo) : '…';
+      chips.add(_filterChip('Creati: $da → $a', () {
+        ref.read(workOrderFilterProvider.notifier).state =
+            filter.copyWith(clearDateFrom: true, clearDateTo: true);
+      }));
+    }
+    if (filter.centro != null && filter.centro!.isNotEmpty) {
+      chips.add(_filterChip('Centro: ${filter.centro}', () {
+        ref.read(workOrderFilterProvider.notifier).state =
+            filter.copyWith(clearCentro: true);
+      }));
+    }
     if (filter.date != null) {
       chips.add(_filterChip('Data: ${Fmt.date(filter.date)}', () {
         ref.read(workOrderFilterProvider.notifier).state =
@@ -348,17 +405,23 @@ class _AdvancedFilterSheet extends ConsumerStatefulWidget {
 
 class _AdvancedFilterSheetState extends ConsumerState<_AdvancedFilterSheet> {
   late DateTime? _date;
+  late DateTime? _dateFrom;
+  late DateTime? _dateTo;
   late final TextEditingController _squadraCtrl;
   late final TextEditingController _centroLavoroCtrl;
+  late final TextEditingController _centroCtrl;
   late final TextEditingController _tecnicoCtrl;
 
   @override
   void initState() {
     super.initState();
     _date = widget.current.date;
+    _dateFrom = widget.current.dateFrom;
+    _dateTo = widget.current.dateTo;
     _squadraCtrl = TextEditingController(text: widget.current.squadra ?? '');
     _centroLavoroCtrl =
         TextEditingController(text: widget.current.centroLavoro ?? '');
+    _centroCtrl = TextEditingController(text: widget.current.centro ?? '');
     _tecnicoCtrl = TextEditingController(text: widget.current.tecnico ?? '');
   }
 
@@ -366,6 +429,7 @@ class _AdvancedFilterSheetState extends ConsumerState<_AdvancedFilterSheet> {
   void dispose() {
     _squadraCtrl.dispose();
     _centroLavoroCtrl.dispose();
+    _centroCtrl.dispose();
     _tecnicoCtrl.dispose();
     super.dispose();
   }
@@ -392,7 +456,61 @@ class _AdvancedFilterSheetState extends ConsumerState<_AdvancedFilterSheet> {
             ),
           ]),
           const SizedBox(height: 16),
-          // Filtro data appuntamento
+          // ── Finestra di estrazione SAP (data di creazione ordine) ──────────
+          const Text('ESTRAZIONE SAP (data creazione)',
+              style: AppTextStyles.fieldLabel),
+          const SizedBox(height: 4),
+          const Text(
+            'Amplia la finestra per vedere gli ordini più vecchi: di default '
+            'SAP restituisce solo quelli creati di recente.',
+            style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+          ),
+          const SizedBox(height: 8),
+          Row(children: [
+            Expanded(
+              child: InkWell(
+                onTap: () => _pickWindowDate(isFrom: true),
+                child: InputDecorator(
+                  decoration: const InputDecoration(
+                    labelText: 'Dal',
+                    prefixIcon: Icon(Icons.event_available_outlined),
+                  ),
+                  child: Text(
+                    _dateFrom != null ? Fmt.date(_dateFrom) : '—',
+                    style: AppTextStyles.fieldValue,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: InkWell(
+                onTap: () => _pickWindowDate(isFrom: false),
+                child: InputDecorator(
+                  decoration: const InputDecoration(
+                    labelText: 'Al',
+                    prefixIcon: Icon(Icons.event_busy_outlined),
+                  ),
+                  child: Text(
+                    _dateTo != null ? Fmt.date(_dateTo) : '—',
+                    style: AppTextStyles.fieldValue,
+                  ),
+                ),
+              ),
+            ),
+          ]),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _centroCtrl,
+            textCapitalization: TextCapitalization.characters,
+            decoration: const InputDecoration(
+              labelText: 'Centro di Manutenzione',
+              prefixIcon: Icon(Icons.factory_outlined),
+              hintText: 'es. SP1',
+            ),
+          ),
+          const Divider(height: 28),
+          // Filtro data appuntamento (locale, sul risultato)
           InkWell(
             onTap: _pickDate,
             child: InputDecorator(
@@ -457,20 +575,47 @@ class _AdvancedFilterSheetState extends ConsumerState<_AdvancedFilterSheet> {
     if (d != null) setState(() => _date = d);
   }
 
+  Future<void> _pickWindowDate({required bool isFrom}) async {
+    final d = await showDatePicker(
+      context: context,
+      initialDate: (isFrom ? _dateFrom : _dateTo) ?? DateTime.now(),
+      firstDate: DateTime(2015),
+      lastDate: DateTime(2035),
+    );
+    if (d == null) return;
+    setState(() {
+      if (isFrom) {
+        _dateFrom = d;
+      } else {
+        _dateTo = d;
+      }
+    });
+  }
+
   void _clearAll() {
     setState(() {
       _date = null;
+      _dateFrom = null;
+      _dateTo = null;
       _squadraCtrl.clear();
       _centroLavoroCtrl.clear();
+      _centroCtrl.clear();
       _tecnicoCtrl.clear();
     });
   }
 
   void _apply() {
     final current = ref.read(workOrderFilterProvider);
+    final centro = _centroCtrl.text.trim();
     ref.read(workOrderFilterProvider.notifier).state = current.copyWith(
       date: _date,
       clearDate: _date == null,
+      dateFrom: _dateFrom,
+      clearDateFrom: _dateFrom == null,
+      dateTo: _dateTo,
+      clearDateTo: _dateTo == null,
+      centro: centro.isEmpty ? null : centro,
+      clearCentro: centro.isEmpty,
       squadra: _squadraCtrl.text.trim().isEmpty ? null : _squadraCtrl.text.trim(),
       clearSquadra: _squadraCtrl.text.trim().isEmpty,
       centroLavoro: _centroLavoroCtrl.text.trim().isEmpty
@@ -481,6 +626,35 @@ class _AdvancedFilterSheetState extends ConsumerState<_AdvancedFilterSheet> {
       clearTecnico: _tecnicoCtrl.text.trim().isEmpty,
     );
     Navigator.pop(context);
+  }
+}
+
+// ─── PULSANTE "CARICA ALTRI" (paginazione incrementale) ───────────────────────
+
+class _LoadMoreTile extends StatelessWidget {
+  final int shown;
+  final int total;
+  final VoidCallback onTap;
+  const _LoadMoreTile(
+      {required this.shown, required this.total, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+      child: Column(
+        children: [
+          Text('Mostrati $shown di $total',
+              style: AppTextStyles.bodySmall),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: onTap,
+            icon: const Icon(Icons.expand_more_rounded, size: 18),
+            label: Text('Carica altri (${total - shown})'),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -538,33 +712,65 @@ class _WorkOrderItem extends StatelessWidget {
                 style: AppTextStyles.bodyLarge
                     .copyWith(fontWeight: FontWeight.w600)),
             const SizedBox(height: 4),
+            // 📍 indirizzo · data (+ priorità). Stesso formato degli avvisi.
+            // L'indirizzo non è ancora esposto da SAP (ILOA/ADRC): fino ad allora
+            // resta la sola icona come segnaposto. La data è l'appuntamento se
+            // presente, altrimenti esecuzione/creazione SAP.
             Row(children: [
               const Icon(Icons.place_outlined,
                   size: 14, color: AppColors.textHint),
               const SizedBox(width: 4),
               Expanded(
-                child: Text(order.address.short,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTextStyles.bodyMedium),
+                child: Text(
+                  (order.address.short.isNotEmpty &&
+                          order.address.short != '—')
+                      ? '${order.address.short} · ${Fmt.date(order.appointmentDate ?? order.dataEsec ?? order.createdAt)}'
+                      : '· ${Fmt.date(order.appointmentDate ?? order.dataEsec ?? order.createdAt)}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: AppTextStyles.bodySmall,
+                ),
               ),
-            ]),
-            const SizedBox(height: 8),
-            Row(children: [
-              const Icon(Icons.event_outlined,
-                  size: 14, color: AppColors.textHint),
-              const SizedBox(width: 4),
-              Text(
-                  '${Fmt.date(order.appointmentDate)} · ${order.appointmentStartTime}',
-                  style: AppTextStyles.bodySmall),
-              const Spacer(),
-              if (order.status == WorkOrderStatus.inPausa)
+              if (order.priorita.isNotEmpty) ...[
+                const SizedBox(width: 8),
+                const Icon(Icons.flag_outlined,
+                    size: 13, color: AppColors.textHint),
+                const SizedBox(width: 3),
+                Text(order.priorita, style: AppTextStyles.bodySmall),
+              ],
+              if (order.status == WorkOrderStatus.inPausa) ...[
+                const SizedBox(width: 6),
                 const Icon(Icons.pause_circle_outline,
                     size: 15, color: AppColors.accentOrange),
-              if (order.localStatus == LocalSyncStatus.pendingUpload)
+              ],
+              if (order.localStatus == LocalSyncStatus.pendingUpload) ...[
+                const SizedBox(width: 6),
                 const Icon(Icons.cloud_upload_outlined,
                     size: 15, color: AppColors.accentOrange),
+              ],
             ]),
+            const SizedBox(height: 6),
+            // 🔧 sede tecnica · equipment: il riferimento tecnico dell'ordine,
+            // utile a distinguere ordini con descrizione simile.
+            if (order.sedeTecnica.isNotEmpty || order.equipment.isNotEmpty)
+              Row(children: [
+                const Icon(Icons.engineering_outlined,
+                    size: 13, color: AppColors.textHint),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    [
+                      if (order.sedeTecnica.isNotEmpty) order.sedeTecnica,
+                      if (order.equipment.isNotEmpty) 'Eq. ${order.equipment}',
+                    ].join('  ·  '),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: AppTextStyles.bodySmall.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textSecondary),
+                  ),
+                ),
+              ]),
           ],
         ),
       ),

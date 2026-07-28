@@ -29,6 +29,7 @@ class NotificationAvviso {
   // ── Dati Avviso (SAP) ─────────────────────────────────────────────────────
   final String priorita;
   final String stato; // stringa libera per retro-compatibilità
+  final String? statoSap; // CO_STTXT — stringa stato grezza SAP (es. "MAPE", "MELA ORAT")
   final AvvisoStato? statoEnum; // versione tipata (spec)
   final String? contratto; // riferimento contratto SAP
   final String? codiceContratto; // separato per chiarezza
@@ -43,6 +44,7 @@ class NotificationAvviso {
   final String? impianto; // codice impianto
   final String? puntoMisura;
   final String? centroLavoro;
+  final String? centroManut; // IWERK — centro di manutenzione avviso
   final String? assegnatoA; // tecnico assegnato (nome)
   final String? squadra; // squadra assegnata
   final String? cidAssegnato; // CID tecnico
@@ -134,6 +136,7 @@ class NotificationAvviso {
     this.noteOperatore,
     this.priorita = '',
     this.stato = 'Creato',
+    this.statoSap,
     this.statoEnum,
     this.contratto,
     this.codiceContratto,
@@ -148,6 +151,7 @@ class NotificationAvviso {
     this.impianto,
     this.puntoMisura,
     this.centroLavoro,
+    this.centroManut,
     this.assegnatoA,
     this.squadra,
     this.cidAssegnato,

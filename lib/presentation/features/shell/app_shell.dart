@@ -15,6 +15,7 @@ import '../../../core/constants/app_constants.dart';
 import '../../../core/router/app_routes.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../providers/connectivity_provider.dart';
+import '../../providers/realtime_provider.dart';
 import '../../providers/settings_provider.dart';
 
 /// Altezza della toolbar (cfr. appBarTheme.toolbarHeight in app_theme.dart).
@@ -52,6 +53,9 @@ class AppShell extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // Tiene vivo l'SSE del backend collega per tutta la sessione: quando SAP
+    // spinge nuovi ordini/avvisi, le liste si ricaricano da sole.
+    ref.watch(realtimeProvider);
     final isTablet = MediaQuery.sizeOf(context).width >= kTabletBreakpoint;
 
     if (isTablet) {

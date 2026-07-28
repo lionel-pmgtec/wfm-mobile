@@ -8,6 +8,7 @@ import 'package:wfm_mobile/data/datasources/local/local_data_source.dart';
 import 'package:wfm_mobile/data/datasources/remote/remote_data_source.dart';
 import 'package:wfm_mobile/data/repositories/work_order_repository_impl.dart';
 import 'package:wfm_mobile/domain/entities/entities.dart';
+import 'package:wfm_mobile/domain/repositories/sync_repository.dart';
 import 'package:wfm_mobile/domain/repositories/work_order_repository.dart';
 
 /// Datasource fake che serve un piccolo set di OdL in memoria e replica il
@@ -67,7 +68,38 @@ class _FakeRemoteDataSource implements WfmRemoteDataSource {
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
+/// Coda di sync fake: raccoglie le operazioni accodate quando si è offline,
+/// senza toccare storage né timer.
+class _FakeSyncRepository implements SyncRepository {
+  final List<SyncOperation> queue = [];
+
+  @override
+  Future<void> enqueue(SyncOperation operation) async => queue.add(operation);
+
+  @override
+  Future<List<SyncOperation>> getQueue() async => queue;
+
+  @override
+  Future<int> pendingCount() async => queue.length;
+
+  @override
+  Future<void> update(SyncOperation operation) async {}
+
+  @override
+  Future<void> retryAll() async {}
+
+  @override
+  Future<void> cancel(String operationId) async {}
+
+  @override
+  Stream<int> watchPendingCount() => Stream.value(queue.length);
+}
+
 void main() {
+  // ConnectivityService apre un EventChannel nel costruttore: senza binding
+  // inizializzato ogni test che lo istanzia esplode prima di partire.
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   late WorkOrderRepositoryImpl repo;
   late ConnectivityService connectivity;
 
@@ -77,6 +109,7 @@ void main() {
       _FakeRemoteDataSource(),
       InMemoryLocalDataSource(),
       connectivity,
+      _FakeSyncRepository(),
     );
   });
 

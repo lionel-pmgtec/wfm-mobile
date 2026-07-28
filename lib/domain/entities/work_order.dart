@@ -6,6 +6,65 @@ import 'meter.dart';
 import 'operation.dart';
 import 'material.dart';
 
+/// Categoria funzionale di un OdL: decide quali sezioni del form dinamico
+/// compaiono. Non è un dato SAP — è una nostra lettura del tipo ordine (AUFART).
+enum WorkOrderCategory {
+  attivazione,
+  sostituzione,
+  disattivazione,
+  interventoRete,
+  lettura,
+  preventivo,
+  generico,
+}
+
+/// Tipo ordine SAP (AUFART) → categoria funzionale dell'app.
+///
+/// **SAP è la fonte di verità.** Le chiavi qui sono i codici veri letti da DG1,
+/// non i tipi ipotizzati in fase di specifica: quelli erano in parte sbagliati.
+/// Rilevati sul centro **SP1 il 2026-07-17**, finestra 90 giorni, 15 ordini —
+/// e 9 su 15 avevano un tipo che l'app non conosceva.
+///
+/// Aggiungere un codice qui è l'unico posto da toccare quando SAP ne introduce
+/// uno nuovo. Un codice assente non rompe nulla: ricade su [generico].
+const Map<String, WorkOrderCategory> kWorkOrderCategoryBySapType = {
+  // ── Confermati dai dati reali di SP1 ──────────────────────────────────────
+  'ATTI': WorkOrderCategory.attivazione, // "Misuratori - Apertura (sigillo)"
+  'DISA': WorkOrderCategory.disattivazione, // "Misuratori - Chiusura (sigillo)"
+  'SOST': WorkOrderCategory.sostituzione, // "Sostituzione per vetustità"
+  'ZA02': WorkOrderCategory.interventoRete, // "Perdite idriche", "SOPRALLUOGO ACQUEDOTTO"
+
+  // ── Da specifica, non ancora osservati su SP1 ─────────────────────────────
+  'ZA01': WorkOrderCategory.interventoRete,
+  'PA': WorkOrderCategory.preventivo,
+
+  // ── Dedotti dalle descrizioni reali — DA CONFERMARE con il metodo/SAP ─────
+  // SOPA: 6 ordini su 6 con descrizione "Perdite Idriche", identica a quella
+  // degli ZA02 di perdita, e stesse operazioni (Assistenza Tecnica, Automezzi).
+  'SOPA': WorkOrderCategory.interventoRete,
+  // LEAP: 2 ordini su 2, "Letture aperiodiche acqua". Rilevazione contatore.
+  'LEAP': WorkOrderCategory.lettura,
+  // ZDE2: 1 ordine, "Ispezione depurazione". Non è né rete idrica né contatore:
+  // in assenza di indicazioni resta generico, che è il default prudente.
+  'ZDE2': WorkOrderCategory.generico,
+
+  // ── Famiglia ZF = fognatura (dai dati reali di SP1, 2026-07-23) ───────────
+  // ZF04 osservato come "RETI STANDARD FOGNATURA" con operazioni di scavo,
+  // rinterro, ripristino e asfaltatura: è un intervento su rete fognaria.
+  // ZF01/ZF02 condividono il prefisso ZF (fognatura) e la stessa natura di
+  // rete. Dedotto, DA CONFERMARE col metodo/SAP.
+  'ZF01': WorkOrderCategory.interventoRete,
+  'ZF02': WorkOrderCategory.interventoRete, // 10 ordini su SP1
+  'ZF04': WorkOrderCategory.interventoRete,
+
+  // ── Osservati su SP1 ma semantica NON confermata → generico consapevole ───
+  // Pochi ordini ciascuno, natura non chiara: lasciati a generico DI PROPOSITO
+  // (mappati esplicitamente, non per fallback) finché SAP non conferma.
+  'ZI04': WorkOrderCategory.generico, // investimento H2O?
+  'ZLIM': WorkOrderCategory.generico,
+  'DMOR': WorkOrderCategory.generico,
+};
+
 class WorkOrder {
   // ── DATI ORDINE (spec) ────────────────────────────────────────────
   final String externalCode; // numero OdL (es. 50674709)
@@ -17,6 +76,7 @@ class WorkOrder {
   final String? tipoAttivitaCodice; // codice attività SAP (spec)
   final String? tipoAttivitaNome; // nome attività
   final WorkOrderStatus status;
+  final String? statoSap; // CO_STTXT — stringa stato grezza SAP (es. "RIL. CALP EDCO...")
   final String priorita; // Alta / Media / Bassa
   final String? creatoDa; // utente SAP creatore
   final String? avvisoOrigine; // riferimento avviso (back-compat con notificationNumberSap)
@@ -66,6 +126,7 @@ class WorkOrder {
   final String? ultimoCicloManutenzione;
   final String? postManut;
   final DateTime? dataEsec;
+  final DateTime? dataFine; // CO_GLTRP — data fine prevista SAP
 
   // ── ALTRI ─────────────────────────────────────────────────────────
   final String accountingSector; // POT, FOG...
@@ -85,6 +146,7 @@ class WorkOrder {
     this.tipoAttivitaCodice,
     this.tipoAttivitaNome,
     this.status = WorkOrderStatus.ricevuto,
+    this.statoSap,
     this.priorita = '',
     this.creatoDa,
     this.avvisoOrigine,
@@ -119,6 +181,7 @@ class WorkOrder {
     this.ultimoCicloManutenzione,
     this.postManut,
     this.dataEsec,
+    this.dataFine,
     this.accountingSector = '',
     this.notes = '',
     this.attachmentsCount = 0,
@@ -129,34 +192,55 @@ class WorkOrder {
 
   // ─── Logica di categoria (campi condizionali del form dinamico) ─────────────
 
+  /// Categoria funzionale, derivata dal tipo ordine SAP (AUFART).
+  ///
+  /// Prima si deduceva con `woType.startsWith('ATTI')` e simili, cioè da un
+  /// elenco di tipi ipotizzato in fase di specifica. I dati reali di DG1 lo
+  /// hanno smentito: la maggioranza degli ordini di SP1 ha tipi che quell'elenco
+  /// non prevedeva, e finiva silenziosamente in "Intervento generico".
+  ///
+  /// La verità è SAP. Qui c'è una tabella esplicita dei codici veri: un codice
+  /// sconosciuto ricade su [WorkOrderCategory.generico], ma il tipo SAP resta
+  /// visibile in interfaccia accanto all'etichetta, così un tipo nuovo si nota
+  /// invece di sparire.
+  WorkOrderCategory get category =>
+      kWorkOrderCategoryBySapType[woType.trim().toUpperCase()] ??
+      WorkOrderCategory.generico;
+
+  /// ATTI / SOST — l'intervento è sul contatore del cliente.
   bool get hasDettagliCliente =>
-      woType.startsWith('ATTI') || woType.startsWith('SOST');
+      category == WorkOrderCategory.attivazione ||
+      category == WorkOrderCategory.sostituzione;
 
-  bool get hasPreventivo => woType.startsWith('PA');
+  bool get hasPreventivo => category == WorkOrderCategory.preventivo;
 
-  /// DISA — Disattivazione fornitura: lettura finale + conferma disattivazione.
-  bool get hasDisattivazione => woType.startsWith('DISA');
+  /// Disattivazione fornitura: lettura finale + conferma disattivazione.
+  bool get hasDisattivazione => category == WorkOrderCategory.disattivazione;
 
-  /// ATTI — Apertura/attivazione fornitura: sigillo, lettura iniziale.
-  bool get hasAttivazione => woType.startsWith('ATTI');
+  /// Apertura/attivazione fornitura: sigillo, lettura iniziale.
+  bool get hasAttivazione => category == WorkOrderCategory.attivazione;
 
-  /// SOST — Sostituzione contatore: matricola vecchio/nuovo, letture, calibro.
-  bool get hasSostituzione => woType.startsWith('SOST');
+  /// Sostituzione contatore: matricola vecchio/nuovo, letture, calibro.
+  bool get hasSostituzione => category == WorkOrderCategory.sostituzione;
 
-  /// ZA — Interventi rete (perdite, interruzioni): tipo perdita, pressione.
-  bool get hasInterventoRete => woType.startsWith('ZA');
+  /// Interventi rete (perdite, interruzioni): tipo perdita, pressione.
+  bool get hasInterventoRete => category == WorkOrderCategory.interventoRete;
+
+  /// Letture aperiodiche: rilevazione del contatore senza intervento tecnico.
+  bool get hasLettura => category == WorkOrderCategory.lettura;
 
   bool get hasMeter => meter != null;
 
   /// Etichetta leggibile della categoria, per le sezioni dei form dinamici.
-  String get typeCategoryLabel {
-    if (hasAttivazione) return 'Attivazione fornitura';
-    if (hasSostituzione) return 'Sostituzione contatore';
-    if (hasDisattivazione) return 'Disattivazione fornitura';
-    if (hasInterventoRete) return 'Intervento rete';
-    if (hasPreventivo) return 'Preventivo';
-    return 'Intervento generico';
-  }
+  String get typeCategoryLabel => switch (category) {
+        WorkOrderCategory.attivazione => 'Attivazione fornitura',
+        WorkOrderCategory.sostituzione => 'Sostituzione contatore',
+        WorkOrderCategory.disattivazione => 'Disattivazione fornitura',
+        WorkOrderCategory.interventoRete => 'Intervento rete',
+        WorkOrderCategory.lettura => 'Lettura contatore',
+        WorkOrderCategory.preventivo => 'Preventivo',
+        WorkOrderCategory.generico => 'Intervento generico',
+      };
 
   // ─── Transizioni del ciclo di vita (specifiche EF-M4.1) ────────────────────
 
@@ -178,14 +262,15 @@ class WorkOrder {
       status == WorkOrderStatus.inviatoSAP;
 
   /// Icona indicativa in base alla tipologia.
-  String get typeEmoji {
-    if (woType.startsWith('ATTI')) return '🔓';
-    if (woType.startsWith('SOST')) return '🔄';
-    if (woType.startsWith('DISA')) return '🚱';
-    if (woType.startsWith('ZA')) return '🔧';
-    if (woType.startsWith('PA')) return '📋';
-    return '⚙️';
-  }
+  String get typeEmoji => switch (category) {
+        WorkOrderCategory.attivazione => '🔓',
+        WorkOrderCategory.sostituzione => '🔄',
+        WorkOrderCategory.disattivazione => '🚱',
+        WorkOrderCategory.interventoRete => '🔧',
+        WorkOrderCategory.lettura => '🔢',
+        WorkOrderCategory.preventivo => '📋',
+        WorkOrderCategory.generico => '⚙️',
+      };
 
   WorkOrder copyWith({
     WorkOrderStatus? status,
@@ -208,6 +293,7 @@ class WorkOrder {
       tipoAttivitaCodice: tipoAttivitaCodice,
       tipoAttivitaNome: tipoAttivitaNome,
       status: status ?? this.status,
+      statoSap: statoSap,
       priorita: priorita,
       creatoDa: creatoDa,
       avvisoOrigine: avvisoOrigine,
@@ -242,6 +328,7 @@ class WorkOrder {
       ultimoCicloManutenzione: ultimoCicloManutenzione,
       postManut: postManut,
       dataEsec: dataEsec,
+      dataFine: dataFine,
       accountingSector: accountingSector,
       notes: notes ?? this.notes,
       attachmentsCount: attachmentsCount ?? this.attachmentsCount,
