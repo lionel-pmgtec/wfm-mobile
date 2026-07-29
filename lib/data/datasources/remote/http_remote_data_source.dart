@@ -1,6 +1,5 @@
-// Implementazione REST verso il BACKEND unico del cruscotto (Node), base
-// /api/v1. Contratto identico al vecchio middleware Java: l'app cambia solo
-// l'host. Il tablet vede SOLO gli oggetti assegnati al CID del token.
+// Implementazione REST verso il BACKEND del cruscotto (Node), base
+// /api/v1. Il tablet vede SOLO gli oggetti assegnati al CID del token.
 
 import 'package:dio/dio.dart';
 import '../../../core/config/capabilities.dart';
@@ -14,7 +13,7 @@ class HttpRemoteDataSource implements WfmRemoteDataSource {
   final DioClient client;
   HttpRemoteDataSource(this.client);
 
-  /// Backend unico (:4000/api/v1): letture, scritture, auth, anagrafiche.
+  /// Backend (:4000/api/v1): letture, scritture, auth, anagrafiche.
   Dio get _dio => client.dio;
 
   // ── Endpoint REST (/api/v1) ─────────────────────────────────────────────
@@ -35,12 +34,10 @@ class HttpRemoteDataSource implements WfmRemoteDataSource {
 
   @override
   Future<Capabilities> getCapabilities() async {
-    // Le letture ora arrivano dal backend del collega (cruscotto), che espone
+    // Le letture ora arrivano dal cruscotto, che espone
     // l'INTERA struttura SAP (ordine + avviso con indirizzo, appuntamento,
-    // apparecchiatura, guasto, codifica…). Il vecchio gating era tarato sul
-    // perimetro ristretto del mio middleware: qui non serve più. Dichiariamo
-    // tutto disponibile — le sezioni senza dato si nascondono da sole, quelle
-    // con dato si mostrano. (Endpoint /capabilities del middleware non più usato.)
+    // apparecchiatura, guasto, codifica…).  Dichiariamo tutto disponibile — 
+    // le sezioni senza dato si nascondono da sole, quelle con dato si mostrano.
     return Capabilities.allEnabled;
   }
 
@@ -108,7 +105,7 @@ class HttpRemoteDataSource implements WfmRemoteDataSource {
   @override
   Future<WorkOrder> updateStatus(String code, WorkOrderStatus status,
       {String? reason, String? note, Geolocation? geolocation}) async {
-    // -> aggiornaStatoOrdineDiLavoro (S51/S13...)
+    // -> aggiornaStatoOrdineDiLavoro
     final r = await _dio.patch('$_workOrders/$code/status', data: {
       'status': status.sapCode,
       'reason': reason,
@@ -133,7 +130,7 @@ class HttpRemoteDataSource implements WfmRemoteDataSource {
 
   @override
   Future<WorkOrder> createWorkOrder(WorkOrder order) async {
-    // -> createWorkOrderFromField (I4)
+    // -> createWorkOrderFromField 
     final r = await _dio.post(_workOrders, data: workOrderToJson(order));
     return workOrderFromJson(r.data as Map<String, dynamic>);
   }
@@ -180,7 +177,7 @@ class HttpRemoteDataSource implements WfmRemoteDataSource {
 
   @override
   Future<String> submitEsito(Esito esito) async {
-    // -> submitEsito (S13 + E55)
+    // -> submitEsito
     final r = await _dio.post(_esiti, data: esitoToJson(esito));
     return r.data['esitoId']?.toString() ?? '';
   }
@@ -217,7 +214,7 @@ class HttpRemoteDataSource implements WfmRemoteDataSource {
 
   @override
   Future<Attachment> uploadAttachment(Attachment attachment) async {
-    // -> inviaEsitoAllegato (MTOM/XOP lato middleware)
+    // -> inviaEsitoAllegato
     final form = FormData.fromMap({
       'workOrderCode': attachment.workOrderCode,
       'type': attachment.type.sapCode,

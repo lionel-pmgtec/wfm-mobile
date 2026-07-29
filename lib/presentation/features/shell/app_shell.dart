@@ -18,7 +18,7 @@ import '../../providers/connectivity_provider.dart';
 import '../../providers/realtime_provider.dart';
 import '../../providers/settings_provider.dart';
 
-/// Altezza della toolbar (cfr. appBarTheme.toolbarHeight in app_theme.dart).
+/// Altezza della toolbar ( appBarTheme.toolbarHeight in app_theme.dart).
 const double _kToolbarHeight = 60;
 
 /// Larghezza della sidebar tablet.

@@ -40,7 +40,7 @@ class FcmService {
     try {
       await Firebase.initializeApp();
     } catch (e) {
-      // google-services.json mancante in dev → mock mode, skip senza crash.
+      // se manca google-services.json in dev → mock mode, skip senza crash.
       if (kDebugMode) {
         // ignore: avoid_print
         print('[fcm] Firebase non inizializzato: $e');
@@ -101,8 +101,7 @@ class FcmService {
   }
 
   void _onForegroundMessage(RemoteMessage message) {
-    // Traccia inequivocabile che il messaggio arriva DA FIREBASE (FCM): il
-    // polling locale non passa mai da qui. messageId è assegnato dai server FCM.
+    // Traccia inequivocabile che il messaggio arriva DA FIREBASE (FCM)
     if (kDebugMode) {
       // ignore: avoid_print
       print('[fcm] messaggio DA FIREBASE ricevuto '

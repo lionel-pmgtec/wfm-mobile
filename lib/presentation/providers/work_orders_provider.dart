@@ -9,7 +9,7 @@ import 'core_providers.dart';
 final workOrderFilterProvider =
     StateProvider<WorkOrderFilter>((ref) => const WorkOrderFilter());
 
-/// Elenco OdL filtrato (M2). Si aggiorna quando cambia filtro o connettività.
+/// Elenco OdL filtrato. Si aggiorna quando cambia filtro o connettività.
 final workOrdersProvider = FutureProvider<List<WorkOrder>>((ref) async {
   ref.watch(connectivityStatusProvider); // refetch quando cambia rete
   final filter = ref.watch(workOrderFilterProvider);

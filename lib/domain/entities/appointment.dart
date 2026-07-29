@@ -1,4 +1,4 @@
-// Appuntamento / sopralluogo legato a un OdL (cfr. "Dati sopralluogo").
+// Appuntamento / sopralluogo legato a un OdL.
 // Gestione: Nuovo appuntamento, Esito appuntamento, Riepilogo appuntamenti.
 
 enum AppointmentOutcome {

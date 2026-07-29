@@ -1,4 +1,4 @@
-// Bottom sheet pour réassigner un ODL à un autre opérateur.
+// Foglio inferiore per riassegnare un ODL a un altro operatore.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,7 +8,7 @@ import '../../../../domain/entities/user.dart';
 import '../../../../domain/entities/enums.dart';
 import '../../../providers/reassign_provider.dart';
 
-/// Ouvre la bottom sheet de réassignation.
+/// Apre il foglio inferiore di riassegnazione.
 Future<void> showReassignSheet(
   BuildContext context,
   WidgetRef ref,
@@ -136,7 +136,7 @@ class _ReassignSheetState extends ConsumerState<_ReassignSheet> {
 
             const SizedBox(height: 8),
 
-            // Liste opérateurs
+            // Elenco degli operatori
             Expanded(
               child: operatorsAsync.when(
                 loading: () =>
@@ -172,7 +172,7 @@ class _ReassignSheetState extends ConsumerState<_ReassignSheet> {
               ),
             ),
 
-            // Note + bouton
+            // Nota + pulsante
             if (_selected != null) ...[
               const Divider(height: 1),
               Padding(
@@ -259,7 +259,7 @@ class _ReassignSheetState extends ConsumerState<_ReassignSheet> {
   }
 }
 
-// ─── Tuile opérateur ─────────────────────────────────────────────────────────
+// ─── Piastrella dell'operatore ─────────────────────────────────────────────────────────
 
 class _OperatorTile extends StatelessWidget {
   final AppUser operator;

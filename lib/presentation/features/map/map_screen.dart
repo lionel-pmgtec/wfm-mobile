@@ -1,4 +1,4 @@
-// Page Carte — affiche les ODL géolocalisés avec marqueurs colorés par statut.
+// Mappa — visualizza gli OdL geolocalizzati con marker colorati in base allo stato.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -13,7 +13,7 @@ import '../../../core/widgets/widgets.dart';
 import '../../../domain/entities/entities.dart';
 import '../../providers/work_orders_provider.dart';
 
-// ─── Couleurs des marqueurs par statut ───────────────────────────────────────
+// ─── Colori dei marker ────────────────────────────────────────
 
 Color _markerColor(WorkOrderStatus s) => switch (s) {
       WorkOrderStatus.ricevuto => AppColors.statusReceived,
@@ -49,7 +49,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   WorkOrder? _selected;
   WorkOrderStatus? _filterStatus;
 
-  // Centro par défaut — Ancona (zone des ODL de démo)
+  // Centro di default — Ancona (zone des ODL de démo)
   static const _defaultCenter = LatLng(43.615, 13.519);
 
   Future<void> _centerOnMyLocation() async {
@@ -83,7 +83,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
       ),
       body: Column(
         children: [
-          // Légende + filtre statut
+          // Legenda + filtro stato
           _StatusLegendBar(
             selected: _filterStatus,
             onSelect: (s) => setState(() {
@@ -107,7 +107,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
 
                 return Stack(
                   children: [
-                    // ── Carte ────────────────────────────────────────────────
+                    // ── Mappa ────────────────────────────────────────────────
                     FlutterMap(
                       mapController: _mapController,
                       options: MapOptions(
@@ -127,14 +127,14 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                       ],
                     ),
 
-                    // ── Compteur ODL visibles ────────────────────────────────
+                    // ── Contattore ODL visibili ────────────────────────────────
                     Positioned(
                       top: 12,
                       right: 12,
                       child: _CountBubble(count: geo.length),
                     ),
 
-                    // ── Fiche détail OdL sélectionné ─────────────────────────
+                    // Dettaglio OdL selezionato .
                     if (_selected != null)
                       Positioned(
                         bottom: 16,
@@ -150,7 +150,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                         ),
                       ),
 
-                    // ── Message aucun OdL géolocalisé ────────────────────────
+                    // ── Messaggio nessun OdL geolocalizzato ────────────────────────
                     if (geo.isEmpty)
                       Center(
                         child: Container(
@@ -231,7 +231,7 @@ class _MapScreenState extends ConsumerState<MapScreen> {
   }
 }
 
-// ─── Barre légende / filtre statut ───────────────────────────────────────────
+// ─── Barra legenda / filtro stato ───────────────────────────────────────────
 
 class _StatusLegendBar extends StatelessWidget {
   final WorkOrderStatus? selected;
@@ -315,7 +315,7 @@ class _StatusLegendBar extends StatelessWidget {
   }
 }
 
-// ─── Bulle compteur ───────────────────────────────────────────────────────────
+// contatore OdL
 
 class _CountBubble extends StatelessWidget {
   final int count;
@@ -344,7 +344,7 @@ class _CountBubble extends StatelessWidget {
   }
 }
 
-// ─── Fiche OdL en bas de carte ────────────────────────────────────────────────
+// ODL carta base
 
 class _OdlBottomCard extends StatelessWidget {
   final WorkOrder order;

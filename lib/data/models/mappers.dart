@@ -1,6 +1,4 @@
-// Mapper DTO <-> Entita. La nomenclatura JSON segue il contratto REST del
-// middleware Spring Boot (com.wfm.middleware.dto.Dto).
-//
+
 // Usati da HttpRemoteDataSource per (de)serializzare i dati del Cruscotto.
 
 import '../../domain/entities/entities.dart';

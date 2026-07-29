@@ -1,4 +1,4 @@
-// Equipment SAP PM/IS-U — per Standalone (Dettaglio Equipment, Sostituzione Barcode).
+// Equipment SAP PM/IS-U — (Dettaglio Equipment, Sostituzione Barcode).
 
 class Equipment {
   final String matricola; // numero di serie

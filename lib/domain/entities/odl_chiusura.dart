@@ -1,5 +1,4 @@
-// Chiusura OdL (spec).
-
+// Chiusura OdL.
 import 'package:flutter/material.dart';
 
 enum OdlEsitoIntervento {

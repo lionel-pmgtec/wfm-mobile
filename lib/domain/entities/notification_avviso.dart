@@ -96,7 +96,7 @@ class NotificationAvviso {
   final DateTime? dataSegnalazione;
   final String? oraSegnalazione;
 
-  // ── Indirizzi (spec §4 - Sezione 3) ─────────────────────────────────────
+  // ── Indirizzi  ─────────────────────────────────────
   /// Indirizzo dell'Avviso (sede della segnalazione / indirizzo amministrativo).
   final Address address;
   /// Telefono dell'indirizzo Avviso.

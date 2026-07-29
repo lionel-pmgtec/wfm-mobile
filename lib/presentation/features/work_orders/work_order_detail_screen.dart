@@ -1,4 +1,4 @@
-// PAGINA 4 — Dettaglio OdL (M3) con 5 schede e barra azioni ciclo di vita (M4).
+// PAGINA 4 — Dettaglio OdL con 5 schede e barra azioni ciclo di vita.
 
 import 'dart:io';
 
@@ -763,7 +763,7 @@ class _ChiusuraTab extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(children: [
+              const Row(children: [
                 const Icon(Icons.flag_rounded, color: AppColors.primary),
                 const SizedBox(width: 8),
                 Expanded(

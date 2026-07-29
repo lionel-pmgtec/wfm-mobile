@@ -1,4 +1,4 @@
-// Appuntamento OdL (spec).
+// Appuntamento OdL.
 //
 // Modello unificato per "appuntamento fissato" e "appuntamento effettuato":
 //   - fissato : data + ora pianificate, modalità (presenza / telefono / video)

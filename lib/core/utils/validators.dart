@@ -16,7 +16,7 @@ class Validators {
     return null;
   }
 
-  /// Lettura contatore: numerica e ≥ lettura precedente (specifiche EF-M6.2).
+  /// Lettura contatore: numerica e ≥ lettura precedente.
   static String? meterReading(String? v, {num? previous}) {
     final base = number(v);
     if (base != null) return base;

@@ -119,9 +119,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
   // ── Logo VIVA SERVIZI (immagine ufficiale) ────────────────────────────────
   Widget _buildVivaServiziLogo() {
     return SizedBox(
-      // Altezza pari all'immagine del logo: l'alone (più grande) sfora sopra e
-      // sotto ma è trasparente ai bordi, quindi non crea spazio morto e il
-      // blocco sottostante risale — layout compatto anche su smartphone.
+
       height: 190,
       child: Stack(
         clipBehavior: Clip.none,

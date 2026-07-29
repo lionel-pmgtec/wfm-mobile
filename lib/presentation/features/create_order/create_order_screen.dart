@@ -1,4 +1,4 @@
-// Création OdL depuis le terrain (M10) — formulaire moderne multi-sections.
+// Creazione ODL dal campo - form multi-section
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,7 +12,7 @@ import '../../../domain/entities/entities.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/work_orders_provider.dart';
 
-// ─── Types d'ODL disponibles ─────────────────────────────────────────────────
+// ─── Tipi ODL Disponibili ───────────────────────────────────────────────────
 
 const _woTypes = [
   _WoTypeOption('ATTI', 'Apertura contatore', Icons.lock_open_rounded, Color(0xFF1565C0)),

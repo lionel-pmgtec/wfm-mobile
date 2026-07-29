@@ -1,4 +1,4 @@
-// Pagamento (spec §12) — collegato a un Preventivo / Avviso.
+// Pagamento — collegato a un Preventivo / Avviso.
 
 import 'enums.dart';
 

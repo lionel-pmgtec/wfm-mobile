@@ -68,7 +68,7 @@ class _CambioCidScreenState extends ConsumerState<CambioCidScreen> {
           ),
         ),
         const SizedBox(height: 12),
-        Text('Suggerimenti', style: AppTextStyles.labelMedium),
+        Text('Suggerimenti', style: const AppTextStyles.labelMedium),
         const SizedBox(height: 6),
         ref.watch(techniciansProvider('')).when(
               loading: () => const Padding(
@@ -78,7 +78,7 @@ class _CambioCidScreenState extends ConsumerState<CambioCidScreen> {
                     width: 18,
                     child: CircularProgressIndicator(strokeWidth: 2)),
               ),
-              error: (_, __) => Text('Elenco tecnici non disponibile',
+              error: (_, __) => const Text('Elenco tecnici non disponibile',
                   style: AppTextStyles.bodySmall),
               data: (techs) => Wrap(
                 spacing: 8,

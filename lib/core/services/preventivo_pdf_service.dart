@@ -1,8 +1,6 @@
 // Generazione PDF Preventivo — modello classico "a modulo" (form bordato),
 // in stile documento ufficiale italiano (griglia di celle etichettate).
-//
-// Il preventivo NON è un documento fiscale: elenco dei materiali necessari
-// all'intervento. Nessun prezzo, nessun totale.
+
 //
 // Layout:
 //   • Banda "VIVA SERVIZI" a tutta larghezza
@@ -38,11 +36,9 @@ class PreventivoPdfService {
   static const double _side = 28;
 
   static const String _emittenteRagione = 'Viva Servizi S.p.A.';
-  static const String _emittenteIndirizzo =
-      'Via del Commercio 29 - 60127 Ancona (AN)';
+  static const String _emittenteIndirizzo = 'Via del Commercio 29 - 60127 Ancona (AN)';
   static const String _emittentePiva = 'P.IVA 02191510420';
-  static const String _emittenteContatti =
-      'Numero Verde 800 216 172 - info@vivaservizi.it';
+  static const String _emittenteContatti =  'Numero Verde 800 216 172 - info@vivaservizi.it';
 
   // Logo Viva Servizi (assets/images/logo.png) caricato una sola volta.
   pw.MemoryImage? _logo;

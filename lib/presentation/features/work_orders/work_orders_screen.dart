@@ -711,7 +711,7 @@ class _WorkOrderItem extends StatelessWidget {
                 style: AppTextStyles.bodyLarge
                     .copyWith(fontWeight: FontWeight.w600)),
             const SizedBox(height: 4),
-            // 📍 indirizzo · data (+ priorità). Stesso formato degli avvisi.
+            // Indirizzo · data (+ priorità). Stesso formato degli avvisi.
             // L'indirizzo non è ancora esposto da SAP (ILOA/ADRC): fino ad allora
             // resta la sola icona come segnaposto. La data è l'appuntamento se
             // presente, altrimenti esecuzione/creazione SAP.
@@ -749,7 +749,7 @@ class _WorkOrderItem extends StatelessWidget {
               ],
             ]),
             const SizedBox(height: 6),
-            // 🔧 sede tecnica · equipment: il riferimento tecnico dell'ordine,
+            // Sede tecnica · equipment: il riferimento tecnico dell'ordine,
             // utile a distinguere ordini con descrizione simile.
             if (order.sedeTecnica.isNotEmpty || order.equipment.isNotEmpty)
               Row(children: [

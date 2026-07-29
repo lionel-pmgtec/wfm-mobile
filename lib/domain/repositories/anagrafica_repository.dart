@@ -1,4 +1,4 @@
-// Anagrafiche statiche (materiali, magazzini, marche, codici) — M7 / M11.2.
+// Anagrafiche statiche (materiali, magazzini, marche, codici)
 import '../../core/network/result.dart';
 import '../entities/material.dart';
 import '../entities/esito.dart';

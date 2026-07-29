@@ -1,4 +1,4 @@
-// Attività dell'OdL (spec).
+// Attività dell'OdL.
 //
 // Una attività rappresenta un singolo step di lavoro registrato dal tecnico
 // (codice + descrizione + stato + note).

@@ -1,4 +1,4 @@
-// Client SSE (Server-Sent Events) verso il backend del collega (cruscotto).
+// Client SSE (Server-Sent Events) verso il backend(cruscotto).
 //
 // Il backend espone GET /api/stream: uno snapshot iniziale e poi eventi
 // `ordini` / `avvisi` / `reset` quando SAP spinge nuovi dati. Qui apriamo lo

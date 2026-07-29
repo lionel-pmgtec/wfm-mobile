@@ -89,7 +89,6 @@ class FieldRow extends StatelessWidget {
   final bool hideIfEmpty;
 
   /// Il campo esiste nell'app ma la sorgente dati attiva non lo alimenta.
-  ///
   /// Diverso da "vuoto": vuoto significa che il dato manca su quell'oggetto,
   /// non disponibile significa che il servizio non lo espone affatto. Il campo
   /// resta visibile ma spento, con il motivo nel tooltip — e vince su

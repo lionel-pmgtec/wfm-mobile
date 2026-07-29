@@ -57,7 +57,7 @@ class SyncProcessor {
               .backoff[n.clamp(0, SyncOperation.backoff.length - 1)];
           // Errore di rete = non è un vero fallimento: resta "in attesa"
           // (ambra) e verrà reinviato. Solo gli errori del server diventano
-          // "failed" (rosso, richiede attenzione). Mai il testo grezzo in UI.
+          // "failed" (rosso, richiede attenzione).
           final isNetwork = _isNetwork(e);
           await sync.update(op.copyWith(
             status: isNetwork ? SyncStatus.pending : SyncStatus.failed,
@@ -133,7 +133,6 @@ class SyncProcessor {
     return e is SocketException;
   }
 
-  /// Messaggio comprensibile per l'utente (mai lo stack/DioException grezzo).
   String _friendlyMessage(Object e) {
     if (_isNetwork(e)) return 'In attesa di connessione';
     if (e is DioException) {

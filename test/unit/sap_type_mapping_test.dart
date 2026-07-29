@@ -1,11 +1,5 @@
 // I tipi ordine e avviso SONO quelli di SAP: qui si verifica che l'app li
 // riconosca tutti.
-//
-// I codici e le descrizioni vengono dai dati reali del centro SP1, letti il
-// 2026-07-17 su una finestra di 90 giorni (15 ordini, 55 avvisi). Prima di
-// allora l'app si basava sui tipi ipotizzati in specifica, e 9 ordini su 15 e
-// 55 avvisi su 55 finivano silenziosamente in un fallback generico.
-//
 // Se un giorno questi test falliscono, è perché SAP ha cambiato qualcosa: la
 // risposta è aggiornare la tabella, non il test.
 
@@ -18,9 +12,6 @@ WorkOrder _odl(String woType) => WorkOrder(externalCode: '1', woType: woType);
 void main() {
   group('Tipi ordine reali di SP1', () {
     test('ogni tipo osservato su DG1 è riconosciuto', () {
-      // Tutti i tipi realmente presenti su SP1 (estrazione 2025→2026, 153
-      // ordini). Nessuno deve cadere nel fallback per assenza dalla tabella:
-      // anche quelli lasciati "generico" sono mappati esplicitamente.
       const osservati = [
         'ATTI', 'DISA', 'SOST', 'ZA02', 'SOPA', 'LEAP', 'ZDE2',
         'ZF01', 'ZF02', 'ZF04', 'ZI04', 'ZLIM', 'DMOR',
@@ -76,9 +67,6 @@ void main() {
       expect(_odl('LEAP').typeCategoryLabel, 'Lettura contatore');
     });
 
-    /// Il vecchio `woType.startsWith('ZA')` catturava qualunque codice che
-    /// iniziasse per ZA. ZDE2 non c'entra con la rete idrica ("Ispezione
-    /// depurazione") e non deve essere classificato come tale.
     test('ZDE2 non viene scambiato per un intervento rete', () {
       expect(_odl('ZDE2').category, WorkOrderCategory.generico);
       expect(_odl('ZDE2').hasInterventoRete, isFalse);
@@ -99,8 +87,6 @@ void main() {
 
   group('Tipi avviso reali di SP1', () {
     test('ogni tipo osservato su DG1 è nel registry', () {
-      // Estrazione 2025→2026 (190 avvisi): ZP (118), ZN (44), ZH (10), IS (9),
-      // RA (4), PA (3), ZF (1), ZM (1). Nessuno deve mostrare il codice grezzo.
       for (final code in ['ZP', 'ZN', 'ZH', 'IS', 'RA', 'PA', 'ZF', 'ZM']) {
         final t = AvvisoSubType.fromCode(code);
         expect(AvvisoSubType.all.any((x) => x.code == code), isTrue,

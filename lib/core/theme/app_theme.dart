@@ -138,16 +138,16 @@ ThemeData buildAppTheme({double iconScale = 1.0}) {
       error: AppColors.accentRed,
     ),
 
-    // Dialog (AlertDialog, showDialog, ...) — più larghi e leggibili.
+    // Dialog (AlertDialog, showDialog, ...)
     dialogTheme: const DialogThemeData(
       // Riduce il margine esterno → dialog largo fino a ~95% schermo
       // su mobile, max 600px su tablet/desktop.
-      insetPadding: EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      insetPadding: EdgeInsets.symmetric(horizontal: 25, vertical: 29),
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.all(Radius.circular(16)),
       ),
       backgroundColor: AppColors.surface,
-      elevation: 8,
+      elevation: 10,
       titleTextStyle: AppTextStyles.headingMedium,
       contentTextStyle: AppTextStyles.bodyLarge,
     ),
@@ -157,9 +157,6 @@ ThemeData buildAppTheme({double iconScale = 1.0}) {
       backgroundColor: AppColors.primary,
       foregroundColor: AppColors.textOnPrimary,
       elevation: 0,
-      // Nessuna tinta di superficie: l'AppBar resta blu piatto (AppColors.primary)
-      // anche con contenuto scrollato sotto, così combacia col header blu della
-      // sidebar e non compare alcuna riga chiara alla frontiera.
       scrolledUnderElevation: 0,
       surfaceTintColor: Colors.transparent,
       shadowColor: Colors.transparent,
@@ -169,7 +166,7 @@ ThemeData buildAppTheme({double iconScale = 1.0}) {
         fontSize: 18, fontWeight: FontWeight.w600,
         color: AppColors.textOnPrimary, letterSpacing: 0.1,
       ),
-      // Icona leading (tasto Indietro) più grande per l'uso su tablet in cantiere.
+      // Icona leading (tasto Indietro)
       iconTheme:
           IconThemeData(color: AppColors.textOnPrimary, size: 30 * iconScale),
       actionsIconTheme:
@@ -196,7 +193,7 @@ ThemeData buildAppTheme({double iconScale = 1.0}) {
       elevation: 8,
     ),
 
-    // TabBar (dans AppBar bleue → texte blanc)
+    // TabBar
     tabBarTheme: const TabBarThemeData(
       labelColor: Colors.white,
       unselectedLabelColor: Colors.white60,

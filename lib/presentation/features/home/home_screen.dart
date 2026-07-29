@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:hugeicons/hugeicons.dart';
 
 import '../../../core/constants/app_constants.dart';
 import '../../../core/router/app_routes.dart';
@@ -311,7 +312,7 @@ class _WelcomeHeader extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('$greeting, $name 👋',
+                Text('$greeting, $name',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -335,8 +336,11 @@ class _WelcomeHeader extends StatelessWidget {
               color: Colors.white.withValues(alpha: 0.16),
               shape: BoxShape.circle,
             ),
-            child: const Icon(Icons.water_drop_rounded,
-                color: Colors.white, size: 24),
+            child: const HugeIcon(
+              icon: HugeIcons.strokeRoundedSparkles,
+              color: Colors.white,
+              size: 24,
+            ),
           ),
         ],
       ),

@@ -1,5 +1,4 @@
-// Esito dell'intervento (tecnico + economico) — specifiche §5.5 / M5.
-
+// Esito dell'intervento (tecnico + economico).
 import 'enums.dart';
 import 'value_objects.dart';
 

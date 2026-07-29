@@ -244,7 +244,7 @@ class _GeneraOrdineScreenState extends ConsumerState<GeneraOrdineScreen> {
             color: AppColors.accentGreen.withValues(alpha: 0.10),
             borderRadius: BorderRadius.circular(8),
           ),
-          child: Row(children: const [
+          child: const Row(children: const [
             Icon(Icons.check_circle_outline, color: AppColors.accentGreen),
             SizedBox(width: 8),
             Expanded(

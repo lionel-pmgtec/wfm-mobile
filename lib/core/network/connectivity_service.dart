@@ -1,9 +1,7 @@
-// Stato di rete (online/offline) basato sul rilevamento REALE della
-// connettività (connectivity_plus), con la possibilità di forzare l'offline
-// dalla UI per i test (impostazione "Modalità offline").
-//
-// Stato effettivo = rete reale presente  AND  non forzato offline dall'utente.
-//
+// Stato di rete (online/offline) basato sul rilevamento REALE della conetività
+// (connectivity_plus), con la possibilità di forzare l'offline della UI
+// per i test (impostazione "Modalità offline").
+
 // NB: connectivity_plus rileva la presenza dell'interfaccia (WiFi/dati), non la
 // raggiungibilità reale di internet. La resilienza agli errori di rete durante
 // le chiamate è gestita, in aggiunta, dal repository (fallback in coda).
@@ -31,7 +29,7 @@ class ConnectivityService {
       _realOnline = _hasConnection(await _connectivity.checkConnectivity());
       _recompute();
     } catch (_) {
-      // In caso di errore restiamo ottimisti (online): i fallback gestiscono.
+      print('Errore nel controllo della connetività'); // In caso di errore restiamo ottimisti (online): i fallback gestiscono.
     }
     _sub = _connectivity.onConnectivityChanged.listen((results) {
       _realOnline = _hasConnection(results);

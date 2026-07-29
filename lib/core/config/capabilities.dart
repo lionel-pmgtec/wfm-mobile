@@ -26,7 +26,7 @@ class Cap {
   static const avvisoAllegati = 'avviso.allegati';
   static const avvisoPreventivo = 'avviso.preventivo';
 
-  /// Scrittura verso SAP. Oggi false: ZWFMT_SERVIZIO_PM è di sola lettura e
+  /// Scrittura verso SAP. Non ancora attivo: ZWFMT_SERVIZIO_PM è di sola lettura e
   /// non esiste nessun servizio di scrittura.
   static const writeSap = 'write.sap';
 }
@@ -52,8 +52,7 @@ class Capabilities {
   /// Fallback: tutto disponibile.
   ///
   /// È lo stato usato finché la risposta del middleware non arriva, e quello a
-  /// cui si ricade se `/capabilities` non risponde. Un middleware vecchio, che
-  /// quell'endpoint non ce l'ha, continua così a funzionare come prima invece
+  /// cui si ricade se `/capabilities` non risponde. Continua così a funzionare come prima invece
   /// di far sparire mezza interfaccia.
   static const Capabilities allEnabled = Capabilities(
     mode: CapabilityMode.excel,

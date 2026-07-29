@@ -1,4 +1,4 @@
-// Centro notifiche (M13): lista dinamica con stato letto/non letto.
+// Centro notifiche: lista dinamica con stato letto/non letto.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

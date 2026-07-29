@@ -1,7 +1,6 @@
 // Factory del client HTTP (Dio) verso il MIDDLEWARE REST/JSON.
 //
-// È l'unica sorgente dati dell'app: tutti i repository passano da qui verso il
-// Cruscotto (backend). Nessuna modalità mock.
+// È l'unica sorgente dati dell'app: tutti i repository passano da qui verso il Cruscotto.
 
 import 'package:dio/dio.dart';
 import '../config/app_config.dart';
@@ -14,10 +13,10 @@ class DioClient {
   final AppConfig config;
   final TokenProvider? tokenProvider;
 
-  /// Verso il MIO middleware (Java): SCRITTURE, auth, anagrafiche.
+  /// Verso il backend per auth, scritture e anagrafiche.
   late final Dio dio;
 
-  /// Verso il BACKEND DEL COLLEGA (cruscotto): LETTURE liste/dettaglio + SSE.
+  /// LETTURE liste/dettaglio + SSE.
   /// Nessun token: gli endpoint di lettura sono aperti (CORS lato backend).
   late final Dio dioRead;
 
@@ -38,7 +37,8 @@ class DioClient {
     dio.interceptors.addAll([
       _AuthInterceptor(tokenProvider),
       _RetryInterceptor(dio),
-      if (!config.isProd) LogInterceptor(requestBody: false, responseBody: false),
+      if (!config.isProd)
+        LogInterceptor(requestBody: false, responseBody: false),
     ]);
 
     dioRead = Dio(
@@ -59,7 +59,8 @@ class _AuthInterceptor extends Interceptor {
   _AuthInterceptor(this.tokenProvider);
 
   @override
-  void onRequest(RequestOptions options, RequestInterceptorHandler handler) async {
+  void onRequest(
+      RequestOptions options, RequestInterceptorHandler handler) async {
     final token = await tokenProvider?.call();
     if (token != null && token.isNotEmpty) {
       options.headers['Authorization'] = 'Bearer $token';
@@ -68,7 +69,6 @@ class _AuthInterceptor extends Interceptor {
   }
 }
 
-/// Retry con backoff (cfr. specifiche §12.4).
 /// Solo timeout transitorie — connectionError significa server irraggiungibile
 /// e non deve essere ritentato automaticamente.
 class _RetryInterceptor extends Interceptor {
@@ -84,7 +84,7 @@ class _RetryInterceptor extends Interceptor {
   @override
   void onError(DioException err, ErrorInterceptorHandler handler) async {
     final attempt = (err.requestOptions.extra['retry_attempt'] as int?) ?? 0;
-    // connectionError = server non raggiungibile: fallire subito senza retry.
+    // connectionError = server non raggiungibile.
     final isRetriable = err.type == DioExceptionType.connectionTimeout ||
         err.type == DioExceptionType.receiveTimeout;
 

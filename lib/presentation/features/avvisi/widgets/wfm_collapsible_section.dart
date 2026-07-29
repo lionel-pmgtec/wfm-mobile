@@ -1,5 +1,4 @@
-// Sezione collassabile riutilizzabile per i dettagli (DATI AVVISO,
-// DATE INTERVENTO, INDIRIZZI, …).
+// Sezione collassabile riutilizzabile per i dettagli (DATI AVVISO, DATE INTERVENTO, INDIRIZZI, …).
 //
 // Pattern: stessa estetica di SectionHeader ma con freccia per aprire/chiudere
 // e padding interno coerente.

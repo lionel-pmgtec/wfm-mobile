@@ -1,10 +1,9 @@
 // Polling dei nuovi OdL/Avvisi dal middleware (Cruscotto).
 //
-// Il middleware NON invia push: questo servizio interroga periodicamente le
-// liste, rileva gli elementi NUOVI rispetto all'ultimo controllo e mostra una
-// notifica locale (via PushNotificationService) aggiornando anche le liste.
-// È l'alternativa "senza Firebase" al push FCM: funziona subito col backend
-// Excel. In produzione può essere sostituito dal push FCM reale.
+// Questo servizio interroga periodicamente leiste, rileva gli elementi 
+// NUOVI rispetto all'ultimo controllo e mostra una notifica locale
+// (via PushNotificationService) aggiornando anche le liste.
+// È l'alternativa "senza Firebase" al push FCM: In produzione deve essere sostituito dal push FCM reale.
 
 import 'dart:async';
 
@@ -105,7 +104,7 @@ class NewItemsPollService {
 }
 
 /// Servizio attivo per tutta la vita dell'app: parte al login (token presente),
-/// si ferma al logout. Va "toccato" una volta (ref.read) perché il listener sia
+/// si ferma al logout. Va "toccato" una volta perché il listener sia
 /// attivo — fatto in app.dart.
 final newItemsPollServiceProvider = Provider<NewItemsPollService>((ref) {
   final service = NewItemsPollService(ref);

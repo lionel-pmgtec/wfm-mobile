@@ -102,9 +102,7 @@ class AvvisoDatiTab extends ConsumerWidget {
         ),
 
         // ═══ SEZIONI IN ATTESA DI MAPPATURA SAP ═══════════════════════
-        // Oggi ZWFMT_S_AVVISO non le popola, ma il dev SAP le mapperà a breve
-        // (IHPA/ADRC per cliente e indirizzi): restano quindi sulla tablet,
-        // tenute in fondo e collassate finché non arrivano i dati.
+        // Oggi ZWFMT_S_AVVISO non le popola
         const SizedBox(height: 8),
         const _SapGapDivider(),
 

@@ -1,4 +1,4 @@
-// Materiale (anagrafica) e utilizzo materiale — specifiche §9.1 + M7.
+// Materiale (anagrafica) e utilizzo materiale.
 
 /// Materiale a catalogo (anagrafica).
 class MaterialItem {

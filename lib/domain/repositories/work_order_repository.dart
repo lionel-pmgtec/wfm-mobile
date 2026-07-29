@@ -13,10 +13,6 @@ class WorkOrderFilter {
   final String? tecnico;     // filtro per CID tecnico assegnato
 
   // ── Estrazione SAP (finestra su DATA_CREAZ + centro di manutenzione) ──────
-  // A differenza di `date`/`centroLavoro` (filtri locali sul risultato), questi
-  // pilotano l'estrazione SAP a monte: servono a vedere gli ordini creati prima
-  // della finestra fissa di configurazione (giorni-indietro), che è il motivo
-  // per cui la lista mostrava pochissimi ordini.
   final DateTime? dateFrom;  // IV_DATA_DA — data creazione minima
   final DateTime? dateTo;    // IV_DATA_A  — data creazione massima
   final String? centro;      // IWERK — centro di manutenzione
@@ -96,9 +92,9 @@ abstract interface class WorkOrderRepository {
 
   Future<Result<WorkOrder>> getWorkOrderDetail(String externalCode);
 
-  /// Cambio di stato (Avvia/Sospendi/Riprendi/Concludi/Annulla) — M4.
+  /// Cambio di stato (Avvia/Sospendi/Riprendi/Concludi/Annulla) .
   /// `geolocation` opzionale (es. Play/Stop OdL) — registrato dal server come
-  /// timbratura di campo per audit/tracciabilità (specifiche §9.1).
+  /// timbratura di campo per audit/tracciabilità.
   Future<Result<WorkOrder>> updateStatus(
     String externalCode,
     WorkOrderStatus newStatus, {

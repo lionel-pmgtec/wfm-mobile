@@ -14,10 +14,8 @@ class AppRoutes {
   static const String copiaOrdine = '/work-orders/:id/copia';
   static const String cambioCid = '/work-orders/:id/cambio-cid';
   static const String addComponente = '/work-orders/:id/aggiungi-componente';
-  static const String storicoAppuntamenti =
-      '/work-orders/:id/storico-appuntamenti';
-  static const String esitoAppuntamento =
-      '/work-orders/:id/esito-appuntamento';
+  static const String storicoAppuntamenti = '/work-orders/:id/storico-appuntamenti';
+  static const String esitoAppuntamento = '/work-orders/:id/esito-appuntamento';
   static const String sospensioni = '/work-orders/:id/sospensioni';
 
   static const String avvisi = '/avvisi';
@@ -39,8 +37,7 @@ class AppRoutes {
   // Modulo Standalone
   static const String standalone = '/standalone';
   static const String standaloneEquipment = '/standalone/equipment';
-  static const String standaloneSostBarcode =
-      '/standalone/sostituzione-barcode';
+  static const String standaloneSostBarcode = '/standalone/sostituzione-barcode';
   static const String standaloneSquadra = '/standalone/squadra';
   static const String standaloneTemplates = '/standalone/templates';
 
@@ -56,17 +53,13 @@ class AppRoutes {
   static String genOrePath(String id) => '/work-orders/$id/gen-ore';
   static String copiaOrdinePath(String id) => '/work-orders/$id/copia';
   static String cambioCidPath(String id) => '/work-orders/$id/cambio-cid';
-  static String addComponentePath(String id) =>
-      '/work-orders/$id/aggiungi-componente';
-  static String storicoAppuntamentiPath(String id) =>
-      '/work-orders/$id/storico-appuntamenti';
-  static String esitoAppuntamentoPath(String id) =>
-      '/work-orders/$id/esito-appuntamento';
+  static String addComponentePath(String id) => '/work-orders/$id/aggiungi-componente';
+  static String storicoAppuntamentiPath(String id) => 'work-orders/$id/storico-appuntamenti';
+  static String esitoAppuntamentoPath(String id) => '/work-orders/$id/esito-appuntamento';
   static String sospensioniPath(String id) => '/work-orders/$id/sospensioni';
 
   static String avvisoDetailPath(String id) => '/avvisi/$id';
-  static String generaOrdineDaAvvisoPath(String id) =>
-      '/avvisi/$id/genera-ordine';
+  static String generaOrdineDaAvvisoPath(String id) => '/avvisi/$id/genera-ordine';
 
   /// [key] = numero Avviso o codice OdL a cui è collegato il preventivo.
   static String preventivoPath(String key) => '/preventivo/$key';

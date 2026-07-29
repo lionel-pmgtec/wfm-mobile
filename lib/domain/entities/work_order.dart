@@ -21,10 +21,8 @@ enum WorkOrderCategory {
 /// Tipo ordine SAP (AUFART) → categoria funzionale dell'app.
 ///
 /// **SAP è la fonte di verità.** Le chiavi qui sono i codici veri letti da DG1,
-/// non i tipi ipotizzati in fase di specifica: quelli erano in parte sbagliati.
-/// Rilevati sul centro **SP1 il 2026-07-17**, finestra 90 giorni, 15 ordini —
-/// e 9 su 15 avevano un tipo che l'app non conosceva.
-///
+/// non i tipi ipotizzati in fase di specifica .
+/// 
 /// Aggiungere un codice qui è l'unico posto da toccare quando SAP ne introduce
 /// uno nuovo. Un codice assente non rompe nulla: ricade su [generico].
 const Map<String, WorkOrderCategory> kWorkOrderCategoryBySapType = {
@@ -39,27 +37,14 @@ const Map<String, WorkOrderCategory> kWorkOrderCategoryBySapType = {
   'PA': WorkOrderCategory.preventivo,
 
   // ── Dedotti dalle descrizioni reali — DA CONFERMARE con il metodo/SAP ─────
-  // SOPA: 6 ordini su 6 con descrizione "Perdite Idriche", identica a quella
-  // degli ZA02 di perdita, e stesse operazioni (Assistenza Tecnica, Automezzi).
   'SOPA': WorkOrderCategory.interventoRete,
-  // LEAP: 2 ordini su 2, "Letture aperiodiche acqua". Rilevazione contatore.
   'LEAP': WorkOrderCategory.lettura,
-  // ZDE2: 1 ordine, "Ispezione depurazione". Non è né rete idrica né contatore:
-  // in assenza di indicazioni resta generico, che è il default prudente.
   'ZDE2': WorkOrderCategory.generico,
 
-  // ── Famiglia ZF = fognatura (dai dati reali di SP1, 2026-07-23) ───────────
-  // ZF04 osservato come "RETI STANDARD FOGNATURA" con operazioni di scavo,
-  // rinterro, ripristino e asfaltatura: è un intervento su rete fognaria.
-  // ZF01/ZF02 condividono il prefisso ZF (fognatura) e la stessa natura di
-  // rete. Dedotto, DA CONFERMARE col metodo/SAP.
   'ZF01': WorkOrderCategory.interventoRete,
   'ZF02': WorkOrderCategory.interventoRete, // 10 ordini su SP1
   'ZF04': WorkOrderCategory.interventoRete,
 
-  // ── Osservati su SP1 ma semantica NON confermata → generico consapevole ───
-  // Pochi ordini ciascuno, natura non chiara: lasciati a generico DI PROPOSITO
-  // (mappati esplicitamente, non per fallback) finché SAP non conferma.
   'ZI04': WorkOrderCategory.generico, // investimento H2O?
   'ZLIM': WorkOrderCategory.generico,
   'DMOR': WorkOrderCategory.generico,
@@ -87,18 +72,18 @@ class WorkOrder {
   final String appointmentStartTime;
   final String appointmentEndTime;
 
-  // ── CLIENTE (spec) ────────────────────────────────────────────────
+  // ── CLIENTE ────────────────────────────────────────────────
   final Address address;
   final Customer customer;
   final String? codiceCliente; // se non presente in customer
   final String? referente;
   final String? telefonoCliente;
 
-  // ── INDIRIZZI (spec) ──────────────────────────────────────────────
+  // ── INDIRIZZI ──────────────────────────────────────────────
   final Address? indirizzoOggetto;
   final Address? indirizzoIntervento;
 
-  // ── DATI TECNICI (spec) ───────────────────────────────────────────
+  // ── DATI TECNICI ───────────────────────────────────────────
   final String sedeTecnica;
   final String equipment;
   final String? matricola;
@@ -111,18 +96,18 @@ class WorkOrder {
   final List<Operation> operations;
   final List<MaterialUsage> plannedMaterials;
 
-  // ── RISORSE (spec) ────────────────────────────────────────────────
+  // ── RISORSE ────────────────────────────────────────────────
   final String? cidAssegnato; // tecnico assegnato — modificabile
   final String squadra;
   final String? responsabile;
   final String? fornitoreEsterno;
   final bool reperibilita;
 
-  // ── AMPLIAMENTO (spec) ────────────────────────────────────────────
+  // ── AMPLIAMENTO ────────────────────────────────────────────
   final String? impiantoDis; // impianto disattivazione
   final String? contratto;
 
-  // ── PIANIFICAZIONE (spec) ─────────────────────────────────────────
+  // ── PIANIFICAZIONE ─────────────────────────────────────────
   final String? ultimoCicloManutenzione;
   final String? postManut;
   final DateTime? dataEsec;
@@ -194,11 +179,6 @@ class WorkOrder {
 
   /// Categoria funzionale, derivata dal tipo ordine SAP (AUFART).
   ///
-  /// Prima si deduceva con `woType.startsWith('ATTI')` e simili, cioè da un
-  /// elenco di tipi ipotizzato in fase di specifica. I dati reali di DG1 lo
-  /// hanno smentito: la maggioranza degli ordini di SP1 ha tipi che quell'elenco
-  /// non prevedeva, e finiva silenziosamente in "Intervento generico".
-  ///
   /// La verità è SAP. Qui c'è una tabella esplicita dei codici veri: un codice
   /// sconosciuto ricade su [WorkOrderCategory.generico], ma il tipo SAP resta
   /// visibile in interfaccia accanto all'etichetta, così un tipo nuovo si nota
@@ -242,7 +222,7 @@ class WorkOrder {
         WorkOrderCategory.generico => 'Intervento generico',
       };
 
-  // ─── Transizioni del ciclo di vita (specifiche EF-M4.1) ────────────────────
+  // ─── Transizioni del ciclo di vita ────────────────────
 
   bool get canStart =>
       status == WorkOrderStatus.ricevuto || status == WorkOrderStatus.sospeso;
@@ -263,13 +243,13 @@ class WorkOrder {
 
   /// Icona indicativa in base alla tipologia.
   String get typeEmoji => switch (category) {
-        WorkOrderCategory.attivazione => '🔓',
-        WorkOrderCategory.sostituzione => '🔄',
-        WorkOrderCategory.disattivazione => '🚱',
-        WorkOrderCategory.interventoRete => '🔧',
-        WorkOrderCategory.lettura => '🔢',
-        WorkOrderCategory.preventivo => '📋',
-        WorkOrderCategory.generico => '⚙️',
+        WorkOrderCategory.attivazione => 'HugeIcons.strokeRoundedLockOpen01',
+        WorkOrderCategory.sostituzione => 'HugeIcons.strokeRoundedRefresh',
+        WorkOrderCategory.disattivazione => 'HugeIcons.strokeRoundedTap02',
+        WorkOrderCategory.interventoRete => 'HugeIcons.strokeRoundedTools',
+        WorkOrderCategory.lettura => 'HugeIcons.strokeRoundedCalculator01',
+        WorkOrderCategory.preventivo => 'HugeIcons.strokeRoundedClipboard',
+        WorkOrderCategory.generico => 'HugeIcons.strokeRoundedSettings02',
       };
 
   WorkOrder copyWith({

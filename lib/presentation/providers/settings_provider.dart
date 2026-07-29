@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// Impostazioni locali (M14). In memoria per l'MVP; TODO: persistere su Hive.
+/// Impostazioni locali. In memoria per l'MVP; TODO: persistere su Hive.
 class AppSettings {
   final ThemeMode themeMode;
   final int syncIntervalMinutes; // 5/15/30/60

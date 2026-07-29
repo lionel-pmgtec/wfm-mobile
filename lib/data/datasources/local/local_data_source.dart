@@ -1,5 +1,5 @@
 // Sorgente dati locale (cache offline-first). Implementazione in memoria,
-// pronta a essere sostituita con Hive crittografato (specifiche §9.2 / §11.2).
+// pronta a essere sostituita con Hive crittografato.
 
 import '../../../domain/entities/entities.dart';
 

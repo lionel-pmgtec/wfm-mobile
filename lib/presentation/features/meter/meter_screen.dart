@@ -1,4 +1,4 @@
-// Gestione contatori (M6): lettura, installazione, rimozione, sostituzione.
+// Gestione contatori: lettura, installazione, rimozione, sostituzione.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';

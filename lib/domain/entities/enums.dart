@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Stato del ciclo di vita di un OdL (specifiche EF-M4.1).
+/// Stato del ciclo di vita di un OdL
 enum WorkOrderStatus {
   ricevuto,     // Assegnato al tecnico, non ancora avviato
   inEsecuzione, // In esecuzione (stato reale su server)

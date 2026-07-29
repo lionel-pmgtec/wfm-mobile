@@ -138,7 +138,7 @@ class AvvisoNota {
 
 /// Dati di "elaborazione" inseriti dall'operatore (NON SAP), modificabili
 /// inline dal dettaglio Avviso tramite la matita "Elabora": stato utente,
-/// priorità, oggetti tecnici, normativa 655 (pressione + esito VER), note.
+/// priorità, oggetti tecnici.
 class AvvisoElaborazione {
   final String? statoUtente;
   final String? priorita;

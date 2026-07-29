@@ -1,4 +1,4 @@
-// Barrel delle entità di dominio.
+// Entità di dominio.
 export 'enums.dart';
 export 'value_objects.dart';
 export 'meter.dart';

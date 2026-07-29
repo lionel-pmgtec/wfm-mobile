@@ -18,7 +18,7 @@ const double kRadiusLg = 20;
 /// Breakpoint tablet (cfr. layout responsive split-pane).
 const double kTabletBreakpoint = 600;
 
-/// Dimensione minima target tattile (raccomandazione Apple, specifiche §6.4).
+/// Dimensione minima target tattile (raccomandazione Apple, specifiche).
 /// Aumentata leggermente per i tablet usati in cantiere (guanti, pioggia).
 const double kMinTouchTarget = 52;
 
@@ -42,7 +42,7 @@ class SecureKeys {
   static const String hiveEncryptionKey = 'wfm_hive_key';
 }
 
-/// Nomi delle box Hive (cfr. specifiche §9.2).
+/// Nomi delle box Hive (specifiche).
 class HiveBoxes {
   static const String workOrders = 'work_orders';
   static const String esiti = 'esiti';

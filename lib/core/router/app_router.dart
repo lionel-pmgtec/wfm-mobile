@@ -1,9 +1,9 @@
 // Configurazione centralizzata della navigazione (go_router) con guardia auth.
 //
 // Struttura:
-//  - /login (fuori dal guscio)
+//  - /login (da migliorae l'implementazione)
 //  - StatefulShellRoute con 4 rami primari V1: Home, Ordini, Avvisi, Mappa
-//    (guscio persistente: NavigationRail su tablet, NavigationBar su mobile).
+//    (NavigationRail su tablet, NavigationBar su mobile).
 //  - Le schermate di dettaglio e i sotto-flussi sono route di primo livello
 //    (root navigator): coprono l'intero schermo, senza la barra di navigazione.
 
@@ -159,7 +159,7 @@ final goRouterProvider = Provider<GoRouter>((ref) {
       ),
 
       // ─── Preventivo (chiave: numero Avviso o codice OdL) ─────────────────
-      // Flat e key-based: raggiungibile sia dal detail Avviso sia dall'OdL.
+      // Flat e key-based: raggiungibile sia dal detaglio Avviso sia dall'OdL.
       GoRoute(
         path: AppRoutes.preventivo,
         builder: (_, s) =>

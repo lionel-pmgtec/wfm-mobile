@@ -2,7 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'core_providers.dart';
 
 /// Stato online/offline osservabile dalla UI. Espone toggle() per testare
-/// la modalità offline dall'app (specifiche M11).
+/// la modalità offline dall'app.
 class ConnectivityNotifier extends StateNotifier<bool> {
   final Ref ref;
   ConnectivityNotifier(this.ref) : super(true) {

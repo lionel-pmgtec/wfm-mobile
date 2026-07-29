@@ -1,4 +1,4 @@
-// Contatore (Misuratore) — specifiche §9.1 + M6.
+// Contatore (Misuratore).
 
 class Meter {
   final String matricola; // numero di serie
