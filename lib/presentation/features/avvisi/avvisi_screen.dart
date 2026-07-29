@@ -486,7 +486,7 @@ class _AvvisoItem extends ConsumerWidget {
                       if (hasFirma) ...[
                         const SizedBox(width: 6),
                         _MiniBadge(
-                            icon: const Icons.draw_outlined,
+                            icon: Icons.draw_outlined,
                             label: 'Firmato',
                             color: AppColors.accentGreen),
                       ],

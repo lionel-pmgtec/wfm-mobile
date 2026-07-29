@@ -68,7 +68,7 @@ class _CambioCidScreenState extends ConsumerState<CambioCidScreen> {
           ),
         ),
         const SizedBox(height: 12),
-        Text('Suggerimenti', style: const AppTextStyles.labelMedium),
+        Text('Suggerimenti', style: AppTextStyles.labelMedium),
         const SizedBox(height: 6),
         ref.watch(techniciansProvider('')).when(
               loading: () => const Padding(

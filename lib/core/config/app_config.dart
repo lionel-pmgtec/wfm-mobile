@@ -53,19 +53,19 @@ class AppConfig {
     flavor: AppFlavor.dev,
     middlewareBaseUrl: String.fromEnvironment(
       'WFM_BASE_URL',
-      defaultValue: 'http://10.0.2.2:4000/api/v1', // emulatore Android
+      defaultValue: 'http://192.168.1.60:4000/api/v1', // emulatore Android
     ),
   );
 
-  // static const AppConfig qa = AppConfig(
-  //   flavor: AppFlavor.qa,
-  //   middlewareBaseUrl: 'https://wfm-cruscotto.qa.local',
-  // );
+   static const AppConfig qa = AppConfig(
+     flavor: AppFlavor.qa,
+     middlewareBaseUrl: 'https://wfm-cruscotto.qa.local',
+   );
 
-  // static const AppConfig prod = AppConfig(
-  //   flavor: AppFlavor.prod,
-  //   middlewareBaseUrl: 'https://wfm-cruscotto.client.com',
-  // );
+   static const AppConfig prod = AppConfig(
+     flavor: AppFlavor.prod,
+     middlewareBaseUrl: 'https://wfm-cruscotto.client.com',
+   );
 
   bool get isProd => flavor == AppFlavor.prod;
 }

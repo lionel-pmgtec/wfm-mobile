@@ -676,27 +676,40 @@ class _WorkOrderItem extends StatelessWidget {
           children: [
             Row(
               children: [
-                Text(order.typeEmoji, style: const TextStyle(fontSize: 16)),
-                const SizedBox(width: 6),
-                Text(order.externalCode,
-                    style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.primary)),
-                const SizedBox(width: 8),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                      color: AppColors.primarySurface,
-                      borderRadius: BorderRadius.circular(4)),
-                  child: Text(order.woType,
-                      style: const TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.primary)),
+                // Gruppo sinistro elastico: il numero si accorcia con ellissi
+                // se lo spazio è poco, così badge + menu restano sempre visibili.
+                Expanded(
+                  child: Row(
+                    children: [
+                      Text(order.typeEmoji,
+                          style: const TextStyle(fontSize: 16)),
+                      const SizedBox(width: 6),
+                      Flexible(
+                        child: Text(order.externalCode,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.primary)),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                            color: AppColors.primarySurface,
+                            borderRadius: BorderRadius.circular(4)),
+                        child: Text(order.woType,
+                            style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.primary)),
+                      ),
+                    ],
+                  ),
                 ),
-                const Spacer(),
+                const SizedBox(width: 6),
                 WoStatusBadge(status: order.status, small: true),
                 OdlActionsMenu(
                   code: order.externalCode,

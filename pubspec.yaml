@@ -77,7 +77,7 @@ dependencies:
   material_design_icons_flutter: ^6.0.6595
   iconsax_flutter: ^1.0.1
   hugeicons: ^1.0.0
-  lucide_icons_flutter: ^0.1.0
+  lucide_icons_flutter: 3.1.15
   font_awesome_flutter: ^10.4.0
 
 dev_dependencies:
