@@ -12,14 +12,9 @@ oggetti a lui assegnati**.
 ```
 
 
-## Stack
+>  **Documentazione completa** — funzionalità per il tecnico + API del backend:
+> **[DOCUMENTAZIONE.md](DOCUMENTAZIONE.md)**.
 
-- **Mobile** — Flutter 3 (Dart ≥ 3), Riverpod, go_router, Dio, Hive,
-  mobile_scanner, flutter_map, Firebase Messaging, Workmanager, pdf/printing.
-- **Backend** — `Backend-WFM-VIVA/` (Node/TS, Express, porta 4000): riceve i dati
-  SAP (push SOAP o pull `selezione`), li normalizza in JSON e li distribuisce a
-  **cruscotto** e **tablet** via REST + **SSE**. Store su file (non è un DB).
-  *Sviluppato dal collega: non va modificato dall'app.*
 
 ## Struttura del repo
 
@@ -31,24 +26,6 @@ oggetti a lui assegnati**.
 ├── Backend-WFM-VIVA/     # Backend unico del cruscotto (Node) — solo lettura per noi
 └── pubspec.yaml
 ```
-
-## Ambito funzionale
-
-L'app copre i moduli **M1–M14** del capitolato:
-
-| | Modulo | | Modulo |
-|---|---|---|---|
-| M1 | Autenticazione (CID + token) | M8 | Allegati (foto/documenti/firme) |
-| M2 | Elenco OdL | M9 | Avvisi (+ preventivo/firma/PDF) |
-| M3 | Dettaglio OdL (schede) | M10 | Creazione OdL sul campo |
-| M4 | Ciclo di vita OdL | M11 | Modalità offline + coda sync |
-| M5 | Esito | M12 | Geolocalizzazione |
-| M6 | Contatori | M13 | Notifiche push |
-| M7 | Componenti e materiali | M14 | Impostazioni locali |
-
-> Alcune azioni (creazione OdL/avviso dal campo, upload allegati, genera-OdL-da-avviso)
-> oggi il backend le rifiuta con **`501`**: gli oggetti nascono in SAP. L'app le
-> mostra come "non disponibili".
 
 ## Architettura dell'app
 
@@ -70,39 +47,6 @@ inversione delle dipendenze centralizzata in
   (Dio con interceptor Bearer + retry). Mapper manuali in
   [`mappers.dart`](lib/data/models/mappers.dart), **nessun codegen** (`.g.dart`).
 
-## Integrazione col backend
-
-L'app parla con ** backend** (`:4000`). In
-[`app_config.dart`](lib/core/config/app_config.dart) si imposta **una sola riga**,
-`backendBaseUrl` (solo l'origine host:porta); da lì derivano i due percorsi dello
-**stesso** server:
-
-| Getter | Path | Uso |
-|--------|------|-----|
-| `apiBaseUrl` | `<backend>/api/v1` | dati, login, esiti, stato, anagrafiche (contratto tablet) |
-| `streamBaseUrl` | `<backend>/api` | realtime SSE (`GET /api/stream`) |
-
-`backendBaseUrl` per target di esecuzione:
-
-| Target | Valore |
-|--------|--------|
-| Tablet fisico (Wi-Fi) | `http://<IP-LAN-del-PC>:4000` (NON `localhost`) |
-| Web / Desktop (stesso PC) | `http://localhost:4000` |
-| Emulatore Android (AVD) | `http://10.0.2.2:4000` |
-
-> Cleartext HTTP: gli IP di sviluppo vanno elencati in
-> [`network_security_config.xml`](android/app/src/main/res/xml/network_security_config.xml).
-
-### Modello ad assegnazioni (importante)
-
-Il tablet mostra **solo gli oggetti assegnati** al CID del token. Perché un OdL
-compaia servono, lato **cruscotto/pianificatore**:
-
-1. `POST /api/refresh` — carica i dati SAP nel backend (richiede VPN).
-2. `POST /api/assegnazioni` — assegna l'oggetto a un tecnico (CID).
-
-Senza assegnazioni la lista è **vuota**: è corretto, non è un bug. Passi e comandi
-pronti in **[GUIDA_OPERATIVA.md](GUIDA_OPERATIVA.md)**.
 
 ## Avviare l'app
 
