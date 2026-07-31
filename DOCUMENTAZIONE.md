@@ -7,8 +7,7 @@ del cruscotto e **tutte le funzionalità già operative**.
 - **Versione documento:** 1.1 — 2026-07-31
 - **Destinatari:** tecnici sul campo, pianificatori (cruscotto), team tecnico.
 - **Documenti collegati:** [README.md](README.md) (avvio rapido),
-  [CONTRATTO_ANAGRAFICHE.md](CONTRATTO_ANAGRAFICHE.md) (cataloghi da esporre),
-  [FLUSSO_CREAZIONE.md](FLUSSO_CREAZIONE.md) (progetto creazione dal tablet).
+
 
 > **Novità 1.1 (2026-07-31)**
 > - **Cataloghi selezionabili dal cruscotto** — rimossi tutti i valori hardcoded
