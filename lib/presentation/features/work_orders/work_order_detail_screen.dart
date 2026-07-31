@@ -183,7 +183,7 @@ class _DettaglioTab extends ConsumerWidget {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  order.typeCategoryLabel,
+                  order.displayName,
                   style: const TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w700,

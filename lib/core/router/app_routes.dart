@@ -30,6 +30,7 @@ class AppRoutes {
   static const String preventivoPdf = '/preventivo/:key/pdf';
 
   static const String createOrder = '/create-order';
+  static const String createAvviso = '/create-avviso';
   static const String settings = '/settings';
   static const String notifications = '/notifications';
   static const String syncQueue = '/sync-queue';

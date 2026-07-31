@@ -15,6 +15,7 @@ import '../../../domain/entities/entities.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/avviso_extension_provider.dart';
 import '../../providers/avvisi_provider.dart';
+import '../../providers/creation_provider.dart';
 import '../../providers/realtime_provider.dart';
 import 'widgets/avviso_widgets.dart';
 
@@ -68,6 +69,22 @@ class _AvvisiScreenState extends ConsumerState<AvvisiScreen> {
   static const int _pageSize = 15;
   int _visible = _pageSize;
 
+  /// Invia al cruscotto gli avvisi/OdL creati sul tablet.
+  Future<void> _syncCreated() async {
+    showSapToast(context, 'Sincronizzazione in corso…');
+    final res = await ref.read(creationControllerProvider).syncAll();
+    if (!mounted) return;
+    if (res.failed == 0) {
+      showSapToast(context, 'Sincronizzati ${res.ok} elementi');
+    } else {
+      showSapToast(
+        context,
+        '${res.ok} inviati, ${res.failed} in attesa — ${res.firstError ?? 'cruscotto non pronto'}',
+        isError: true,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     // Al cambio di ricerca/filtro la lista riparte dalla prima pagina.
@@ -109,7 +126,25 @@ class _AvvisiScreenState extends ConsumerState<AvvisiScreen> {
             ),
             onPressed: () => _openFilters(context, ref),
           ),
+          Builder(builder: (context) {
+            final createdPending =
+                ref.watch(pendingCreationCountProvider).valueOrNull ?? 0;
+            return IconButton(
+              tooltip: 'Sincronizza',
+              icon: Badge(
+                isLabelVisible: createdPending > 0,
+                label: Text('$createdPending'),
+                child: const Icon(Icons.cloud_sync_outlined),
+              ),
+              onPressed: createdPending == 0 ? null : _syncCreated,
+            );
+          }),
         ],
+      ),
+      floatingActionButton: FloatingActionButton.extended(
+        onPressed: () => context.push(AppRoutes.createAvviso),
+        icon: const Icon(Icons.add),
+        label: const Text('Nuovo Avviso'),
       ),
       body: Column(
         children: [

@@ -556,7 +556,29 @@ Warehouse warehouseFromJson(Map<String, dynamic> j) =>
     Warehouse(code: j['code']?.toString() ?? '', name: j['name'] ?? '');
 
 CodeLabel codeLabelFromJson(Map<String, dynamic> j) =>
-    CodeLabel(j['code']?.toString() ?? '', j['label'] ?? '');
+    CodeLabel(j['code']?.toString() ?? '', (j['label'] ?? j['descrizione'] ?? '').toString());
+
+// ─── CATALOGHI SELEZIONABILI (dal cruscotto) ─────────────────────────────────
+
+WorkOrderTypeOption workOrderTypeOptionFromJson(Map<String, dynamic> j) =>
+    WorkOrderTypeOption(
+      code: j['code']?.toString() ?? '',
+      label: (j['label'] ?? j['descrizione'] ?? j['code'] ?? '').toString(),
+      category: _s(j['category'] ?? j['categoria']),
+    );
+
+DynFieldSpec dynFieldSpecFromJson(Map<String, dynamic> j) {
+  final rawOptions = j['options'] ?? j['opzioni'];
+  return DynFieldSpec(
+    key: (j['key'] ?? j['id'] ?? '').toString(),
+    label: (j['label'] ?? j['etichetta'] ?? '').toString(),
+    type: dynFieldTypeFrom(j['type']?.toString()),
+    options: rawOptions is List
+        ? rawOptions.map((e) => e.toString()).toList()
+        : const [],
+    required: j['required'] == true || j['obbligatorio'] == true,
+  );
+}
 
 // ─── EQUIPMENT ───────────────────────────────────────────────────────────────
 

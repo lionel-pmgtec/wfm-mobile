@@ -29,6 +29,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/widgets/widgets.dart';
 import '../../../../domain/entities/entities.dart';
+import '../../../providers/anagrafica_provider.dart';
 import '../../../providers/avviso_extension_provider.dart';
 import '../../../providers/avvisi_provider.dart';
 import '../../../providers/capabilities_provider.dart';
@@ -1206,34 +1207,15 @@ class _ElaborazioneSection extends ConsumerStatefulWidget {
 }
 
 class _ElaborazioneSectionState extends ConsumerState<_ElaborazioneSection> {
-  static const _statiUtente = [
-    'I0001 — Iniziato',
-    'I0002 — In esecuzione',
-    'I0003 — Sospeso',
-    'I0005 — Chiuso',
-    'I0006 — Annullato',
-  ];
-  static const _prioritaList = [
-    '0 — Altro, no pericolo',
-    '1 — Bassa',
-    '2 — Media',
-    '3 — Alta',
-    '4 — Critica',
-  ];
-  static const _esitoVerList = [
-    '-NONE-',
-    'OK — Verifica positiva',
-    'NO — Verifica negativa',
-    'PD — Pendente',
-  ];
-
+  // Nessun catalogo hardcoded: stato utente / priorità / esito VER dal cruscotto.
+  // Le selezioni conservano il CODICE (es. "I0002", "2", "OK").
   late final TextEditingController _sedeTecCtrl;
   late final TextEditingController _equipmentCtrl;
   late final TextEditingController _pressioneCtrl;
   late final TextEditingController _noteCtrl;
   String? _statoUtente;
   String? _priorita;
-  String _esito = '-NONE-';
+  String? _esito;
   bool _fermoMacchina = false;
 
   @override
@@ -1246,13 +1228,11 @@ class _ElaborazioneSectionState extends ConsumerState<_ElaborazioneSection> {
         text: e?.equipment ?? widget.avviso.equipment ?? '');
     _pressioneCtrl = TextEditingController(text: e?.pressioneBar ?? '');
     _noteCtrl = TextEditingController(text: e?.note ?? '');
-    _statoUtente = e?.statoUtente ??
-        _statiUtente.firstWhere((s) => s.contains(widget.avviso.stato),
-            orElse: () => _statiUtente.first);
-    _priorita = e?.priorita ??
-        _prioritaList.firstWhere((p) => p.startsWith(widget.avviso.priorita),
-            orElse: () => _prioritaList.first);
-    _esito = e?.esitoVer ?? '-NONE-';
+    // Valore iniziale = quello già elaborato, oppure il dato SAP dell'avviso.
+    // Il dropdown lo aggancia quando il catalogo del cruscotto è caricato.
+    _statoUtente = e?.statoUtente ?? widget.avviso.stato;
+    _priorita = e?.priorita ?? widget.avviso.priorita;
+    _esito = e?.esitoVer;
     _fermoMacchina = e?.fermoMacchina ?? false;
     // Auto-save su ogni modifica testuale (come _DatiPreventivoRP).
     for (final c in [_sedeTecCtrl, _equipmentCtrl, _pressioneCtrl, _noteCtrl]) {
@@ -1331,7 +1311,7 @@ class _ElaborazioneSectionState extends ConsumerState<_ElaborazioneSection> {
               hideIfEmpty: true),
           FieldRow(
               label: 'Esito VER',
-              value: _esito == '-NONE-' ? '' : _esito,
+              value: (_esito == null || _esito == '-NONE-') ? '' : _esito!,
               hideIfEmpty: true),
           FieldRow(
               label: 'Fermo Macchina', value: _fermoMacchina ? 'Sì' : 'No'),
@@ -1348,26 +1328,20 @@ class _ElaborazioneSectionState extends ConsumerState<_ElaborazioneSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        DropdownButtonFormField<String>(
-          initialValue: _statoUtente,
-          isExpanded: true,
-          decoration: const InputDecoration(labelText: 'Stato utente'),
-          items: _statiUtente
-              .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-              .toList(),
+        _lookupDropdown(
+          label: 'Stato utente',
+          async: ref.watch(avvisoUserStatusesProvider),
+          value: _statoUtente,
           onChanged: (v) {
             setState(() => _statoUtente = v);
             _persist();
           },
         ),
         const SizedBox(height: 10),
-        DropdownButtonFormField<String>(
-          initialValue: _priorita,
-          isExpanded: true,
-          decoration: const InputDecoration(labelText: 'Priorità'),
-          items: _prioritaList
-              .map((p) => DropdownMenuItem(value: p, child: Text(p)))
-              .toList(),
+        _lookupDropdown(
+          label: 'Priorità',
+          async: ref.watch(avvisoPrioritiesProvider),
+          value: _priorita,
           onChanged: (v) {
             setState(() => _priorita = v);
             _persist();
@@ -1408,15 +1382,12 @@ class _ElaborazioneSectionState extends ConsumerState<_ElaborazioneSection> {
               prefixIcon: Icon(Icons.compress_outlined)),
         ),
         const SizedBox(height: 10),
-        DropdownButtonFormField<String>(
-          initialValue: _esito,
-          isExpanded: true,
-          decoration: const InputDecoration(labelText: 'Esito VER'),
-          items: _esitoVerList
-              .map((e) => DropdownMenuItem(value: e, child: Text(e)))
-              .toList(),
+        _lookupDropdown(
+          label: 'Esito VER',
+          async: ref.watch(avvisoVerificationResultsProvider),
+          value: _esito,
           onChanged: (v) {
-            setState(() => _esito = v ?? '-NONE-');
+            setState(() => _esito = v);
             _persist();
           },
         ),
@@ -1428,6 +1399,58 @@ class _ElaborazioneSectionState extends ConsumerState<_ElaborazioneSection> {
               labelText: 'Note', alignLabelWithHint: true),
         ),
       ],
+    );
+  }
+
+  /// Dropdown alimentata dal cruscotto (niente valori hardcoded). Conserva il
+  /// codice; mostra caricamento e un avviso se il catalogo è vuoto.
+  Widget _lookupDropdown({
+    required String label,
+    required AsyncValue<List<CodeLabel>> async,
+    required String? value,
+    required ValueChanged<String?> onChanged,
+  }) {
+    return async.when(
+      loading: () => InputDecorator(
+        decoration: InputDecoration(labelText: label),
+        child: const SizedBox(
+            height: 18,
+            child: Center(
+                child: SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2)))),
+      ),
+      error: (_, __) => InputDecorator(
+        decoration: InputDecoration(labelText: label),
+        child: Text('Errore dal cruscotto',
+            style: AppTextStyles.bodySmall
+                .copyWith(color: AppColors.textSecondary)),
+      ),
+      data: (items) {
+        if (items.isEmpty) {
+          return InputDecorator(
+            decoration: InputDecoration(labelText: label),
+            child: Text('Nessun dato dal cruscotto',
+                style: AppTextStyles.bodySmall
+                    .copyWith(color: AppColors.textSecondary)),
+          );
+        }
+        final v = items.any((e) => e.code == value) ? value : null;
+        return DropdownButtonFormField<String>(
+          initialValue: v,
+          isExpanded: true,
+          decoration: InputDecoration(labelText: label),
+          items: items
+              .map((e) => DropdownMenuItem(
+                    value: e.code,
+                    child: Text('${e.code} — ${e.label}',
+                        overflow: TextOverflow.ellipsis),
+                  ))
+              .toList(),
+          onChanged: onChanged,
+        );
+      },
     );
   }
 }

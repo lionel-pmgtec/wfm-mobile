@@ -41,6 +41,18 @@ class AnagraficaRepositoryImpl implements AnagraficaRepository {
       _guard(() => remote.getSolutionCodes());
 
   @override
+  Future<Result<List<WorkOrderTypeOption>>> getWorkOrderTypes() =>
+      _guard(() => remote.getWorkOrderTypes());
+
+  @override
+  Future<Result<List<DynFieldSpec>>> getWorkOrderFields(String woType) =>
+      _guard(() => remote.getWorkOrderFields(woType));
+
+  @override
+  Future<Result<List<CodeLabel>>> getLookup(String kind) =>
+      _guard(() => remote.getLookup(kind));
+
+  @override
   Future<Result<Equipment?>> getEquipment({String? matricola, String? barcode}) =>
       _guard(() => remote.getEquipment(matricola: matricola, barcode: barcode));
 

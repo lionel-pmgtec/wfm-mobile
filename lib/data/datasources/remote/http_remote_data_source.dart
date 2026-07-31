@@ -31,6 +31,9 @@ class HttpRemoteDataSource implements WfmRemoteDataSource {
   static const _solutions = '/anagrafica/solutions';
   static const _equipment = '/anagrafica/equipment';
   static const _tecnici = '/anagrafica/tecnici';
+  static const _woTypes = '/anagrafica/wo-types'; // tipi OdL selezionabili
+  static const _woFields = '/anagrafica/wo-fields'; // campi dinamici per tipo
+  static const _lookups = '/anagrafica/lookups'; // lookup generico per kind
 
   @override
   Future<Capabilities> getCapabilities() async {
@@ -265,6 +268,30 @@ class HttpRemoteDataSource implements WfmRemoteDataSource {
   Future<List<CodeLabel>> getSolutionCodes() async {
     final r = await _dio.get(_solutions);
     return (r.data as List).map((e) => codeLabelFromJson(e)).toList();
+  }
+
+  @override
+  Future<List<WorkOrderTypeOption>> getWorkOrderTypes() async {
+    final r = await _dio.get(_woTypes);
+    return (r.data as List)
+        .map((e) => workOrderTypeOptionFromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
+  Future<List<DynFieldSpec>> getWorkOrderFields(String woType) async {
+    final r = await _dio.get(_woFields, queryParameters: {'type': woType});
+    return (r.data as List)
+        .map((e) => dynFieldSpecFromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
+  Future<List<CodeLabel>> getLookup(String kind) async {
+    final r = await _dio.get('$_lookups/$kind');
+    return (r.data as List)
+        .map((e) => codeLabelFromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   @override

@@ -9,7 +9,11 @@ import '../../../../core/constants/app_constants.dart';
 import '../../../../core/router/app_routes.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/widgets.dart';
+import '../../../../domain/entities/entities.dart';
+import '../../../providers/anagrafica_provider.dart';
+import '../../../providers/auth_provider.dart';
 import '../../../providers/avvisi_provider.dart';
+import '../../../providers/creation_provider.dart';
 
 class GeneraOrdineScreen extends ConsumerStatefulWidget {
   final String numero;
@@ -32,24 +36,7 @@ class _GeneraOrdineScreenState extends ConsumerState<GeneraOrdineScreen> {
   final _altroBpCtrl = TextEditingController();
   final _noteCtrl = TextEditingController();
 
-  // Tipi OdL ammessi (spec aziendale).
-  static const _woTypes = [
-    ('ATTI', 'Attivazione fornitura', Icons.lock_open_rounded),
-    ('DISA', 'Disattivazione fornitura', Icons.block_rounded),
-    ('ZA01', 'Manutenzione servizio idrico', Icons.water_drop_outlined),
-    ('ZA02', 'Manutenzione acqua', Icons.opacity_outlined),
-    ('PA', 'Generazione preventivo', Icons.description_outlined),
-  ];
-  static const _attivita = [
-    'ADS — Apertura disco',
-    'CHS — Chiusura sigillo',
-    'LET — Lettura periodica',
-    'RIP — Riparazione',
-    'VER — Verifica',
-    'EMG — Emergenza',
-  ];
-  static const _cicli = ['STD-001', 'STD-002', 'RAP-010', 'EMG-030'];
-
+  // Nessun catalogo hardcoded: tipi OdL / attività PM / cicli dal cruscotto.
   @override
   void dispose() {
     _descCtrl.dispose();
@@ -118,51 +105,148 @@ class _GeneraOrdineScreenState extends ConsumerState<GeneraOrdineScreen> {
           ]),
         ),
         const SectionHeader(title: 'TIPO ORDINE'),
-        ..._woTypes.map((t) {
-          final selected = _woType == t.$1;
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(10),
-              onTap: () => setState(() => _woType = t.$1),
-              child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 14, vertical: 14),
-                decoration: BoxDecoration(
-                  color: selected
-                      ? AppColors.primary.withValues(alpha: 0.08)
-                      : AppColors.surface,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                      color: selected
-                          ? AppColors.primary
-                          : AppColors.border,
-                      width: selected ? 1.5 : 1),
-                ),
-                child: Row(children: [
-                  Icon(t.$3, color: AppColors.primary, size: 24),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(t.$1,
-                            style: AppTextStyles.headingSmall
-                                .copyWith(color: AppColors.primary)),
-                        const SizedBox(height: 2),
-                        Text(t.$2, style: AppTextStyles.bodyMedium),
-                      ],
-                    ),
-                  ),
-                  if (selected)
-                    const Icon(Icons.check_circle,
-                        color: AppColors.primary),
-                ]),
+        ref.watch(workOrderTypesProvider).when(
+              loading: () => const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Center(child: CircularProgressIndicator()),
               ),
+              error: (_, __) =>
+                  _catalogInfo('Impossibile caricare i tipi OdL dal cruscotto.'),
+              data: (types) {
+                if (types.isEmpty) {
+                  return _catalogInfo(
+                      'Nessun tipo OdL ricevuto dal cruscotto.');
+                }
+                return Column(
+                  children: types.map((t) {
+                    final selected = _woType == t.code;
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(10),
+                        onTap: () => setState(() => _woType = t.code),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 14),
+                          decoration: BoxDecoration(
+                            color: selected
+                                ? AppColors.primary.withValues(alpha: 0.08)
+                                : AppColors.surface,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                                color: selected
+                                    ? AppColors.primary
+                                    : AppColors.border,
+                                width: selected ? 1.5 : 1),
+                          ),
+                          child: Row(children: [
+                            Icon(_typeIcon(t), color: AppColors.primary, size: 24),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(t.code,
+                                      style: AppTextStyles.headingSmall
+                                          .copyWith(color: AppColors.primary)),
+                                  const SizedBox(height: 2),
+                                  Text(t.label,
+                                      style: AppTextStyles.bodyMedium),
+                                ],
+                              ),
+                            ),
+                            if (selected)
+                              const Icon(Icons.check_circle,
+                                  color: AppColors.primary),
+                          ]),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                );
+              },
             ),
-          );
-        }),
       ],
+    );
+  }
+
+  IconData _typeIcon(WorkOrderTypeOption t) {
+    switch ((t.category ?? t.code).toUpperCase()) {
+      case 'ATTI':
+        return Icons.lock_open_rounded;
+      case 'DISA':
+        return Icons.block_rounded;
+      case 'ZA01':
+        return Icons.water_drop_outlined;
+      case 'ZA02':
+        return Icons.opacity_outlined;
+      case 'SOST':
+        return Icons.swap_horiz_rounded;
+      case 'PA':
+        return Icons.description_outlined;
+      default:
+        return Icons.category_rounded;
+    }
+  }
+
+  Widget _catalogInfo(String message) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(children: [
+        const Icon(Icons.cloud_off_rounded,
+            size: 18, color: AppColors.textSecondary),
+        const SizedBox(width: 10),
+        Expanded(
+            child: Text(message,
+                style: AppTextStyles.bodySmall
+                    .copyWith(color: AppColors.textSecondary))),
+      ]),
+    );
+  }
+
+  Widget _catalogDropdown({
+    required String label,
+    required AsyncValue<List<CodeLabel>> async,
+    required String? value,
+    required ValueChanged<String?> onChanged,
+  }) {
+    return async.when(
+      loading: () => InputDecorator(
+        decoration: InputDecoration(labelText: label),
+        child: const SizedBox(
+            height: 18,
+            child: Center(
+                child: SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2)))),
+      ),
+      error: (_, __) => _catalogInfo('$label: errore dal cruscotto'),
+      data: (items) {
+        if (items.isEmpty) {
+          return _catalogInfo('$label: nessun dato dal cruscotto');
+        }
+        final v = items.any((e) => e.code == value) ? value : null;
+        return DropdownButtonFormField<String>(
+          initialValue: v,
+          isExpanded: true,
+          decoration: InputDecoration(labelText: label),
+          items: items
+              .map((e) => DropdownMenuItem(
+                    value: e.code,
+                    child: Text('${e.code} — ${e.label}',
+                        overflow: TextOverflow.ellipsis),
+                  ))
+              .toList(),
+          onChanged: onChanged,
+        );
+      },
     );
   }
 
@@ -171,24 +255,17 @@ class _GeneraOrdineScreenState extends ConsumerState<GeneraOrdineScreen> {
       padding: kPagePadding,
       children: [
         const SectionHeader(title: 'ATTIVITÀ'),
-        DropdownButtonFormField<String>(
-          initialValue: _tipoAttivita,
-          isExpanded: true,
-          decoration:
-              const InputDecoration(labelText: 'Tipo attività PM *'),
-          items: _attivita
-              .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-              .toList(),
+        _catalogDropdown(
+          label: 'Tipo attività PM *',
+          async: ref.watch(lookupProvider('pm-activities')),
+          value: _tipoAttivita,
           onChanged: (v) => setState(() => _tipoAttivita = v),
         ),
         const SizedBox(height: 12),
-        DropdownButtonFormField<String>(
-          initialValue: _ciclo,
-          isExpanded: true,
-          decoration: const InputDecoration(labelText: 'Ciclo di Lavoro'),
-          items: _cicli
-              .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-              .toList(),
+        _catalogDropdown(
+          label: 'Ciclo di Lavoro',
+          async: ref.watch(lookupProvider('work-cycles')),
+          value: _ciclo,
           onChanged: (v) => setState(() => _ciclo = v),
         ),
         const SizedBox(height: 12),
@@ -303,17 +380,43 @@ class _GeneraOrdineScreenState extends ConsumerState<GeneraOrdineScreen> {
       setState(() => _step++);
       return;
     }
-    // Step finale: crea OdL
-    final res = await ref.read(generateWorkOrderProvider)(widget.numero);
-    if (!mounted) return;
-    res.when(
-      success: (wo) {
-        showSapToast(
-            context, 'OdL ${wo.externalCode} creato da avviso ${widget.numero}');
-        context.pushReplacement(
-            AppRoutes.workOrderDetailPath(wo.externalCode));
-      },
-      failure: (f) => showSapToast(context, f.message, isError: true),
+    // Step finale: genera un OdL sul tablet a partire dall'avviso (local-first).
+    // Resta locale finché l'operatore non sincronizza verso il cruscotto.
+    final cid = ref.read(authControllerProvider.notifier).user?.cid ?? '';
+    final now = DateTime.now();
+    final code = ref.read(creationControllerProvider).newWorkOrderId();
+    final note = [
+      _noteCtrl.text.trim(),
+      if (_tipoAttivita != null) 'Attività PM: $_tipoAttivita',
+      if (_ciclo != null) 'Ciclo: $_ciclo',
+    ].where((s) => s.isNotEmpty).join('\n');
+    final order = WorkOrder(
+      externalCode: code,
+      notificationNumberSap: a.numeroAvviso as String,
+      avvisoOrigine: a.numeroAvviso as String,
+      woType: _woType!,
+      woTypeDescription: _descCtrl.text.trim(),
+      tam: _woType!,
+      status: WorkOrderStatus.ricevuto,
+      priorita: 'Media',
+      creatoDa: 'wfm.mobile',
+      appointmentDate: now,
+      appointmentStartTime: '08:00',
+      address: a.address as Address,
+      customer: a.customer as Customer,
+      referente: (a.referente as String?) ?? (a.customer as Customer).fullName,
+      telefonoCliente:
+          (a.cellulare as String?) ?? (a.customer as Customer).telefono,
+      sedeTecnica: (a.sedeTecnica as String?) ?? '',
+      notes: note,
+      cidAssegnato: cid,
+      createdAt: now,
+      localStatus: LocalSyncStatus.pendingUpload,
     );
+    await ref.read(creationControllerProvider).addWorkOrder(order);
+    if (!mounted) return;
+    showSapToast(context,
+        'OdL creato dall\'avviso ${widget.numero} — sincronizza per inviarlo');
+    context.pushReplacement(AppRoutes.workOrderDetailPath(code));
   }
 }

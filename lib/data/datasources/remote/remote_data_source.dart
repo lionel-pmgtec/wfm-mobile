@@ -48,6 +48,14 @@ abstract interface class WfmRemoteDataSource {
   Future<List<CodeLabel>> getCauseCodes();
   Future<List<CodeLabel>> getSolutionCodes();
 
+  /// Cataloghi selezionabili serviti dal cruscotto (niente hardcoded lato app).
+  Future<List<WorkOrderTypeOption>> getWorkOrderTypes();
+  Future<List<DynFieldSpec>> getWorkOrderFields(String woType);
+
+  /// Lookup generico per `kind` (suspension-reasons, avviso-user-statuses,
+  /// avviso-priorities, avviso-verification-results, …).
+  Future<List<CodeLabel>> getLookup(String kind);
+
   /// Ricerca equipment per matricola/barcode (Standalone).
   Future<Equipment?> getEquipment({String? matricola, String? barcode});
 

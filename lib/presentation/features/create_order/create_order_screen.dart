@@ -9,74 +9,31 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/validators.dart';
 import '../../../core/widgets/widgets.dart';
 import '../../../domain/entities/entities.dart';
+import '../../providers/anagrafica_provider.dart';
 import '../../providers/auth_provider.dart';
-import '../../providers/work_orders_provider.dart';
+import '../../providers/creation_provider.dart';
 
-// ─── Tipi ODL Disponibili ───────────────────────────────────────────────────
+// ─── Presentazione tipo OdL ──────────────────────────────────────────────────
+// I VALORI (code/label) e i CAMPI dinamici arrivano dal cruscotto.
+// Qui resta solo l'aspetto grafico (icona/colore), derivato dalla categoria:
+// SAP non trasmette elementi grafici Flutter. Codici sconosciuti → aspetto neutro.
 
-const _woTypes = [
-  _WoTypeOption('ATTI', 'Apertura contatore', Icons.lock_open_rounded, Color(0xFF1565C0)),
-  _WoTypeOption('SOST', 'Sostituzione contatore', Icons.swap_horiz_rounded, Color(0xFF6A1B9A)),
-  _WoTypeOption('ZA02', 'Riparazione perdita', Icons.build_rounded, Color(0xFFE65100)),
-  _WoTypeOption('DISA', 'Disattivazione fornitura', Icons.block_rounded, Color(0xFFC62828)),
-  _WoTypeOption('PA', 'Preventivo allaccio', Icons.description_outlined, Color(0xFF2E7D32)),
-];
-
-class _WoTypeOption {
-  final String code;
-  final String label;
-  final IconData icon;
-  final Color color;
-  const _WoTypeOption(this.code, this.label, this.icon, this.color);
+({IconData icon, Color color}) _woTypeVisual(WorkOrderTypeOption t) {
+  switch ((t.category ?? t.code).toUpperCase()) {
+    case 'ATTI':
+      return (icon: Icons.lock_open_rounded, color: const Color(0xFF1565C0));
+    case 'SOST':
+      return (icon: Icons.swap_horiz_rounded, color: const Color(0xFF6A1B9A));
+    case 'ZA02':
+      return (icon: Icons.build_rounded, color: const Color(0xFFE65100));
+    case 'DISA':
+      return (icon: Icons.block_rounded, color: const Color(0xFFC62828));
+    case 'PA':
+      return (icon: Icons.description_outlined, color: const Color(0xFF2E7D32));
+    default:
+      return (icon: Icons.category_rounded, color: AppColors.primary);
+  }
 }
-
-// ─── Campi dinamici per tipo OdL ─────────────────────────────────────────────
-
-class _DynField {
-  final String id;
-  final String label;
-  final bool number;
-  final int lines;
-  final List<String>? options;
-  const _DynField(this.id, this.label,
-      {this.number = false, this.lines = 1, this.options});
-}
-
-/// Campi specifici mostrati in funzione del tipo OdL selezionato.
-const Map<String, List<_DynField>> _dynFieldsByType = {
-  'ATTI': [
-    _DynField('matricola', 'Matricola contatore'),
-    _DynField('calibro', 'Calibro'),
-    _DynField('sigillo', 'Numero sigillo'),
-    _DynField('lettura', 'Lettura iniziale', number: true),
-    _DynField('marca', 'Marca contatore'),
-  ],
-  'SOST': [
-    _DynField('matricolaVecchio', 'Matricola contatore rimosso'),
-    _DynField('letturaVecchio', 'Lettura finale (rimosso)', number: true),
-    _DynField('matricola', 'Matricola nuovo contatore'),
-    _DynField('calibro', 'Calibro nuovo'),
-    _DynField('sigillo', 'Numero sigillo'),
-    _DynField('lettura', 'Lettura iniziale (nuovo)', number: true),
-  ],
-  'ZA02': [
-    _DynField('tipoPerdita', 'Tipo perdita',
-        options: ['Giunto', 'Tubazione', 'Raccordo', 'Contatore', 'Saracinesca']),
-    _DynField('pressione', 'Pressione (bar)', number: true),
-    _DynField('profondita', 'Profondità scavo (m)', number: true),
-  ],
-  'DISA': [
-    _DynField('lettura', 'Lettura finale', number: true),
-    _DynField('sigillo', 'Numero sigillo'),
-    _DynField('motivo', 'Motivo disattivazione',
-        options: ['Morosità', 'Richiesta cliente', 'Cessazione', 'Guasto']),
-  ],
-  'PA': [
-    _DynField('tipoAllaccio', 'Tipo allaccio',
-        options: ['Nuovo allaccio', 'Spostamento', 'Potenziamento']),
-    _DynField('lavori', 'Descrizione lavori richiesti', lines: 3),
-  ],
-};
 
 // ─── Screen principale ───────────────────────────────────────────────────────
 
@@ -171,14 +128,17 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
         plannedHours: 0.5,
       ),
     ];
-    // Campi dinamici (per tipo OdL) → Meter (contatore) + note strutturate.
-    final dynFields = _dynFieldsByType[_woType] ?? const <_DynField>[];
+    // Campi dinamici (per tipo OdL, dal cruscotto) → Meter + note strutturate.
+    final dynFields = _woType == null
+        ? const <DynFieldSpec>[]
+        : (ref.read(workOrderFieldsProvider(_woType!)).valueOrNull ??
+            const <DynFieldSpec>[]);
     String dynVal(String id, {bool option = false}) => option
         ? (_dynSel[id] ?? '')
         : (_dynCtrls[id]?.text.trim() ?? '');
     final dynLines = <String>[];
     for (final f in dynFields) {
-      final v = dynVal(f.id, option: f.options != null);
+      final v = dynVal(f.key, option: f.type == DynFieldType.select);
       if (v.isNotEmpty) dynLines.add('${f.label}: $v');
     }
     Meter? meter;
@@ -201,8 +161,9 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
       if (baseNotes.isNotEmpty) baseNotes,
     ].join('\n\n');
 
+    final code = ref.read(creationControllerProvider).newWorkOrderId();
     final order = WorkOrder(
-      externalCode: '',
+      externalCode: code,
       woType: _woType!,
       woTypeDescription: _descCtrl.text.trim(),
       tam: _woType!,
@@ -234,19 +195,14 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
       createdAt: now,
       localStatus: LocalSyncStatus.pendingUpload,
     );
-    final res = await ref.read(workOrderActionsProvider).create(order);
+    // Local-first: l'OdL resta sul tablet finché l'operatore non sincronizza.
+    await ref.read(creationControllerProvider).addWorkOrder(order);
     if (!mounted) return;
     setState(() => _saving = false);
-    res.when(
-      success: (wo) {
-        showSapToast(context, 'OdL ${wo.externalCode} creato con successo');
-        // Sostituisce il wizard col dettaglio dell'OdL creato mantenendo lo
-        // stack sottostante: il tasto Indietro torna correttamente alla Home.
-        context.pushReplacement(
-            AppRoutes.workOrderDetailPath(wo.externalCode));
-      },
-      failure: (f) => showSapToast(context, f.message, isError: true),
-    );
+    showSapToast(context, 'OdL creato sul tablet — sincronizza per inviarlo');
+    // Sostituisce il wizard col dettaglio dell'OdL creato mantenendo lo
+    // stack sottostante: il tasto Indietro torna correttamente alla Home.
+    context.pushReplacement(AppRoutes.workOrderDetailPath(code));
   }
 
   @override
@@ -256,6 +212,8 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
       appBar: AppBar(
         title: const Text('Nuovo Ordine di Lavoro'),
         actions: [
+          // Un solo pulsante di conferma: quello in fondo alla pagina
+          // ("Crea Ordine di Lavoro"). Qui in appbar solo lo stato di salvataggio.
           if (_saving)
             const Padding(
               padding: EdgeInsets.all(16),
@@ -263,13 +221,6 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
                 width: 20, height: 20,
                 child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
               ),
-            )
-          else
-            TextButton.icon(
-              onPressed: _submit,
-              icon: const Icon(Icons.check_rounded, color: Colors.white, size: 18),
-              label: const Text('Crea',
-                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
             ),
         ],
       ),
@@ -285,60 +236,84 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  GridView.count(
-                    crossAxisCount: 3,
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    mainAxisSpacing: 8,
-                    crossAxisSpacing: 8,
-                    childAspectRatio: 1.05,
-                    children: _woTypes.map((t) {
-                      final sel = _woType == t.code;
-                      return GestureDetector(
-                        onTap: () => setState(() {
-                          _woType = t.code;
-                          if (_descCtrl.text.isEmpty) _descCtrl.text = t.label;
-                        }),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 180),
-                          decoration: BoxDecoration(
-                            color: sel
-                                ? t.color.withValues(alpha: 0.1)
-                                : AppColors.backgroundPage,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: sel ? t.color : AppColors.border,
-                              width: sel ? 2 : 1,
-                            ),
-                          ),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(t.icon,
-                                  color: sel ? t.color : AppColors.textHint,
-                                  size: 24),
-                              const SizedBox(height: 4),
-                              Text(t.code,
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                    color: sel ? t.color : AppColors.textSecondary,
-                                  )),
-                              Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 4),
-                                child: Text(t.label,
-                                    style: const TextStyle(
-                                        fontSize: 9, color: AppColors.textHint),
-                                    textAlign: TextAlign.center,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis),
-                              ),
-                            ],
-                          ),
+                  ref.watch(workOrderTypesProvider).when(
+                        loading: () => const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 24),
+                          child: Center(child: CircularProgressIndicator()),
                         ),
-                      );
-                    }).toList(),
-                  ),
+                        error: (_, __) => _cruscottoInfo(
+                            'Impossibile caricare i tipi OdL dal cruscotto.'),
+                        data: (types) {
+                          if (types.isEmpty) {
+                            return _cruscottoInfo(
+                                'Nessun tipo OdL ricevuto dal cruscotto.\n'
+                                'Il catalogo è servito da SAP tramite il cruscotto.');
+                          }
+                          return GridView.count(
+                            crossAxisCount: 3,
+                            shrinkWrap: true,
+                            physics: const NeverScrollableScrollPhysics(),
+                            mainAxisSpacing: 8,
+                            crossAxisSpacing: 8,
+                            childAspectRatio: 1.05,
+                            children: types.map((t) {
+                              final vis = _woTypeVisual(t);
+                              final sel = _woType == t.code;
+                              return GestureDetector(
+                                onTap: () => setState(() {
+                                  _woType = t.code;
+                                  if (_descCtrl.text.isEmpty) {
+                                    _descCtrl.text = t.label;
+                                  }
+                                }),
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 180),
+                                  decoration: BoxDecoration(
+                                    color: sel
+                                        ? vis.color.withValues(alpha: 0.1)
+                                        : AppColors.backgroundPage,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: sel ? vis.color : AppColors.border,
+                                      width: sel ? 2 : 1,
+                                    ),
+                                  ),
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(vis.icon,
+                                          color: sel
+                                              ? vis.color
+                                              : AppColors.textHint,
+                                          size: 24),
+                                      const SizedBox(height: 4),
+                                      Text(t.code,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w700,
+                                            color: sel
+                                                ? vis.color
+                                                : AppColors.textSecondary,
+                                          )),
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 4),
+                                        child: Text(t.label,
+                                            style: const TextStyle(
+                                                fontSize: 9,
+                                                color: AppColors.textHint),
+                                            textAlign: TextAlign.center,
+                                            maxLines: 2,
+                                            overflow: TextOverflow.ellipsis),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                          );
+                        },
+                      ),
                   if (_woType == null)
                     const Padding(
                       padding: EdgeInsets.only(top: 8),
@@ -358,24 +333,30 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
             ),
             const SizedBox(height: 12),
 
-            // ── 1b. Dati specifici (dinamici per tipo OdL) ───────────────────
-            if (_woType != null &&
-                (_dynFieldsByType[_woType] ?? const []).isNotEmpty) ...[
-              _SectionCard(
-                title: 'Dati specifici',
-                icon: Icons.tune_rounded,
-                child: Column(
-                  children: [
-                    for (final f in _dynFieldsByType[_woType]!)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: _dynFieldWidget(f),
-                      ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-            ],
+            // ── 1b. Dati specifici (dinamici per tipo OdL, dal cruscotto) ────
+            if (_woType != null)
+              ref.watch(workOrderFieldsProvider(_woType!)).maybeWhen(
+                    data: (fields) => fields.isEmpty
+                        ? const SizedBox.shrink()
+                        : Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: _SectionCard(
+                              title: 'Dati specifici',
+                              icon: Icons.tune_rounded,
+                              child: Column(
+                                children: [
+                                  for (final f in fields)
+                                    Padding(
+                                      padding:
+                                          const EdgeInsets.only(bottom: 10),
+                                      child: _dynFieldWidget(f),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ),
+                    orElse: () => const SizedBox.shrink(),
+                  ),
 
             // ── 2. Appuntamento ──────────────────────────────────────────────
             _SectionCard(
@@ -551,10 +532,10 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
     );
   }
 
-  Widget _dynFieldWidget(_DynField f) {
-    if (f.options != null) {
+  Widget _dynFieldWidget(DynFieldSpec f) {
+    if (f.type == DynFieldType.select) {
       return DropdownButtonFormField<String>(
-        initialValue: _dynSel[f.id],
+        initialValue: _dynSel[f.key],
         isExpanded: true,
         decoration: InputDecoration(
           labelText: f.label,
@@ -567,19 +548,48 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
           contentPadding:
               const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         ),
-        items: f.options!
+        items: f.options
             .map((o) => DropdownMenuItem(value: o, child: Text(o)))
             .toList(),
-        onChanged: (v) => setState(() => _dynSel[f.id] = v ?? ''),
+        onChanged: (v) => setState(() => _dynSel[f.key] = v ?? ''),
       );
     }
     return _field(
-      controller: _dynCtrl(f.id),
+      controller: _dynCtrl(f.key),
       label: f.label,
-      maxLines: f.lines,
-      keyboardType: f.number
+      maxLines: f.type == DynFieldType.multiline ? 3 : 1,
+      keyboardType: f.type == DynFieldType.number
           ? const TextInputType.numberWithOptions(decimal: true)
           : null,
+    );
+  }
+
+  /// Riquadro informativo mostrato quando un catalogo del cruscotto è
+  /// vuoto o non raggiungibile (nessun dato hardcoded di ripiego).
+  Widget _cruscottoInfo(String message) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.backgroundPage,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.cloud_off_rounded,
+              size: 18, color: AppColors.textSecondary),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(message,
+                style: const TextStyle(
+                    fontSize: 12.5,
+                    height: 1.35,
+                    color: AppColors.textSecondary)),
+          ),
+        ],
+      ),
     );
   }
 

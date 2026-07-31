@@ -25,6 +25,7 @@ import '../../presentation/features/appointments/appointments_screen.dart';
 import '../../presentation/features/avvisi/avvisi_screen.dart';
 import '../../presentation/features/avvisi/avviso_detail_screen.dart';
 import '../../presentation/features/create_order/create_order_screen.dart';
+import '../../presentation/features/create_order/create_avviso_screen.dart';
 import '../../presentation/features/settings/settings_screen.dart';
 import '../../presentation/features/settings/sync_queue_screen.dart';
 import '../../presentation/features/notifications/notifications_screen.dart';
@@ -199,6 +200,9 @@ final goRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
           path: AppRoutes.createOrder,
           builder: (_, __) => const CreateOrderScreen()),
+      GoRoute(
+          path: AppRoutes.createAvviso,
+          builder: (_, __) => const CreateAvvisoScreen()),
       GoRoute(
           path: AppRoutes.settings,
           builder: (_, __) => const SettingsScreen()),

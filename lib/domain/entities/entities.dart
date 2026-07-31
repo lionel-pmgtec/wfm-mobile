@@ -21,6 +21,7 @@ export 'odl_appuntamento.dart';
 export 'odl_chiusura.dart';
 export 'odl_extension.dart';
 export 'esito.dart';
+export 'anagrafica_lookup.dart';
 export 'sync_operation.dart';
 export 'appointment.dart';
 export 'app_notification.dart';

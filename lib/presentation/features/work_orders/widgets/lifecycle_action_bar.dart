@@ -9,6 +9,7 @@ import '../../../../core/services/geolocation_service.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/widgets.dart';
 import '../../../../domain/entities/entities.dart';
+import '../../../providers/anagrafica_provider.dart';
 import '../../../providers/work_orders_provider.dart';
 
 class LifecycleActionBar extends ConsumerWidget {
@@ -203,24 +204,16 @@ class LifecycleActionBar extends ConsumerWidget {
   }
 }
 
-class _SospendiSheet extends StatefulWidget {
+class _SospendiSheet extends ConsumerStatefulWidget {
   const _SospendiSheet();
   @override
-  State<_SospendiSheet> createState() => _SospendiSheetState();
+  ConsumerState<_SospendiSheet> createState() => _SospendiSheetState();
 }
 
-class _SospendiSheetState extends State<_SospendiSheet> {
-  String _motivo = 'Cliente assente';
+class _SospendiSheetState extends ConsumerState<_SospendiSheet> {
+  // Nessun motivo hardcoded: i motivi di sospensione arrivano dal cruscotto.
+  String? _motivo;
   final _noteCtrl = TextEditingController();
-
-  static const _motivi = [
-    'Cliente assente',
-    'Materiale mancante',
-    'Accesso impossibile',
-    'Condizioni meteo',
-    'Problema tecnico',
-    'Altro',
-  ];
 
   @override
   void dispose() {
@@ -248,14 +241,36 @@ class _SospendiSheetState extends State<_SospendiSheet> {
             style: AppTextStyles.bodyMedium,
           ),
           const SizedBox(height: 16),
-          DropdownButtonFormField<String>(
-            initialValue: _motivo,
-            decoration: const InputDecoration(labelText: 'Motivo sospensione'),
-            items: _motivi
-                .map((m) => DropdownMenuItem(value: m, child: Text(m)))
-                .toList(),
-            onChanged: (v) => setState(() => _motivo = v ?? _motivo),
-          ),
+          ref.watch(suspensionReasonsProvider).when(
+                loading: () => const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: LinearProgressIndicator(),
+                ),
+                error: (_, __) => Text(
+                    'Motivi non disponibili dal cruscotto',
+                    style: AppTextStyles.bodySmall
+                        .copyWith(color: AppColors.textSecondary)),
+                data: (motivi) {
+                  if (motivi.isEmpty) {
+                    return Text('Nessun motivo ricevuto dal cruscotto',
+                        style: AppTextStyles.bodySmall
+                            .copyWith(color: AppColors.textSecondary));
+                  }
+                  final v =
+                      motivi.any((m) => m.code == _motivo) ? _motivo : null;
+                  return DropdownButtonFormField<String>(
+                    initialValue: v,
+                    isExpanded: true,
+                    decoration: const InputDecoration(
+                        labelText: 'Motivo sospensione'),
+                    items: motivi
+                        .map((m) => DropdownMenuItem(
+                            value: m.code, child: Text(m.label)))
+                        .toList(),
+                    onChanged: (val) => setState(() => _motivo = val),
+                  );
+                },
+              ),
           const SizedBox(height: 12),
           TextField(
             controller: _noteCtrl,
@@ -267,7 +282,7 @@ class _SospendiSheetState extends State<_SospendiSheet> {
             width: double.infinity,
             child: ElevatedButton(
               onPressed: () => Navigator.pop(
-                  context, (motivo: _motivo, note: _noteCtrl.text)),
+                  context, (motivo: _motivo ?? '', note: _noteCtrl.text)),
               child: const Text('Conferma sospensione'),
             ),
           ),

@@ -222,6 +222,17 @@ class WorkOrder {
         WorkOrderCategory.generico => 'Intervento generico',
       };
 
+  /// Nome mostrato dell'OdL. Usa la descrizione SAP quando è presente e
+  /// significativa (non vuota e diversa dal solo codice tipo); altrimenti
+  /// ripiega sull'etichetta leggibile della categoria — così un nome c'è sempre.
+  String get displayName {
+    final d = woTypeDescription.trim();
+    if (d.isEmpty || d.toUpperCase() == woType.trim().toUpperCase()) {
+      return typeCategoryLabel;
+    }
+    return d;
+  }
+
   // ─── Transizioni del ciclo di vita ────────────────────
 
   bool get canStart =>
@@ -241,15 +252,16 @@ class WorkOrder {
       status == WorkOrderStatus.annullato ||
       status == WorkOrderStatus.inviatoSAP;
 
-  /// Icona indicativa in base alla tipologia.
+  /// Emoji indicativa in base alla tipologia (mostrata come testo accanto al
+  /// nome). NB: deve restituire un vero glifo, non il nome di un'icona.
   String get typeEmoji => switch (category) {
-        WorkOrderCategory.attivazione => 'HugeIcons.strokeRoundedLockOpen01',
-        WorkOrderCategory.sostituzione => 'HugeIcons.strokeRoundedRefresh',
-        WorkOrderCategory.disattivazione => 'HugeIcons.strokeRoundedTap02',
-        WorkOrderCategory.interventoRete => 'HugeIcons.strokeRoundedTools',
-        WorkOrderCategory.lettura => 'HugeIcons.strokeRoundedCalculator01',
-        WorkOrderCategory.preventivo => 'HugeIcons.strokeRoundedClipboard',
-        WorkOrderCategory.generico => 'HugeIcons.strokeRoundedSettings02',
+        WorkOrderCategory.attivazione => '🔓',
+        WorkOrderCategory.sostituzione => '🔄',
+        WorkOrderCategory.disattivazione => '⛔',
+        WorkOrderCategory.interventoRete => '🔧',
+        WorkOrderCategory.lettura => '🔢',
+        WorkOrderCategory.preventivo => '📋',
+        WorkOrderCategory.generico => '⚙️',
       };
 
   WorkOrder copyWith({

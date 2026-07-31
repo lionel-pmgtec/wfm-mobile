@@ -10,6 +10,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/widgets.dart';
 import '../widgets/odl_actions_menu.dart';
 import '../../../../domain/entities/entities.dart';
+import '../../../providers/anagrafica_provider.dart';
 import '../../../providers/work_orders_provider.dart';
 
 class CopiaOrdineScreen extends ConsumerStatefulWidget {
@@ -21,22 +22,8 @@ class CopiaOrdineScreen extends ConsumerStatefulWidget {
 }
 
 class _CopiaOrdineScreenState extends ConsumerState<CopiaOrdineScreen> {
-  static const _woTypes = [
-    'ATTI — Apertura contatore',
-    'SOST — Sostituzione contatore',
-    'DISA — Disattivazione fornitura',
-    'ZA02 — Riparazione perdita',
-    'PA — Preventivo',
-  ];
-  static const _activities = [
-    'ADS — Apertura disco',
-    'CHS — Chiusura sigillo',
-    'LET — Lettura periodica',
-    'RIP — Riparazione',
-    'VER — Verifica',
-  ];
-  static const _cicli = ['STD-001', 'STD-002', 'RAP-010', 'EMG-030'];
-
+  // Nessun catalogo hardcoded: tipo ordine / attività PM / ciclo di lavoro
+  // arrivano dal cruscotto. Le selezioni conservano il CODICE.
   String? _selectedType;
   String? _selectedActivity;
   String? _selectedCiclo;
@@ -51,10 +38,7 @@ class _CopiaOrdineScreenState extends ConsumerState<CopiaOrdineScreen> {
     // Pre-popola con i dati dell'OdL corrente.
     final order = ref.read(workOrderDetailProvider(widget.code)).valueOrNull;
     if (order != null) {
-      _selectedType = _woTypes.firstWhere(
-        (t) => t.startsWith(order.woType),
-        orElse: () => _woTypes.first,
-      );
+      _selectedType = order.woType; // il dropdown lo aggancia quando carica
       _descCtrl.text = order.woTypeDescription;
       _noteCtrl.text = order.notes;
     }
@@ -101,33 +85,25 @@ class _CopiaOrdineScreenState extends ConsumerState<CopiaOrdineScreen> {
           ]),
         ),
         const SectionHeader(title: 'DATI ORDINE'),
-        DropdownButtonFormField<String>(
-          initialValue: _selectedType,
-          isExpanded: true,
-          decoration: const InputDecoration(labelText: 'Tipo ordine *'),
-          items: _woTypes
-              .map((t) => DropdownMenuItem(value: t, child: Text(t)))
-              .toList(),
+        _catalogDropdown(
+          label: 'Tipo ordine *',
+          async: ref.watch(workOrderTypesProvider).whenData(
+              (l) => l.map((t) => CodeLabel(t.code, t.label)).toList()),
+          value: _selectedType,
           onChanged: (v) => setState(() => _selectedType = v),
         ),
         const SizedBox(height: 12),
-        DropdownButtonFormField<String>(
-          initialValue: _selectedActivity,
-          isExpanded: true,
-          decoration: const InputDecoration(labelText: 'Tipo attività PM *'),
-          items: _activities
-              .map((t) => DropdownMenuItem(value: t, child: Text(t)))
-              .toList(),
+        _catalogDropdown(
+          label: 'Tipo attività PM *',
+          async: ref.watch(lookupProvider('pm-activities')),
+          value: _selectedActivity,
           onChanged: (v) => setState(() => _selectedActivity = v),
         ),
         const SizedBox(height: 12),
-        DropdownButtonFormField<String>(
-          initialValue: _selectedCiclo,
-          isExpanded: true,
-          decoration: const InputDecoration(labelText: 'Ciclo di Lavoro'),
-          items: _cicli
-              .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-              .toList(),
+        _catalogDropdown(
+          label: 'Ciclo di Lavoro',
+          async: ref.watch(lookupProvider('work-cycles')),
+          value: _selectedCiclo,
           onChanged: (v) => setState(() => _selectedCiclo = v),
         ),
         const SizedBox(height: 12),
@@ -176,6 +152,63 @@ class _CopiaOrdineScreenState extends ConsumerState<CopiaOrdineScreen> {
           label: Text(_saving ? 'Invio…' : 'Crea copia'),
         ),
       ],
+    );
+  }
+
+  /// Dropdown alimentata dal cruscotto (niente valori hardcoded).
+  /// Mostra il caricamento e un riquadro "nessun dato dal cruscotto" se vuoto.
+  Widget _catalogDropdown({
+    required String label,
+    required AsyncValue<List<CodeLabel>> async,
+    required String? value,
+    required ValueChanged<String?> onChanged,
+  }) {
+    return async.when(
+      loading: () => InputDecorator(
+        decoration: InputDecoration(labelText: label),
+        child: const SizedBox(
+            height: 18,
+            child: Center(
+                child: SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2)))),
+      ),
+      error: (_, __) => _catalogEmpty(label, 'Errore dal cruscotto'),
+      data: (items) {
+        if (items.isEmpty) {
+          return _catalogEmpty(label, 'Nessun dato dal cruscotto');
+        }
+        final v = items.any((e) => e.code == value) ? value : null;
+        return DropdownButtonFormField<String>(
+          initialValue: v,
+          isExpanded: true,
+          decoration: InputDecoration(labelText: label),
+          items: items
+              .map((e) => DropdownMenuItem(
+                    value: e.code,
+                    child: Text('${e.code} — ${e.label}',
+                        overflow: TextOverflow.ellipsis),
+                  ))
+              .toList(),
+          onChanged: onChanged,
+        );
+      },
+    );
+  }
+
+  Widget _catalogEmpty(String label, String message) {
+    return InputDecorator(
+      decoration: InputDecoration(labelText: label),
+      child: Row(children: [
+        const Icon(Icons.cloud_off_rounded,
+            size: 16, color: AppColors.textSecondary),
+        const SizedBox(width: 8),
+        Expanded(
+            child: Text(message,
+                style: AppTextStyles.bodySmall
+                    .copyWith(color: AppColors.textSecondary))),
+      ]),
     );
   }
 

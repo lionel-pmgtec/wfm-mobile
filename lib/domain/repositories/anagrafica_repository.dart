@@ -4,6 +4,7 @@ import '../entities/material.dart';
 import '../entities/esito.dart';
 import '../entities/equipment.dart';
 import '../entities/user.dart';
+import '../entities/anagrafica_lookup.dart';
 
 abstract interface class AnagraficaRepository {
   Future<Result<List<MaterialItem>>> getMaterials({String? query});
@@ -14,6 +15,13 @@ abstract interface class AnagraficaRepository {
   /// Cause/soluzioni per la schermata Esito (dropdown).
   Future<Result<List<CodeLabel>>> getCauseCodes();
   Future<Result<List<CodeLabel>>> getSolutionCodes();
+
+  /// Cataloghi selezionabili serviti dal cruscotto (niente hardcoded lato app).
+  Future<Result<List<WorkOrderTypeOption>>> getWorkOrderTypes();
+  Future<Result<List<DynFieldSpec>>> getWorkOrderFields(String woType);
+
+  /// Lookup generico (suspension-reasons, avviso-user-statuses, …).
+  Future<Result<List<CodeLabel>>> getLookup(String kind);
 
   /// Ricerca equipment per matricola/barcode (Standalone).
   Future<Result<Equipment?>> getEquipment({String? matricola, String? barcode});

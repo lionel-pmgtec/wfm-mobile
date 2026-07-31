@@ -11,6 +11,7 @@ import '../../../core/widgets/widgets.dart';
 import '../../../domain/entities/entities.dart';
 import '../../../domain/repositories/work_order_repository.dart';
 import '../../providers/connectivity_provider.dart';
+import '../../providers/creation_provider.dart';
 import '../../providers/realtime_provider.dart';
 import '../../providers/work_orders_provider.dart';
 import 'widgets/excel_import_sheet.dart';
@@ -81,6 +82,28 @@ class _WorkOrdersScreenState extends ConsumerState<WorkOrdersScreen> {
     );
   }
 
+  /// Invia al cruscotto gli OdL/avvisi creati sul tablet. Se non ce ne sono,
+  /// apre la coda delle operazioni offline (comportamento precedente).
+  Future<void> _syncAll() async {
+    final created = ref.read(pendingCreationCountProvider).valueOrNull ?? 0;
+    if (created == 0) {
+      context.push(AppRoutes.syncQueue);
+      return;
+    }
+    showSapToast(context, 'Sincronizzazione in corso…');
+    final res = await ref.read(creationControllerProvider).syncAll();
+    if (!mounted) return;
+    if (res.failed == 0) {
+      showSapToast(context, 'Sincronizzati ${res.ok} elementi');
+    } else {
+      showSapToast(
+        context,
+        '${res.ok} inviati, ${res.failed} in attesa — ${res.firstError ?? 'cruscotto non pronto'}',
+        isError: true,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     // Al cambio dei filtri la lista riparte dalla prima pagina.
@@ -91,6 +114,8 @@ class _WorkOrdersScreenState extends ConsumerState<WorkOrdersScreen> {
     final filter = ref.watch(workOrderFilterProvider);
     final online = ref.watch(connectivityStatusProvider);
     final pending = ref.watch(pendingSyncCountProvider).valueOrNull ?? 0;
+    final createdPending =
+        ref.watch(pendingCreationCountProvider).valueOrNull ?? 0;
     final advancedCount = _advancedFilterCount(filter);
 
     return Scaffold(
@@ -178,11 +203,11 @@ class _WorkOrdersScreenState extends ConsumerState<WorkOrdersScreen> {
           IconButton(
             tooltip: 'Sincronizza',
             icon: Badge(
-              isLabelVisible: pending > 0,
-              label: Text('$pending'),
+              isLabelVisible: (pending + createdPending) > 0,
+              label: Text('${pending + createdPending}'),
               child: const Icon(Icons.cloud_sync_outlined),
             ),
-            onPressed: () => context.push(AppRoutes.syncQueue),
+            onPressed: _syncAll,
           ),
         ],
       ),
@@ -718,11 +743,35 @@ class _WorkOrderItem extends StatelessWidget {
                 ),
               ],
             ),
-            Text(order.woTypeDescription,
+            Text(order.displayName,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: AppTextStyles.bodyLarge
                     .copyWith(fontWeight: FontWeight.w600)),
+            if (order.externalCode.startsWith('TMP-'))
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Row(children: [
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: AppColors.accentOrange.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Row(mainAxisSize: MainAxisSize.min, children: const [
+                      Icon(Icons.cloud_off_rounded,
+                          size: 11, color: AppColors.accentOrange),
+                      SizedBox(width: 4),
+                      Text('DA SINCRONIZZARE',
+                          style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.accentOrange)),
+                    ]),
+                  ),
+                ]),
+              ),
             const SizedBox(height: 4),
             // Indirizzo · data (+ priorità). Stesso formato degli avvisi.
             // L'indirizzo non è ancora esposto da SAP (ILOA/ADRC): fino ad allora

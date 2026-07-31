@@ -4,9 +4,20 @@
 Documento di riferimento: descrive l'applicazione tablet per i tecnici, il backend
 del cruscotto e **tutte le funzionalità già operative**.
 
-- **Versione documento:** 1.0 — 2026-07-28
+- **Versione documento:** 1.1 — 2026-07-31
 - **Destinatari:** tecnici sul campo, pianificatori (cruscotto), team tecnico.
-- **Documenti collegati:** [README.md](README.md) (avvio rapido)
+- **Documenti collegati:** [README.md](README.md) (avvio rapido),
+  [CONTRATTO_ANAGRAFICHE.md](CONTRATTO_ANAGRAFICHE.md) (cataloghi da esporre),
+  [FLUSSO_CREAZIONE.md](FLUSSO_CREAZIONE.md) (progetto creazione dal tablet).
+
+> **Novità 1.1 (2026-07-31)**
+> - **Cataloghi selezionabili dal cruscotto** — rimossi tutti i valori hardcoded
+>   dalle tendine (tipi OdL, campi per tipo, motivi sospensione, stato/priorità
+>   avviso). Ora arrivano dal cruscotto; finché i relativi endpoint non esistono,
+>   la tendina mostra *"nessun dato dal cruscotto"* (nessun ripiego inventato).
+> - **Creazione sul campo local-first** — Crea OdL, Crea Avviso e OdL-da-Avviso
+>   creano l'oggetto **sul tablet** con id provvisorio `TMP-…`; resta locale
+>   finché l'operatore non preme **Sincronizza** (vedi §4.13).
 
 ---
 
@@ -120,6 +131,8 @@ ancora nulla in lista, è normale: non ti è stato ancora assegnato lavoro.
   aggiornare.
 - **Aggiornamento automatico (realtime)** — quando il pianificatore ti assegna o
   cambia qualcosa, la lista si aggiorna **da sola**.
+- **Oggetti creati sul tablet** — compaiono in cima con l'etichetta **"DA
+  SINCRONIZZARE"** finché non li invii al cruscotto (§4.13).
 
 ### 4.4 Dettaglio dell'Ordine
 
@@ -213,6 +226,31 @@ compilare rapidamente i dati.
 
 Preferenze locali dell'app (es. dimensione icone, opzioni di visualizzazione).
 
+### 4.13 Creazione sul campo (local-first)
+
+Il tecnico può creare oggetti direttamente dal tablet:
+
+- **Nuovo OdL** — dalla Home / lista Ordini (**Nuovo OdL**): tipo, dati specifici
+  del tipo, appuntamento, indirizzo, cliente, note.
+- **Nuovo Avviso** — dalla lista Avvisi (**Nuovo Avviso**): tipo, descrizione,
+  priorità, indirizzo, cliente, note.
+- **OdL da Avviso** — dal dettaglio Avviso (**Genera OdL**): tipo ordine, attività
+  PM, ciclo, descrizione.
+
+**Come funziona (local-first):** ciò che crei nasce con un **id provvisorio
+`TMP-…`** e **resta sul tablet** (memorizzato in locale, sopravvive al riavvio).
+In lista compare in cima con l'etichetta arancione **"DA SINCRONIZZARE"**.
+
+**Invio al cruscotto:** premendo **Sincronizza** gli oggetti creati vengono
+inviati al cruscotto; quelli accettati escono dal locale (arriveranno poi dal
+cruscotto con il numero reale), quelli non ancora inviabili **restano sul tablet**
+per un nuovo tentativo. Finché il cruscotto non espone gli endpoint di creazione,
+la sincronizzazione li mantiene in locale segnalandolo.
+
+> I valori selezionabili nei form di creazione (tipo, priorità, attività, ciclo)
+> arrivano dal cruscotto; dove non ancora disponibili, il campo resta un testo
+> libero così la creazione è comunque possibile.
+
 ---
 
 ## 5. Backend Cruscotto — funzionalità e API
@@ -267,6 +305,15 @@ Base path **identica** al vecchio middleware: l'app non cambia contratto, solo h
 | `GET /notifications` `/:id` | **Solo gli avvisi assegnati**. |
 | `GET /anagrafica/*` | Materiali, magazzini, marche contatori, codici TAM, cause, soluzioni, tecnici. |
 
+**Cataloghi delle tendine — da esporre:** per alimentare le tendine ora prive di
+valori hardcoded servono nuovi endpoint (`/anagrafica/wo-types`,
+`/anagrafica/wo-fields?type=`, `/anagrafica/lookups/:kind`). 
+
+**Creazione dal campo — non ancora attiva sul cruscotto:** `POST /work-orders`,
+`POST /notifications`, `POST /notifications/:id/generate-work-order` rispondono
+`501`. L'app crea quindi in **local-first** e riproverà l'invio quando gli
+endpoint saranno disponibili.
+
 **Sicurezza:** ogni endpoint (tranne login) richiede `Authorization: Bearer
 <token>`; il CID si ricava dal token, non è un parametro manipolabile.
 
@@ -279,31 +326,9 @@ tablet in tempo reale.
 
 ---
 
-## 6. Stato delle funzionalità
-
-| Funzionalità | Stato | Note |
-|--------------|:-----:|------|
-| Login (CID + token) | OK | Password non verificata (auth reale in seguito). |
-| Home / riepilogo del giorno | OK | Contatori derivati dagli ordini assegnati. |
-| Elenco/dettaglio Ordini (assegnati) | OK | Con filtri, ricerca, paginazione. |
-| Elenco/dettaglio Avvisi (assegnati) | OK | Pronto Intervento e Richiesta Preventivo. |
-| Ciclo di vita OdL (avvia/sospendi/concludi) | OK | Ripubblicato al cruscotto via SSE. |
-| Esito intervento | OK | Registrato nel backend. Inoltro **a SAP** ancora da collegare. |
-| Anagrafiche (materiali, cause, soluzioni…) | OK | Servite se presenti in `anagrafiche.json`. |
-| Realtime (SSE) | OK | Aggiornamento automatico delle liste. |
-| Offline + coda di sincronizzazione | OK | Retry automatico in background. |
-| Geolocalizzazione | OK | Timbratura di campo su avvio/stop. |
-| Scanner QR/barcode, Mappa, Impostazioni | OK | |
-| Allegati (foto/firma) — **upload** | NO | Acquisizione sul dispositivo; **upload al backend non attivo** (`501`). |
-| Creazione OdL/avviso dal campo | NO | Backend risponde `501`: gli oggetti nascono in SAP. |
-| Generazione OdL da avviso | NO | `501`. |
-| Notifiche push (FCM) | NO | Non attive: aggiornamento via SSE / polling. |
-| Esito → SAP (scrittura) | NO | Previsto in fase successiva (`submitEsito` SOAP). |
-
-
 ---
 
-## 7. Glossario
+## 6. Glossario
 
 | Termine | Significato |
 |---------|-------------|
@@ -317,8 +342,8 @@ tablet in tempo reale.
 | **SSE** | Server-Sent Events: canale realtime backend → app. |
 | **Cruscotto** | Applicazione web del pianificatore. |
 | **VPN** | Rete Vivaservizi necessaria al backend per raggiungere SAP. |
+| **Id `TMP-…`** | Numero provvisorio di un OdL/avviso creato sul tablet, in attesa del numero reale SAP. |
+| **DA SINCRONIZZARE** | Etichetta di un oggetto creato in locale e non ancora inviato al cruscotto. |
+| **Local-first** | L'oggetto creato resta sul tablet finché l'operatore non lo sincronizza. |
 
 ---
-
-*Per l'avvio, la configurazione di rete e la risoluzione dei problemi vedi
-[GUIDA_OPERATIVA.md](GUIDA_OPERATIVA.md).*

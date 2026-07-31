@@ -4,6 +4,7 @@ import '../../domain/entities/entities.dart';
 import '../../domain/repositories/work_order_repository.dart';
 import 'connectivity_provider.dart';
 import 'core_providers.dart';
+import 'creation_provider.dart';
 
 /// Filtro corrente dell'elenco OdL.
 final workOrderFilterProvider =
@@ -13,12 +14,35 @@ final workOrderFilterProvider =
 final workOrdersProvider = FutureProvider<List<WorkOrder>>((ref) async {
   ref.watch(connectivityStatusProvider); // refetch quando cambia rete
   final filter = ref.watch(workOrderFilterProvider);
+
+  // OdL creati sul tablet (local-first), filtrati come i remoti e messi in cima.
+  var locali = await ref.watch(createdWorkOrdersProvider.future);
+  if (filter.status != null) {
+    locali = locali.where((o) => o.status == filter.status).toList();
+  }
+  final q = filter.query;
+  if (q != null && q.trim().isNotEmpty) {
+    final needle = q.toLowerCase();
+    locali = locali
+        .where((o) =>
+            o.externalCode.toLowerCase().contains(needle) ||
+            o.displayName.toLowerCase().contains(needle))
+        .toList();
+  }
+
   final repo = ref.watch(workOrderRepositoryProvider);
-  final result = await repo.getWorkOrders(filter: filter);
-  return switch (result) {
-    Success(value: final v) => v,
-    Err(failure: final f) => throw Exception(f.message),
-  };
+  try {
+    final result = await repo.getWorkOrders(filter: filter);
+    final remote = switch (result) {
+      Success(value: final v) => v,
+      Err(failure: final f) => throw Exception(f.message),
+    };
+    return [...locali, ...remote];
+  } catch (_) {
+    // Offline o cruscotto irraggiungibile: mostra almeno i creati sul tablet.
+    if (locali.isNotEmpty) return locali;
+    rethrow;
+  }
 });
 
 /// Statistiche per la dashboard (home).
@@ -36,6 +60,11 @@ final dashboardStatsProvider =
 /// Dettaglio di un OdL (M3).
 final workOrderDetailProvider =
     FutureProvider.family<WorkOrder, String>((ref, code) async {
+  // Prima gli OdL creati sul tablet (id TMP): non esistono lato cruscotto.
+  final locali = await ref.watch(createdWorkOrdersProvider.future);
+  for (final o in locali) {
+    if (o.externalCode == code) return o;
+  }
   final repo = ref.watch(workOrderRepositoryProvider);
   final result = await repo.getWorkOrderDetail(code);
   return result.when(
