@@ -346,4 +346,4 @@ tablet in tempo reale.
 | **DA SINCRONIZZARE** | Etichetta di un oggetto creato in locale e non ancora inviato al cruscotto. |
 | **Local-first** | L'oggetto creato resta sul tablet finché l'operatore non lo sincronizza. |
 
----
+-------
