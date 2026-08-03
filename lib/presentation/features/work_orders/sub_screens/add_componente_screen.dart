@@ -19,6 +19,7 @@ import '../../../../core/widgets/widgets.dart';
 import '../widgets/odl_actions_menu.dart';
 import '../../../../domain/entities/entities.dart';
 import '../../../providers/anagrafica_provider.dart';
+import '../../../providers/odl_extension_provider.dart';
 import '../../../providers/work_orders_provider.dart';
 
 class AddComponenteScreen extends ConsumerStatefulWidget {
@@ -121,29 +122,32 @@ class _AddComponenteScreenState extends ConsumerState<AddComponenteScreen> {
           isError: true);
       return;
     }
-    final overstock =
-        _cart.values.where((l) => l.isOverstock).toList();
+    // Stock insufficiente: impegno non consentito. Non è un avviso da
+    // ignorare, il materiale in magazzino non c'è.
+    final overstock = _cart.values.where((l) => l.isOverstock).toList();
     if (overstock.isNotEmpty) {
-      final ok = await showWfmConfirmDialog(
+      final elenco = overstock
+          .map((l) =>
+              '• ${l.material.description}: richiesti ${_fmtQta(l.quantita)}, '
+              'disponibili ${_fmtQta(l.material.stockDisponibile)}')
+          .join('\n');
+      await showWfmInfoDialog(
         context: context,
         title: 'Stock insufficiente',
-        message: 'La quantita richiesta supera la disponibilita per '
-            '${overstock.length} materiali. Continuare comunque?',
-        confirmLabel: 'Continua',
-        tone: WfmDialogTone.warning,
-        icon: Icons.warning_amber_rounded,
+        message: 'Non è possibile impegnare più di quanto disponibile a '
+            'magazzino:\n\n$elenco',
+        confirmLabel: 'Ho capito',
+        tone: WfmDialogTone.danger,
+        icon: Icons.block_rounded,
       );
-      if (ok != true) return;
-    }
-    final order = ref.read(workOrderDetailProvider(widget.code)).valueOrNull;
-    if (order == null) {
-      showSapToast(context, 'OdL non disponibile', isError: true);
       return;
     }
+
     setState(() => _saving = true);
 
-    // Costruisce le nuove righe materiale e le AGGIUNGE a quelle esistenti,
-    // poi salva l'OdL sul middleware (PATCH /work-orders/{id}).
+    // I materiali restano sul tablet: il cruscotto li accetta solo con
+    // l'esito, non con un aggiornamento dell'ordine. Vengono aggiunti a
+    // quelli già impegnati per questo OdL.
     final nuovi = _cart.values
         .map((l) => MaterialUsage(
               materialCode: l.material.materialCode,
@@ -154,21 +158,16 @@ class _AddComponenteScreenState extends ConsumerState<AddComponenteScreen> {
               warehouseCode: l.material.defaultWarehouseCode,
             ))
         .toList();
-    final aggiornato = order.copyWith(
-      plannedMaterials: [...order.plannedMaterials, ...nuovi],
-    );
-    final res = await ref.read(workOrderActionsProvider).save(aggiornato);
+
+    final notifier =
+        ref.read(odlExtensionProvider(widget.code).notifier);
+    await notifier.addMateriali(nuovi);
 
     if (!mounted) return;
     setState(() => _saving = false);
-    if (res.isSuccess) {
-      showSapToast(context,
-          '${_cart.length} ${_cart.length == 1 ? "materiale aggiunto" : "materiali aggiunti"} all\'OdL');
-      context.pop();
-    } else {
-      showSapToast(context, 'Errore salvataggio materiali sul middleware',
-          isError: true);
-    }
+    showSapToast(context,
+        '${_cart.length} ${_cart.length == 1 ? "materiale aggiunto" : "materiali aggiunti"} all\'OdL');
+    context.pop();
   }
 
   @override

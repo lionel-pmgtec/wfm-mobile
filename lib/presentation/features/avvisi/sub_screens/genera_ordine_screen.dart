@@ -14,6 +14,7 @@ import '../../../providers/anagrafica_provider.dart';
 import '../../../providers/auth_provider.dart';
 import '../../../providers/avvisi_provider.dart';
 import '../../../providers/creation_provider.dart';
+import '../../../widgets/sync_widgets.dart';
 
 class GeneraOrdineScreen extends ConsumerStatefulWidget {
   final String numero;
@@ -382,7 +383,10 @@ class _GeneraOrdineScreenState extends ConsumerState<GeneraOrdineScreen> {
     }
     // Step finale: genera un OdL sul tablet a partire dall'avviso (local-first).
     // Resta locale finché l'operatore non sincronizza verso il cruscotto.
-    final cid = ref.read(authControllerProvider.notifier).user?.cid ?? '';
+    final utente = ref.read(authControllerProvider.notifier).user;
+    final cid = utente?.cid ?? '';
+    final creatore =
+        utente == null ? 'wfm.mobile' : '${utente.fullName} ($cid)';
     final now = DateTime.now();
     final code = ref.read(creationControllerProvider).newWorkOrderId();
     final note = [
@@ -399,7 +403,7 @@ class _GeneraOrdineScreenState extends ConsumerState<GeneraOrdineScreen> {
       tam: _woType!,
       status: WorkOrderStatus.ricevuto,
       priorita: 'Media',
-      creatoDa: 'wfm.mobile',
+      creatoDa: creatore,
       appointmentDate: now,
       appointmentStartTime: '08:00',
       address: a.address as Address,
@@ -415,8 +419,16 @@ class _GeneraOrdineScreenState extends ConsumerState<GeneraOrdineScreen> {
     );
     await ref.read(creationControllerProvider).addWorkOrder(order);
     if (!mounted) return;
-    showSapToast(context,
-        'OdL creato dall\'avviso ${widget.numero} — sincronizza per inviarlo');
+
+    // Conferma con invio proposto subito, senza tornare alla Home.
+    await showCreatedSyncDialog(
+      context,
+      ref,
+      title: 'Ordine generato',
+      message: 'L\'ordine creato dall\'avviso ${widget.numero} è salvato sul '
+          'tablet. Vuoi inviarlo subito al cruscotto?',
+    );
+    if (!mounted) return;
     context.pushReplacement(AppRoutes.workOrderDetailPath(code));
   }
 }

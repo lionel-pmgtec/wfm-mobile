@@ -35,6 +35,9 @@ class AppRoutes {
   static const String notifications = '/notifications';
   static const String syncQueue = '/sync-queue';
 
+  /// Centro di sincronizzazione: elenco degli oggetti creati sul campo.
+  static const String syncCenter = '/sincronizzazione';
+
   // Modulo Standalone
   static const String standalone = '/standalone';
   static const String standaloneEquipment = '/standalone/equipment';

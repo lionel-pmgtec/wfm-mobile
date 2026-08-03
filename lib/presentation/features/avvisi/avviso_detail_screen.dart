@@ -14,6 +14,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/widgets/widgets.dart';
 import '../../../domain/entities/entities.dart';
 import '../../providers/avvisi_provider.dart';
+import '../../widgets/sync_widgets.dart';
 import 'sub_screens/avviso_allegati_tab.dart';
 import 'sub_screens/avviso_dati_tab.dart';
 import 'sub_screens/avviso_lavoro_tab.dart';
@@ -82,6 +83,7 @@ class _AvvisoDetailScreenState extends ConsumerState<AvvisoDetailScreen>
           ],
         ),
         actions: [
+          const SyncIconButton(color: Colors.white),
           if (editing)
             IconButton(
               tooltip: 'Fine',
@@ -118,12 +120,24 @@ class _AvvisoDetailScreenState extends ConsumerState<AvvisoDetailScreen>
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tab,
+      body: Column(
         children: [
-          AvvisoDatiTab(avviso: a),
-          AvvisoLavoroTab(avviso: a),
-          AvvisoAllegatiTab(numeroAvviso: widget.numero),
+          // Avviso ancora solo sul tablet: l'invio è a un tocco, su ogni
+          // scheda. Il banner sparisce da solo una volta inviato.
+          SyncPendingBanner(
+              id: a.numeroAvviso,
+              message: 'Questo avviso è stato creato sul tablet e non è '
+                  'ancora stato inviato al cruscotto.'),
+          Expanded(
+            child: TabBarView(
+              controller: _tab,
+              children: [
+                AvvisoDatiTab(avviso: a),
+                AvvisoLavoroTab(avviso: a),
+                AvvisoAllegatiTab(numeroAvviso: widget.numero),
+              ],
+            ),
+          ),
         ],
       ),
     );

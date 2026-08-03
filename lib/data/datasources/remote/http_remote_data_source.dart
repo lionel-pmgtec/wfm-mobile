@@ -37,10 +37,6 @@ class HttpRemoteDataSource implements WfmRemoteDataSource {
 
   @override
   Future<Capabilities> getCapabilities() async {
-    // Le letture ora arrivano dal cruscotto, che espone
-    // l'INTERA struttura SAP (ordine + avviso con indirizzo, appuntamento,
-    // apparecchiatura, guasto, codifica…).  Dichiariamo tutto disponibile — 
-    // le sezioni senza dato si nascondono da sole, quelle con dato si mostrano.
     return Capabilities.allEnabled;
   }
 
@@ -158,12 +154,9 @@ class HttpRemoteDataSource implements WfmRemoteDataSource {
 
   @override
   Future<NotificationAvviso> createAvviso(NotificationAvviso avviso) async {
-    // -> creaNotifica
-    final r = await _dio.post(_avvisi, data: {
-      'descrizione': avviso.descrizione,
-      'tipo': avviso.tipo,
-      'address': addressToJson(avviso.address),
-    });
+    // Payload completo: il backend legge l'intero avviso (priorità, cliente,
+    // note, numero provvisorio).
+    final r = await _dio.post(_avvisi, data: avvisoToJson(avviso));
     return avvisoFromJson(r.data as Map<String, dynamic>);
   }
 

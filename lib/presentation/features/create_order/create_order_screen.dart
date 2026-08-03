@@ -12,6 +12,7 @@ import '../../../domain/entities/entities.dart';
 import '../../providers/anagrafica_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/creation_provider.dart';
+import '../../widgets/sync_widgets.dart';
 
 // ─── Presentazione tipo OdL ──────────────────────────────────────────────────
 // I VALORI (code/label) e i CAMPI dinamici arrivano dal cruscotto.
@@ -93,7 +94,13 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
     }
     if (!_formKey.currentState!.validate()) return;
     setState(() => _saving = true);
-    final cid = ref.read(authControllerProvider.notifier).user?.cid ?? '';
+    final utente = ref.read(authControllerProvider.notifier).user;
+    final cid = utente?.cid ?? '';
+    // "Creato da": il nome del tecnico che ha compilato il modulo, non un
+    // identificativo tecnico dell'app.
+    final creatore = utente == null
+        ? 'wfm.mobile'
+        : '${utente.fullName} ($cid)';
     // Template operazioni standard (il tecnico le compila/edita poi).
     final now = DateTime.now();
     final defaultOps = <Operation>[
@@ -169,7 +176,7 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
       tam: _woType!,
       status: WorkOrderStatus.ricevuto,
       priorita: 'Media',
-      creatoDa: 'wfm.mobile',
+      creatoDa: creatore,
       appointmentDate: _appointmentDate ?? DateTime.now(),
       appointmentStartTime: _startTime,
       address: Address(
@@ -199,7 +206,17 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
     await ref.read(creationControllerProvider).addWorkOrder(order);
     if (!mounted) return;
     setState(() => _saving = false);
-    showSapToast(context, 'OdL creato sul tablet — sincronizza per inviarlo');
+
+    // Conferma della creazione con l'invio proposto subito: l'operatore non
+    // deve cercare altrove il pulsante di sincronizzazione.
+    await showCreatedSyncDialog(
+      context,
+      ref,
+      title: 'Ordine creato',
+      message: 'L\'ordine di lavoro è salvato sul tablet. '
+          'Vuoi inviarlo subito al cruscotto?',
+    );
+    if (!mounted) return;
     // Sostituisce il wizard col dettaglio dell'OdL creato mantenendo lo
     // stack sottostante: il tasto Indietro torna correttamente alla Home.
     context.pushReplacement(AppRoutes.workOrderDetailPath(code));
@@ -213,7 +230,8 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
         title: const Text('Nuovo Ordine di Lavoro'),
         actions: [
           // Un solo pulsante di conferma: quello in fondo alla pagina
-          // ("Crea Ordine di Lavoro"). Qui in appbar solo lo stato di salvataggio.
+          // ("Crea Ordine di Lavoro"). Qui in appbar solo lo stato di
+          // salvataggio e la sincronizzazione, sempre a portata di mano.
           if (_saving)
             const Padding(
               padding: EdgeInsets.all(16),
@@ -221,7 +239,9 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
                 width: 20, height: 20,
                 child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
               ),
-            ),
+            )
+          else
+            const SyncIconButton(color: Colors.white),
         ],
       ),
       body: Form(

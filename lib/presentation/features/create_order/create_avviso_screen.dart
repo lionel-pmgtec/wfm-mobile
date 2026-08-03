@@ -17,6 +17,7 @@ import '../../../domain/entities/entities.dart';
 import '../../providers/anagrafica_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/creation_provider.dart';
+import '../../widgets/sync_widgets.dart';
 
 class CreateAvvisoScreen extends ConsumerStatefulWidget {
   const CreateAvvisoScreen({super.key});
@@ -60,7 +61,10 @@ class _CreateAvvisoScreenState extends ConsumerState<CreateAvvisoScreen> {
       return;
     }
     setState(() => _saving = true);
-    final cid = ref.read(authControllerProvider.notifier).user?.cid ?? '';
+    final utente = ref.read(authControllerProvider.notifier).user;
+    final cid = utente?.cid ?? '';
+    final creatore =
+        utente == null ? 'wfm.mobile' : '${utente.fullName} ($cid)';
     final now = DateTime.now();
     final code = ref.read(creationControllerProvider).newAvvisoId();
     final avviso = NotificationAvviso(
@@ -71,7 +75,7 @@ class _CreateAvvisoScreenState extends ConsumerState<CreateAvvisoScreen> {
       stato: 'Creato',
       cid: cid,
       cidAssegnato: cid,
-      creatoDa: 'wfm.mobile',
+      creatoDa: creatore,
       address: Address(
         city: _cityCtrl.text.trim(),
         street: _streetCtrl.text.trim(),
@@ -92,7 +96,16 @@ class _CreateAvvisoScreenState extends ConsumerState<CreateAvvisoScreen> {
     await ref.read(creationControllerProvider).addAvviso(avviso);
     if (!mounted) return;
     setState(() => _saving = false);
-    showSapToast(context, 'Avviso creato sul tablet — sincronizza per inviarlo');
+
+    // Conferma con invio proposto subito, senza tornare alla Home.
+    await showCreatedSyncDialog(
+      context,
+      ref,
+      title: 'Avviso creato',
+      message: 'L\'avviso è salvato sul tablet. '
+          'Vuoi inviarlo subito al cruscotto?',
+    );
+    if (!mounted) return;
     context.pushReplacement(AppRoutes.avvisoDetailPath(code));
   }
 
@@ -103,6 +116,7 @@ class _CreateAvvisoScreenState extends ConsumerState<CreateAvvisoScreen> {
       appBar: AppBar(
         title: const Text('Nuovo Avviso'),
         actions: [
+          // Sincronizzazione raggiungibile anche durante la compilazione.
           if (_saving)
             const Padding(
               padding: EdgeInsets.all(16),
@@ -111,7 +125,9 @@ class _CreateAvvisoScreenState extends ConsumerState<CreateAvvisoScreen> {
                 child: CircularProgressIndicator(
                     strokeWidth: 2, color: Colors.white),
               ),
-            ),
+            )
+          else
+            const SyncIconButton(color: Colors.white),
         ],
       ),
       body: Form(

@@ -11,7 +11,7 @@ import '../../../core/services/geolocation_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/widgets.dart';
 import '../../../domain/entities/entities.dart';
-import '../../providers/work_orders_provider.dart';
+import '../../providers/map_provider.dart';
 
 // ─── Colori dei marker ────────────────────────────────────────
 
@@ -46,7 +46,7 @@ class MapScreen extends ConsumerStatefulWidget {
 
 class _MapScreenState extends ConsumerState<MapScreen> {
   final _mapController = MapController();
-  WorkOrder? _selected;
+  MapPoint? _selected;
   WorkOrderStatus? _filterStatus;
 
   // Centro di default — Ancona (zone des ODL de démo)
@@ -67,12 +67,13 @@ class _MapScreenState extends ConsumerState<MapScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final ordersAsync = ref.watch(workOrdersProvider);
+    final pointsAsync = ref.watch(mapPointsProvider);
+    final senzaPosizione = ref.watch(mapMissingCountProvider).valueOrNull ?? 0;
 
     return Scaffold(
       backgroundColor: AppColors.backgroundPage,
       appBar: AppBar(
-        title: const Text('Mappa OdL'),
+        title: const Text('Mappa interventi'),
         actions: [
           IconButton(
             tooltip: 'Centra sulla mia posizione',
@@ -92,17 +93,20 @@ class _MapScreenState extends ConsumerState<MapScreen> {
             }),
           ),
           Expanded(
-            child: ordersAsync.when(
-              loading: () => const WfmLoading(message: 'Caricamento OdL…'),
+            child: pointsAsync.when(
+              loading: () => const WfmLoading(
+                  message: 'Localizzazione degli indirizzi di intervento…'),
               error: (e, _) => WfmErrorState(
                 message: e.toString(),
-                onRetry: () => ref.invalidate(workOrdersProvider),
+                onRetry: () => ref.invalidate(mapPointsProvider),
               ),
-              data: (orders) {
-                final geo = orders
-                    .where((o) =>
-                        o.address.hasCoordinates &&
-                        (_filterStatus == null || o.status == _filterStatus))
+              data: (points) {
+                // Il filtro per stato riguarda gli ordini; con un filtro
+                // attivo gli avvisi (che non hanno stato OdL) restano fuori.
+                final geo = points
+                    .where((p) =>
+                        _filterStatus == null ||
+                        (!p.isAvviso && p.stato == _filterStatus))
                     .toList();
 
                 return Stack(
@@ -127,25 +131,27 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                       ],
                     ),
 
-                    // ── Contattore ODL visibili ────────────────────────────────
+                    // ── Contatore oggetti visibili ─────────────────────────
                     Positioned(
                       top: 12,
                       right: 12,
-                      child: _CountBubble(count: geo.length),
+                      child: _CountBubble(
+                          count: geo.length, senzaPosizione: senzaPosizione),
                     ),
 
-                    // Dettaglio OdL selezionato .
+                    // Dettaglio dell'oggetto selezionato.
                     if (_selected != null)
                       Positioned(
                         bottom: 16,
                         left: 12,
                         right: 12,
-                        child: _OdlBottomCard(
-                          order: _selected!,
+                        child: _PointBottomCard(
+                          point: _selected!,
                           onClose: () => setState(() => _selected = null),
                           onOpen: () => context.push(
-                            AppRoutes.workOrderDetailPath(
-                                _selected!.externalCode),
+                            _selected!.isAvviso
+                                ? AppRoutes.avvisoDetailPath(_selected!.id)
+                                : AppRoutes.workOrderDetailPath(_selected!.id),
                           ),
                         ),
                       ),
@@ -172,13 +178,13 @@ class _MapScreenState extends ConsumerState<MapScreen> {
                               const Icon(Icons.map_outlined,
                                   size: 48, color: AppColors.textHint),
                               const SizedBox(height: 12),
-                              const Text('Nessun OdL geolocalizzato',
+                              const Text('Nessun intervento sulla mappa',
                                   style: AppTextStyles.headingSmall),
                               const SizedBox(height: 4),
                               Text(
                                 _filterStatus != null
-                                    ? 'Nessun OdL "${_filterStatus!.label}" con coordinate.'
-                                    : 'Gli OdL senza coordinate non vengono visualizzati.',
+                                    ? 'Nessun OdL "${_filterStatus!.label}" con un indirizzo localizzabile.'
+                                    : 'Gli oggetti senza indirizzo di intervento non possono essere posizionati.',
                                 style: AppTextStyles.bodyMedium,
                                 textAlign: TextAlign.center,
                               ),
@@ -196,17 +202,23 @@ class _MapScreenState extends ConsumerState<MapScreen> {
     );
   }
 
-  Marker _buildMarker(WorkOrder order) {
-    final color = _markerColor(order.status);
-    final icon = _markerIcon(order.status);
-    final isSelected = _selected?.externalCode == order.externalCode;
+  Marker _buildMarker(MapPoint point) {
+    // Gli avvisi hanno un colore proprio: sulla mappa si distinguono subito
+    // dagli ordini, che restano colorati per stato.
+    final color = point.isAvviso
+        ? AppColors.accentOrange
+        : _markerColor(point.stato ?? WorkOrderStatus.ricevuto);
+    final icon = point.isAvviso
+        ? Icons.notifications_rounded
+        : _markerIcon(point.stato ?? WorkOrderStatus.ricevuto);
+    final isSelected = _selected?.id == point.id;
 
     return Marker(
-      point: LatLng(order.address.latitude!, order.address.longitude!),
+      point: LatLng(point.latitude, point.longitude),
       width: isSelected ? 52 : 44,
       height: isSelected ? 52 : 44,
       child: GestureDetector(
-        onTap: () => setState(() => _selected = order),
+        onTap: () => setState(() => _selected = point),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           decoration: BoxDecoration(
@@ -319,44 +331,74 @@ class _StatusLegendBar extends StatelessWidget {
 
 class _CountBubble extends StatelessWidget {
   final int count;
-  const _CountBubble({required this.count});
+
+  /// Oggetti che non è stato possibile posizionare: dichiararlo evita di far
+  /// credere che sulla mappa ci sia tutto.
+  final int senzaPosizione;
+
+  const _CountBubble({required this.count, this.senzaPosizione = 0});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: AppColors.primary,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-              color: AppColors.primary.withValues(alpha: 0.35),
-              blurRadius: 8,
-              offset: const Offset(0, 3))
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            color: AppColors.primary,
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: [
+              BoxShadow(
+                  color: AppColors.primary.withValues(alpha: 0.35),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3))
+            ],
+          ),
+          child: Text(
+            '$count sulla mappa',
+            style: const TextStyle(
+                color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
+          ),
+        ),
+        if (senzaPosizione > 0) ...[
+          const SizedBox(height: 6),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Text(
+              '$senzaPosizione senza indirizzo',
+              style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w600),
+            ),
+          ),
         ],
-      ),
-      child: Text(
-        '$count OdL',
-        style: const TextStyle(
-            color: Colors.white, fontSize: 13, fontWeight: FontWeight.w600),
-      ),
+      ],
     );
   }
 }
 
 // ODL carta base
 
-class _OdlBottomCard extends StatelessWidget {
-  final WorkOrder order;
+class _PointBottomCard extends StatelessWidget {
+  final MapPoint point;
   final VoidCallback onClose;
   final VoidCallback onOpen;
 
-  const _OdlBottomCard(
-      {required this.order, required this.onClose, required this.onOpen});
+  const _PointBottomCard(
+      {required this.point, required this.onClose, required this.onOpen});
 
   @override
   Widget build(BuildContext context) {
-    final color = _markerColor(order.status);
+    final color = point.isAvviso
+        ? AppColors.accentOrange
+        : _markerColor(point.stato ?? WorkOrderStatus.ricevuto);
 
     return Material(
       elevation: 12,
@@ -383,7 +425,9 @@ class _OdlBottomCard extends StatelessWidget {
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
-                    order.status.label,
+                    point.isAvviso
+                        ? 'AVVISO'
+                        : (point.stato?.label ?? 'ORDINE'),
                     style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
@@ -392,7 +436,7 @@ class _OdlBottomCard extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  order.externalCode,
+                  point.id,
                   style: const TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
@@ -410,14 +454,13 @@ class _OdlBottomCard extends StatelessWidget {
             ),
             const SizedBox(height: 6),
             Text(
-              order.woTypeDescription.isNotEmpty
-                  ? order.woTypeDescription
-                  : order.woType,
+              point.titolo,
               style: AppTextStyles.headingSmall,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
             const SizedBox(height: 4),
+            // Indirizzo di intervento: è quello su cui il marker è posizionato.
             Row(
               children: [
                 const Icon(Icons.place_outlined,
@@ -425,26 +468,14 @@ class _OdlBottomCard extends StatelessWidget {
                 const SizedBox(width: 4),
                 Expanded(
                   child: Text(
-                    order.address.full,
-                    maxLines: 1,
+                    point.indirizzo,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: AppTextStyles.bodyMedium,
                   ),
                 ),
               ],
             ),
-            if (order.customer.fullName.isNotEmpty) ...[
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  const Icon(Icons.person_outline_rounded,
-                      size: 14, color: AppColors.textHint),
-                  const SizedBox(width: 4),
-                  Text(order.customer.fullName,
-                      style: AppTextStyles.bodyMedium),
-                ],
-              ),
-            ],
             const SizedBox(height: 12),
             SizedBox(
               width: double.infinity,

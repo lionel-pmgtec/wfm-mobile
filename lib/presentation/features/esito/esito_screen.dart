@@ -15,6 +15,7 @@ import '../../providers/anagrafica_provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/esito_provider.dart';
 import '../../providers/work_orders_provider.dart';
+import '../../widgets/signature_pad.dart';
 
 class EsitoScreen extends ConsumerStatefulWidget {
   final String code;
@@ -34,7 +35,8 @@ class _EsitoScreenState extends ConsumerState<EsitoScreen> {
   final _extraCtrl = TextEditingController();
   final _finalReadingCtrl = TextEditingController();
   final _sealCtrl = TextEditingController();
-  bool _customerSigned = false;
+  /// Firma tracciata dal cliente in fondo alla pagina.
+  final _firmaCliente = SignaturePadController();
   bool _submitting = false;
   final DateTime _start = DateTime.now().subtract(const Duration(minutes: 45));
 
@@ -45,6 +47,7 @@ class _EsitoScreenState extends ConsumerState<EsitoScreen> {
     _extraCtrl.dispose();
     _finalReadingCtrl.dispose();
     _sealCtrl.dispose();
+    _firmaCliente.dispose();
     super.dispose();
   }
 
@@ -88,7 +91,7 @@ class _EsitoScreenState extends ConsumerState<EsitoScreen> {
             hours: num.tryParse(_hoursCtrl.text.replaceAll(',', '.')) ?? 0),
       ],
       extraCosts: num.tryParse(_extraCtrl.text.replaceAll(',', '.')),
-      customerSigned: _customerSigned,
+      customerSigned: _firmaCliente.hasSignature,
     );
     final res = await ref.read(esitoControllerProvider).submit(esito);
     if (!mounted) return;
@@ -243,12 +246,12 @@ class _EsitoScreenState extends ConsumerState<EsitoScreen> {
               decoration: const InputDecoration(
                   labelText: 'Commenti liberi', alignLabelWithHint: true),
             ),
-            const SizedBox(height: 12),
-            SwitchListTile(
-              contentPadding: EdgeInsets.zero,
-              title: const Text('Firma cliente acquisita'),
-              value: _customerSigned,
-              onChanged: (v) => setState(() => _customerSigned = v),
+            const SectionHeader(title: 'FIRMA'),
+            // La firma si raccoglie qui, alla chiusura: prima era un semplice
+            // interruttore e nessuna firma veniva mai tracciata.
+            SignaturePad(
+              controller: _firmaCliente,
+              label: 'Firma cliente',
             ),
             const SizedBox(height: 24),
             SizedBox(

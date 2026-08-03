@@ -4,12 +4,11 @@
 Documento di riferimento: descrive l'applicazione tablet per i tecnici, il backend
 del cruscotto e **tutte le funzionalità già operative**.
 
-- **Versione documento:** 1.1 — 2026-07-31
 - **Destinatari:** tecnici sul campo, pianificatori (cruscotto), team tecnico.
 - **Documenti collegati:** [README.md](README.md) (avvio rapido),
 
 
-> **Novità 1.1 (2026-07-31)**
+> 
 > - **Cataloghi selezionabili dal cruscotto** — rimossi tutti i valori hardcoded
 >   dalle tendine (tipi OdL, campi per tipo, motivi sospensione, stato/priorità
 >   avviso). Ora arrivano dal cruscotto; finché i relativi endpoint non esistono,

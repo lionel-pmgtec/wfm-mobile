@@ -28,6 +28,7 @@ import '../../presentation/features/create_order/create_order_screen.dart';
 import '../../presentation/features/create_order/create_avviso_screen.dart';
 import '../../presentation/features/settings/settings_screen.dart';
 import '../../presentation/features/settings/sync_queue_screen.dart';
+import '../../presentation/features/sync/sync_center_screen.dart';
 import '../../presentation/features/notifications/notifications_screen.dart';
 import '../../presentation/features/scanner/barcode_scanner_screen.dart';
 import '../../presentation/features/signature/signature_screen.dart';
@@ -209,6 +210,9 @@ final goRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
           path: AppRoutes.syncQueue,
           builder: (_, __) => const SyncQueueScreen()),
+      GoRoute(
+          path: AppRoutes.syncCenter,
+          builder: (_, __) => const SyncCenterScreen()),
       GoRoute(
           path: AppRoutes.notifications,
           builder: (_, __) => const NotificationsScreen()),

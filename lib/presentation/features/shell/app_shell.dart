@@ -15,8 +15,10 @@ import '../../../core/constants/app_constants.dart';
 import '../../../core/router/app_routes.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../providers/connectivity_provider.dart';
+import '../../providers/creation_provider.dart';
 import '../../providers/realtime_provider.dart';
 import '../../providers/settings_provider.dart';
+import '../../widgets/sync_widgets.dart';
 
 /// Altezza della toolbar ( appBarTheme.toolbarHeight in app_theme.dart).
 const double _kToolbarHeight = 60;
@@ -115,6 +117,8 @@ class _WfmSidebar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final online = ref.watch(connectivityStatusProvider);
     final pending = ref.watch(pendingSyncCountProvider).valueOrNull ?? 0;
+    final daSincronizzare =
+        ref.watch(pendingCreationCountProvider).valueOrNull ?? 0;
     final topInset = MediaQuery.of(context).padding.top;
     final iconScale = ref.watch(settingsProvider).iconScale;
 
@@ -145,12 +149,16 @@ class _WfmSidebar extends ConsumerWidget {
             ),
           const Spacer(),
           // Azioni di utilità (route full-screen, non rami dello shell).
+          // "Sincronizza" mostra quanti oggetti creati sul campo attendono
+          // l'invio e apre il centro di sincronizzazione, dove si sceglie la
+          // destinazione (cruscotto o SAP) per ogni elemento.
           _SidebarItem(
             dest: const _Destination(
                 Icons.sync_rounded, Icons.sync_rounded, 'Sincronizza'),
             selected: false,
             iconScale: iconScale,
-            onTap: () => context.push(AppRoutes.syncQueue),
+            badgeCount: daSincronizzare,
+            onTap: () => openSyncCenter(context),
           ),
           _SidebarItem(
             dest: const _Destination(Icons.settings_outlined,
@@ -194,11 +202,16 @@ class _SidebarItem extends StatelessWidget {
   final bool selected;
   final double iconScale;
   final VoidCallback onTap;
+
+  /// Se > 0 mostra un contatore sull'icona (es. elementi da sincronizzare).
+  final int badgeCount;
+
   const _SidebarItem({
     required this.dest,
     required this.selected,
     required this.onTap,
     this.iconScale = 1.0,
+    this.badgeCount = 0,
   });
 
   @override
@@ -230,9 +243,14 @@ class _SidebarItem extends StatelessWidget {
                       ]
                     : null,
               ),
-              child: Icon(selected ? dest.selectedIcon : dest.icon,
-                  color: selected ? Colors.white : AppColors.textSecondary,
-                  size: 24 * iconScale),
+              child: Badge(
+                isLabelVisible: badgeCount > 0,
+                label: Text('$badgeCount'),
+                backgroundColor: AppColors.accentOrange,
+                child: Icon(selected ? dest.selectedIcon : dest.icon,
+                    color: selected ? Colors.white : AppColors.textSecondary,
+                    size: 24 * iconScale),
+              ),
             ),
             const SizedBox(height: 4),
             Text(dest.label,

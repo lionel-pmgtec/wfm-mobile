@@ -19,7 +19,9 @@ import '../../../core/widgets/widgets.dart';
 import '../../../domain/entities/entities.dart';
 import '../../providers/attachments_provider.dart';
 import '../../providers/capabilities_provider.dart';
+import '../../providers/odl_extension_provider.dart';
 import '../../providers/work_orders_provider.dart';
+import '../../widgets/sync_widgets.dart';
 import 'widgets/lifecycle_action_bar.dart';
 import 'widgets/odl_actions_menu.dart';
 import 'widgets/odl_inline_sections.dart';
@@ -87,6 +89,7 @@ class _DetailViewState extends ConsumerState<_DetailView>
       appBar: AppBar(
         title: Text('OdL ${order.externalCode}'),
         actions: [
+          const SyncIconButton(color: Colors.white),
           OdlActionsMenu(code: order.externalCode, order: order),
         ],
         bottom: TabBar(
@@ -107,14 +110,26 @@ class _DetailViewState extends ConsumerState<_DetailView>
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tab,
+      body: Column(
         children: [
-          _DettaglioTab(order: order),
-          _OperazioniTab(order: order),
-          _ComponentiTab(order: order),
-          _AllegatiTab(code: order.externalCode),
-          _ChiusuraTab(order: order),
+          // Ordine ancora solo sul tablet: l'invio è a un tocco, su ogni
+          // scheda. Il banner sparisce da solo una volta inviato.
+          SyncPendingBanner(
+              id: order.externalCode,
+              message: 'Questo ordine è stato creato sul tablet e non è '
+                  'ancora stato inviato al cruscotto.'),
+          Expanded(
+            child: TabBarView(
+              controller: _tab,
+              children: [
+                _DettaglioTab(order: order),
+                _OperazioniTab(order: order),
+                _ComponentiTab(order: order),
+                _AllegatiTab(code: order.externalCode),
+                _ChiusuraTab(order: order),
+              ],
+            ),
+          ),
         ],
       ),
       bottomNavigationBar: LifecycleActionBar(order: order),
@@ -1354,6 +1369,11 @@ class _ComponentiTab extends ConsumerWidget {
     final caps = ref.watch(capabilitiesProvider);
     final materialiDisponibili = caps.has(Cap.odlMateriali);
 
+    // Materiali dell'ordine (SAP) + quelli impegnati sul campo, che restano
+    // sul tablet finché non partono con l'esito.
+    final locali = ref.watch(odlExtensionProvider(order.externalCode)).materiali;
+    final materiali = [...order.plannedMaterials, ...locali];
+
     final addButton = Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       child: SizedBox(
@@ -1370,7 +1390,7 @@ class _ComponentiTab extends ConsumerWidget {
 
     // I materiali pianificati stanno in RESB, che il servizio SAP esclude di
     // proposito: dirlo è meglio che lasciar credere che l'OdL non ne abbia.
-    if (!materialiDisponibili && order.plannedMaterials.isEmpty) {
+    if (!materialiDisponibili && materiali.isEmpty) {
       return Column(
         children: [
           Expanded(
@@ -1385,7 +1405,7 @@ class _ComponentiTab extends ConsumerWidget {
       );
     }
 
-    if (order.plannedMaterials.isEmpty) {
+    if (materiali.isEmpty) {
       return Column(
         children: [
           const Expanded(
@@ -1404,10 +1424,10 @@ class _ComponentiTab extends ConsumerWidget {
         Expanded(
           child: ListView.separated(
             padding: kPagePadding,
-            itemCount: order.plannedMaterials.length,
+            itemCount: materiali.length,
             separatorBuilder: (_, __) => const SizedBox(height: 10),
             itemBuilder: (_, i) {
-              final m = order.plannedMaterials[i];
+              final m = materiali[i];
               return WfmCard(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,

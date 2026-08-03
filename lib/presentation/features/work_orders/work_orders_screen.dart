@@ -14,6 +14,7 @@ import '../../providers/connectivity_provider.dart';
 import '../../providers/creation_provider.dart';
 import '../../providers/realtime_provider.dart';
 import '../../providers/work_orders_provider.dart';
+import '../../widgets/sync_widgets.dart';
 import 'widgets/excel_import_sheet.dart';
 import 'widgets/odl_actions_menu.dart';
 
@@ -82,28 +83,6 @@ class _WorkOrdersScreenState extends ConsumerState<WorkOrdersScreen> {
     );
   }
 
-  /// Invia al cruscotto gli OdL/avvisi creati sul tablet. Se non ce ne sono,
-  /// apre la coda delle operazioni offline (comportamento precedente).
-  Future<void> _syncAll() async {
-    final created = ref.read(pendingCreationCountProvider).valueOrNull ?? 0;
-    if (created == 0) {
-      context.push(AppRoutes.syncQueue);
-      return;
-    }
-    showSapToast(context, 'Sincronizzazione in corso…');
-    final res = await ref.read(creationControllerProvider).syncAll();
-    if (!mounted) return;
-    if (res.failed == 0) {
-      showSapToast(context, 'Sincronizzati ${res.ok} elementi');
-    } else {
-      showSapToast(
-        context,
-        '${res.ok} inviati, ${res.failed} in attesa — ${res.firstError ?? 'cruscotto non pronto'}',
-        isError: true,
-      );
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     // Al cambio dei filtri la lista riparte dalla prima pagina.
@@ -114,8 +93,6 @@ class _WorkOrdersScreenState extends ConsumerState<WorkOrdersScreen> {
     final filter = ref.watch(workOrderFilterProvider);
     final online = ref.watch(connectivityStatusProvider);
     final pending = ref.watch(pendingSyncCountProvider).valueOrNull ?? 0;
-    final createdPending =
-        ref.watch(pendingCreationCountProvider).valueOrNull ?? 0;
     final advancedCount = _advancedFilterCount(filter);
 
     return Scaffold(
@@ -200,15 +177,7 @@ class _WorkOrdersScreenState extends ConsumerState<WorkOrdersScreen> {
             icon: const Icon(Icons.map_outlined),
             onPressed: () => context.go(AppRoutes.map),
           ),
-          IconButton(
-            tooltip: 'Sincronizza',
-            icon: Badge(
-              isLabelVisible: (pending + createdPending) > 0,
-              label: Text('${pending + createdPending}'),
-              child: const Icon(Icons.cloud_sync_outlined),
-            ),
-            onPressed: _syncAll,
-          ),
+          const SyncIconButton(),
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
@@ -684,13 +653,18 @@ class _LoadMoreTile extends StatelessWidget {
 
 // ─── ITEM LISTA OdL ───────────────────────────────────────────────────────────
 
-class _WorkOrderItem extends StatelessWidget {
+class _WorkOrderItem extends ConsumerWidget {
   final WorkOrder order;
   final VoidCallback onTap;
   const _WorkOrderItem({required this.order, required this.onTap});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Da sincronizzare = ancora nell'elenco locale. Il prefisso "TMP-" resta
+    // anche dopo l'invio, finché SAP non assegna il numero definitivo.
+    final daSincronizzare =
+        ref.watch(isPendingCreationProvider(order.externalCode)).valueOrNull ??
+            false;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
       child: WfmCard(
@@ -748,7 +722,7 @@ class _WorkOrderItem extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: AppTextStyles.bodyLarge
                     .copyWith(fontWeight: FontWeight.w600)),
-            if (order.externalCode.startsWith('TMP-'))
+            if (daSincronizzare)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
                 child: Row(children: [

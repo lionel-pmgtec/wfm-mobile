@@ -16,7 +16,13 @@ final workOrdersProvider = FutureProvider<List<WorkOrder>>((ref) async {
   final filter = ref.watch(workOrderFilterProvider);
 
   // OdL creati sul tablet (local-first), filtrati come i remoti e messi in cima.
-  var locali = await ref.watch(createdWorkOrdersProvider.future);
+  // Se la lettura locale fallisce non si perde l'elenco del cruscotto.
+  var locali = <WorkOrder>[];
+  try {
+    locali = await ref.watch(createdWorkOrdersProvider.future);
+  } catch (_) {
+    locali = const [];
+  }
   if (filter.status != null) {
     locali = locali.where((o) => o.status == filter.status).toList();
   }
@@ -61,9 +67,13 @@ final dashboardStatsProvider =
 final workOrderDetailProvider =
     FutureProvider.family<WorkOrder, String>((ref, code) async {
   // Prima gli OdL creati sul tablet (id TMP): non esistono lato cruscotto.
-  final locali = await ref.watch(createdWorkOrdersProvider.future);
-  for (final o in locali) {
-    if (o.externalCode == code) return o;
+  try {
+    final locali = await ref.watch(createdWorkOrdersProvider.future);
+    for (final o in locali) {
+      if (o.externalCode == code) return o;
+    }
+  } catch (_) {
+    // Lettura locale non riuscita: si prosegue col cruscotto.
   }
   final repo = ref.watch(workOrderRepositoryProvider);
   final result = await repo.getWorkOrderDetail(code);

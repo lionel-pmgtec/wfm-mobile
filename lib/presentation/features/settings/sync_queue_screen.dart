@@ -8,7 +8,9 @@ import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/widgets.dart';
 import '../../../domain/entities/entities.dart';
+import '../../providers/creation_provider.dart';
 import '../../providers/sync_provider.dart';
+import '../../widgets/sync_widgets.dart';
 
 class SyncQueueScreen extends ConsumerWidget {
   const SyncQueueScreen({super.key});
@@ -16,6 +18,9 @@ class SyncQueueScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final async = ref.watch(syncQueueProvider);
+    final daSincronizzare =
+        ref.watch(pendingCreationCountProvider).valueOrNull ?? 0;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Sincronizzazione'),
@@ -30,24 +35,43 @@ class SyncQueueScreen extends ConsumerWidget {
           ),
         ],
       ),
-      body: async.when(
-        loading: () => const WfmLoading(),
-        error: (e, _) => WfmErrorState(message: e.toString()),
-        data: (queue) => queue.isEmpty
-            ? const EmptyState(
-                title: 'Coda vuota',
-                subtitle: 'Tutti i dati sono sincronizzati con SAP.',
-                icon: Icons.cloud_done_outlined)
-            : ListView.separated(
-                padding: kPagePadding,
-                itemCount: queue.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 10),
-                itemBuilder: (_, i) => _SyncItem(
-                  op: queue[i],
-                  onCancel: () =>
-                      ref.read(syncActionsProvider).cancel(queue[i].id),
-                ),
-              ),
+      body: Column(
+        children: [
+          // Oggetti creati sul campo: sono la ragione più frequente per cui
+          // l'operatore apre questa schermata, quindi stanno in cima.
+          if (daSincronizzare > 0)
+            SyncPendingBanner(
+              message: '$daSincronizzare tra ordini e avvisi creati sul tablet '
+                  'sono in attesa di essere inviati.',
+            ),
+          Expanded(
+            child: async.when(
+              loading: () => const WfmLoading(),
+              error: (e, _) => WfmErrorState(message: e.toString()),
+              data: (queue) => queue.isEmpty
+                  ? (daSincronizzare > 0
+                      ? const EmptyState(
+                          title: 'Nessuna operazione in coda',
+                          subtitle:
+                              'Usa "Sincronizza" qui sopra per inviare gli elementi creati sul tablet.',
+                          icon: Icons.cloud_upload_outlined)
+                      : const EmptyState(
+                          title: 'Tutto sincronizzato',
+                          subtitle: 'Nessun elemento in attesa di invio.',
+                          icon: Icons.cloud_done_outlined))
+                  : ListView.separated(
+                      padding: kPagePadding,
+                      itemCount: queue.length,
+                      separatorBuilder: (_, __) => const SizedBox(height: 10),
+                      itemBuilder: (_, i) => _SyncItem(
+                        op: queue[i],
+                        onCancel: () =>
+                            ref.read(syncActionsProvider).cancel(queue[i].id),
+                      ),
+                    ),
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -36,6 +36,17 @@ class OdlExtensionNotifier extends StateNotifier<OdlExtension> {
         attivita: state.attivita.where((a) => a.id != id).toList(),
       ));
 
+  // ── Materiali impegnati sul campo ───────────────────────────────────────
+  Future<void> addMateriali(List<MaterialUsage> nuovi) =>
+      _persist(state.copyWith(materiali: [...state.materiali, ...nuovi]));
+
+  Future<void> removeMateriale(String materialCode) => _persist(
+        state.copyWith(
+          materiali:
+              state.materiali.where((m) => m.materialCode != materialCode).toList(),
+        ),
+      );
+
   // ── Appuntamenti ────────────────────────────────────────────────────────
   Future<void> addAppuntamento(OdlAppuntamento a) =>
       _persist(state.copyWith(appuntamenti: [...state.appuntamenti, a]));

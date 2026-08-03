@@ -49,9 +49,17 @@ class LocalCreationStore {
 
   Future<List<WorkOrder>> workOrders() async {
     await _ensureInit();
-    return _woMem.values
-        .map((s) => workOrderFromJson(jsonDecode(s) as Map<String, dynamic>))
-        .toList();
+    // Un record illeggibile non deve far cadere l'intera lista: viene saltato,
+    // così il tablet continua a mostrare tutto il resto.
+    final out = <WorkOrder>[];
+    for (final s in _woMem.values) {
+      try {
+        out.add(workOrderFromJson(jsonDecode(s) as Map<String, dynamic>));
+      } catch (_) {
+        continue;
+      }
+    }
+    return out;
   }
 
   Future<WorkOrder?> workOrder(String code) async {
@@ -79,9 +87,16 @@ class LocalCreationStore {
 
   Future<List<NotificationAvviso>> avvisi() async {
     await _ensureInit();
-    return _avvMem.values
-        .map((s) => avvisoFromJson(jsonDecode(s) as Map<String, dynamic>))
-        .toList();
+    // Come sopra: si salta il record illeggibile invece di perdere la lista.
+    final out = <NotificationAvviso>[];
+    for (final s in _avvMem.values) {
+      try {
+        out.add(avvisoFromJson(jsonDecode(s) as Map<String, dynamic>));
+      } catch (_) {
+        continue;
+      }
+    }
+    return out;
   }
 
   Future<NotificationAvviso?> avviso(String numero) async {

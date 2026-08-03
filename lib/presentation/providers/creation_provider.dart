@@ -33,6 +33,20 @@ final pendingCreationCountProvider = FutureProvider<int>((ref) async {
   return wo.length + av.length;
 });
 
+/// True se l'oggetto è ancora SOLO sul tablet, cioè non è stato inviato.
+///
+/// Non basta guardare il prefisso "TMP-": dopo l'invio il cruscotto conserva
+/// l'id provvisorio finché SAP non assegna il numero definitivo, quindi il
+/// codice resta "TMP-…" anche per un oggetto già sincronizzato. L'unica prova
+/// attendibile è la presenza nell'elenco locale.
+final isPendingCreationProvider =
+    FutureProvider.family<bool, String>((ref, id) async {
+  final wo = await ref.watch(createdWorkOrdersProvider.future);
+  if (wo.any((o) => o.externalCode == id)) return true;
+  final av = await ref.watch(createdAvvisiProvider.future);
+  return av.any((a) => a.numeroAvviso == id);
+});
+
 class CreationSyncResult {
   final int ok;
   final int failed;
@@ -41,6 +55,30 @@ class CreationSyncResult {
       {required this.ok, required this.failed, this.firstError});
 
   bool get nothingToDo => ok == 0 && failed == 0;
+}
+
+/// Dove inviare un oggetto creato sul campo.
+///
+/// - [cruscotto]: percorso normale, l'oggetto passa dal cruscotto che poi lo
+///   propaga a SAP.
+/// - [sap]: invio diretto, riservato agli avvisi che non devono passare dal
+///   cruscotto. Il canale non è ancora configurato lato backend: l'app lo
+///   espone ma non simula l'invio.
+enum SyncDestination {
+  cruscotto,
+  sap;
+
+  String get label => switch (this) {
+        SyncDestination.cruscotto => 'Cruscotto',
+        SyncDestination.sap => 'SAP',
+      };
+}
+
+/// Esito dell'invio di un singolo oggetto.
+class SendResult {
+  final bool ok;
+  final String message;
+  const SendResult(this.ok, this.message);
 }
 
 class CreationController {
@@ -71,6 +109,57 @@ class CreationController {
   Future<void> removeAvviso(String numero) async {
     await _store.removeAvviso(numero);
     ref.invalidate(createdAvvisiProvider);
+  }
+
+  /// Messaggio unico per il canale diretto verso SAP, non ancora attivo.
+  static const _sapNonConfigurato =
+      'Invio diretto a SAP non ancora configurato sul backend. '
+      'Per ora usa l\'invio al cruscotto.';
+
+  /// Invia un singolo ordine alla destinazione scelta.
+  /// Se l'invio riesce, l'ordine esce dall'elenco locale.
+  Future<SendResult> sendWorkOrder(
+    WorkOrder order, {
+    required SyncDestination destination,
+  }) async {
+    if (destination == SyncDestination.sap) {
+      return const SendResult(false, _sapNonConfigurato);
+    }
+    final res = await ref.read(workOrderRepositoryProvider).createWorkOrder(order);
+    if (res.isSuccess) {
+      await _store.removeWorkOrder(order.externalCode);
+      ref.invalidate(createdWorkOrdersProvider);
+      return const SendResult(true, 'Ordine inviato al cruscotto');
+    }
+    return SendResult(false, _motivo(res.failureOrNull?.message));
+  }
+
+  /// Invia un singolo avviso alla destinazione scelta.
+  Future<SendResult> sendAvviso(
+    NotificationAvviso avviso, {
+    required SyncDestination destination,
+  }) async {
+    if (destination == SyncDestination.sap) {
+      return const SendResult(false, _sapNonConfigurato);
+    }
+    final res =
+        await ref.read(notificationRepositoryProvider).createAvviso(avviso);
+    if (res.isSuccess) {
+      await _store.removeAvviso(avviso.numeroAvviso);
+      ref.invalidate(createdAvvisiProvider);
+      return const SendResult(true, 'Avviso inviato al cruscotto');
+    }
+    return SendResult(false, _motivo(res.failureOrNull?.message));
+  }
+
+  /// Traduce l'errore tecnico in un messaggio comprensibile all'operatore.
+  String _motivo(String? errore) {
+    final e = errore ?? '';
+    if (e.contains('501')) {
+      return 'Il cruscotto non accetta ancora la creazione dal campo. '
+          'L\'elemento resta salvato sul tablet.';
+    }
+    return 'Invio non riuscito. L\'elemento resta salvato sul tablet.';
   }
 
   /// Invia al cruscotto tutti gli oggetti creati sul tablet. Ciò che parte

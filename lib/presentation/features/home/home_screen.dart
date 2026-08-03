@@ -125,7 +125,7 @@ class HomeScreen extends ConsumerWidget {
                 _quickAction(context,
                     icon: Icons.sync_rounded,
                     label: 'Sincronizza',
-                    onTap: () => context.push(AppRoutes.syncQueue)),
+                    onTap: () => context.push(AppRoutes.syncCenter)),
                 _quickAction(context,
                     icon: Icons.settings_outlined,
                     label: 'Impostazioni',

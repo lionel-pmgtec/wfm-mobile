@@ -16,7 +16,13 @@ final avvisiProvider = FutureProvider<List<NotificationAvviso>>((ref) async {
   final query = ref.watch(avvisiQueryProvider);
 
   // Avvisi creati sul tablet (local-first), filtrati come i remoti e in cima.
-  var locali = await ref.watch(createdAvvisiProvider.future);
+  // Se la lettura locale fallisce non si perde l'elenco del cruscotto.
+  var locali = <NotificationAvviso>[];
+  try {
+    locali = await ref.watch(createdAvvisiProvider.future);
+  } catch (_) {
+    locali = const [];
+  }
   if (query.trim().isNotEmpty) {
     final needle = query.toLowerCase();
     locali = locali
@@ -43,9 +49,13 @@ final avvisiProvider = FutureProvider<List<NotificationAvviso>>((ref) async {
 final avvisoDetailProvider =
     FutureProvider.family<NotificationAvviso, String>((ref, numero) async {
   // Prima gli avvisi creati sul tablet (id TMP): non esistono lato cruscotto.
-  final locali = await ref.watch(createdAvvisiProvider.future);
-  for (final a in locali) {
-    if (a.numeroAvviso == numero) return a;
+  try {
+    final locali = await ref.watch(createdAvvisiProvider.future);
+    for (final a in locali) {
+      if (a.numeroAvviso == numero) return a;
+    }
+  } catch (_) {
+    // Lettura locale non riuscita: si prosegue col cruscotto.
   }
   final repo = ref.watch(notificationRepositoryProvider);
   final res = await repo.getAvvisoDetail(numero);

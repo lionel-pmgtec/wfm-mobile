@@ -11,6 +11,7 @@
 // Persistenza Hive (box 'odl_extensions', chiave = numero OdL).
 
 import 'firma_cliente.dart';
+import 'material.dart';
 import 'odl_appuntamento.dart';
 import 'odl_attivita.dart';
 import 'odl_chiusura.dart';
@@ -54,6 +55,11 @@ class OdlExtension {
   final FirmaCliente? firmaCliente;
   final FirmaCliente? firmaTecnico;
   final OdlChiusura chiusura;
+
+  /// Materiali impegnati dal tecnico sul campo. Restano sul tablet: il
+  /// cruscotto accetta i materiali solo con l'esito, non sull'ordine.
+  final List<MaterialUsage> materiali;
+
   final DateTime updatedAt;
 
   const OdlExtension({
@@ -65,6 +71,7 @@ class OdlExtension {
     this.firmaCliente,
     this.firmaTecnico,
     this.chiusura = const OdlChiusura(),
+    this.materiali = const [],
     required this.updatedAt,
   });
 
@@ -83,6 +90,7 @@ class OdlExtension {
     FirmaCliente? firmaTecnico,
     bool clearFirmaTecnico = false,
     OdlChiusura? chiusura,
+    List<MaterialUsage>? materiali,
   }) =>
       OdlExtension(
         odlCode: odlCode,
@@ -97,6 +105,7 @@ class OdlExtension {
             ? null
             : (firmaTecnico ?? this.firmaTecnico),
         chiusura: chiusura ?? this.chiusura,
+        materiali: materiali ?? this.materiali,
         updatedAt: DateTime.now(),
       );
 
@@ -109,6 +118,7 @@ class OdlExtension {
         'firmaCliente': firmaCliente?.toJson(),
         'firmaTecnico': firmaTecnico?.toJson(),
         'chiusura': chiusura.toJson(),
+        'materiali': materiali.map(_materialeToJson).toList(),
         'updatedAt': updatedAt.toIso8601String(),
       };
 
@@ -135,8 +145,29 @@ class OdlExtension {
         chiusura: json['chiusura'] != null
             ? OdlChiusura.fromJson(json['chiusura'] as Map)
             : const OdlChiusura(),
+        materiali: ((json['materiali'] as List?) ?? [])
+            .map((e) => _materialeFromJson(e as Map))
+            .toList(),
         updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? '') ??
             DateTime.now(),
+      );
+
+  static Map<String, dynamic> _materialeToJson(MaterialUsage m) => {
+        'materialCode': m.materialCode,
+        'description': m.description,
+        'plannedQuantity': m.plannedQuantity,
+        'usedQuantity': m.usedQuantity,
+        'unitOfMeasure': m.unitOfMeasure,
+        'warehouseCode': m.warehouseCode,
+      };
+
+  static MaterialUsage _materialeFromJson(Map json) => MaterialUsage(
+        materialCode: (json['materialCode'] as String?) ?? '',
+        description: (json['description'] as String?) ?? '',
+        plannedQuantity: (json['plannedQuantity'] as num?) ?? 0,
+        usedQuantity: (json['usedQuantity'] as num?) ?? 0,
+        unitOfMeasure: (json['unitOfMeasure'] as String?) ?? 'PZ',
+        warehouseCode: (json['warehouseCode'] as String?) ?? '',
       );
 
   static Map<String, dynamic> _suspToJson(Suspension s) => {
