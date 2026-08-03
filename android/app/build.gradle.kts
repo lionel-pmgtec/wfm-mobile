@@ -1,10 +1,17 @@
 plugins {
     id("com.android.application")
     id("kotlin-android")
-    // Applica google-services (deve stare dopo il plugin Android): abilita Firebase/FCM.
-    id("com.google.gms.google-services")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+// Applica google-services (deve stare dopo il plugin Android): abilita Firebase/FCM.
+// Il file non è versionato (contiene le credenziali del progetto Firebase), e senza
+// di esso il plugin fa fallire il build. In dev lo saltiamo: FcmService va in mock
+// mode e le notifiche arrivano dal polling di NewItemsPollService. Basta aggiungere
+// android/app/google-services.json per riattivare Firebase, senza altre modifiche.
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
 }
 
 android {
