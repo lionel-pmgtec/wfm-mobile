@@ -12,9 +12,7 @@ oggetti a lui assegnati**.
 ```
 
 
->  **Documentazione completa** — funzionalità per il tecnico + API del backend:
-> **[DOCUMENTAZIONE.md](DOCUMENTAZIONE.md)**.
-
+>  **Documentazione completa** — funzionalità per il tecnico + API del backend
 
 ## Struttura del repo
 
@@ -71,12 +69,13 @@ al secondo. Se un giorno SAP valorizzerà latitudine/longitudine, quelle avranno
 precedenza senza modifiche all'app. Un contatore indica quanti oggetti **non sono
 localizzabili** (indirizzo assente o non trovato), invece di farli sparire.
 
+
+
 ### Chiusura intervento
 
 La **firma del cliente** si raccoglie direttamente nella pagina di esito
 ([`signature_pad.dart`](lib/presentation/widgets/signature_pad.dart)): si firma col
-dito o con la penna, si può cancellare e rifare. Prima era un semplice interruttore
-e nessuna firma veniva tracciata.
+dito o con la penna, si può cancellare e rifare.
 
 ### Materiali
 
