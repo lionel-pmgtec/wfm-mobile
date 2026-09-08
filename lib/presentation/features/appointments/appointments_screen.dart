@@ -2,8 +2,10 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../core/constants/app_constants.dart';
+import '../../../core/router/app_routes.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/widgets.dart';
@@ -19,7 +21,7 @@ class AppointmentsScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final appointments = ref.watch(appointmentsProvider(code));
     return Scaffold(
-      appBar: AppBar(title: Text('Appuntamenti · OdL $code'), actions: [OdlActionsMenu(code: code)]),
+      appBar: AppBar(title: Text('Appuntamenti · OdL $code'), actions: [OdlActionsMenu(code: code, scope: OdlMenuScope.appuntamenti)]),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _openEditor(context, ref),
         icon: const Icon(Icons.event_available),
@@ -36,31 +38,13 @@ class AppointmentsScreen extends ConsumerWidget {
               separatorBuilder: (_, __) => const SizedBox(height: 10),
               itemBuilder: (_, i) => _AppointmentCard(
                 a: appointments[i],
-                onEsito: () => _setOutcome(context, ref, appointments[i]),
+                // "Esito appuntamento" apre la pagina completa dedicata,
+                // non più un menu rapido incompleto.
+                onEsito: () =>
+                    context.push(AppRoutes.esitoAppuntamentoPath(code)),
               ),
             ),
     );
-  }
-
-  Future<void> _setOutcome(
-      BuildContext context, WidgetRef ref, Appointment a) async {
-    final outcome = await showModalBottomSheet<AppointmentOutcome>(
-      context: context,
-      builder: (_) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: AppointmentOutcome.values
-              .map((o) => ListTile(
-                    title: Text(o.label),
-                    onTap: () => Navigator.pop(context, o),
-                  ))
-              .toList(),
-        ),
-      ),
-    );
-    if (outcome != null) {
-      ref.read(appointmentsProvider(code).notifier).setOutcome(a.id, outcome);
-    }
   }
 
   Future<void> _openEditor(BuildContext context, WidgetRef ref) async {

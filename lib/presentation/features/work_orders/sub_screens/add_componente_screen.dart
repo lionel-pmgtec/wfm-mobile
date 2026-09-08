@@ -177,7 +177,7 @@ class _AddComponenteScreenState extends ConsumerState<AddComponenteScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Aggiungi componenti'),
-        actions: [OdlActionsMenu(code: widget.code)],
+        actions: [OdlActionsMenu(code: widget.code, scope: OdlMenuScope.addComponente)],
       ),
       body: orderAsync.when(
         loading: () => const WfmLoading(),

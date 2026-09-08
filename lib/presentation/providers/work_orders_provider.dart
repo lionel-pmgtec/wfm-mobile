@@ -51,6 +51,51 @@ final workOrdersProvider = FutureProvider<List<WorkOrder>>((ref) async {
   }
 });
 
+/// Elenco OdL filtrato per un singolo stato — usato dalle card cliccabili
+/// del "Riepilogo di oggi" in Home. Non tocca il filtro globale della scheda
+/// Ordini: ogni categoria ha il suo provider isolato.
+///
+/// La fonte è la stessa di [dashboardStatsProvider] (repo → getWorkOrders),
+/// quindi il numero mostrato sulla card coincide sempre con la lista aperta.
+final workOrdersByStatusProvider =
+    FutureProvider.family<List<WorkOrder>, WorkOrderStatus>((ref, status) async {
+  ref.watch(connectivityStatusProvider); // refetch quando cambia rete
+  final repo = ref.watch(workOrderRepositoryProvider);
+  final result = await repo.getWorkOrders(filter: WorkOrderFilter(status: status));
+  return switch (result) {
+    Success(value: final v) => v,
+    Err(failure: final f) => throw Exception(f.message),
+  };
+});
+
+/// Elenco degli OdL di Pronto Intervento (urgenti), ordinati per priorità.
+///
+/// Deriva dai campi reali del backend via [WorkOrder.isProntoIntervento];
+/// esclude gli ordini chiusi/annullati/inviati a SAP (non più azionabili).
+final prontoInterventoWorkOrdersProvider =
+    FutureProvider<List<WorkOrder>>((ref) async {
+  ref.watch(connectivityStatusProvider);
+  final repo = ref.watch(workOrderRepositoryProvider);
+  final result = await repo.getWorkOrders();
+  final all = switch (result) {
+    Success(value: final v) => v,
+    Err(failure: final f) => throw Exception(f.message),
+  };
+  final pi = all
+      .where((o) => o.isProntoIntervento && !o.isClosed)
+      .toList()
+    // I più urgenti in cima: prima priorità alta, poi appuntamento più vicino.
+    ..sort((a, b) {
+      if (a.isHighPriority != b.isHighPriority) {
+        return a.isHighPriority ? -1 : 1;
+      }
+      final da = a.appointmentDate ?? a.dataEsec ?? DateTime(2100);
+      final db = b.appointmentDate ?? b.dataEsec ?? DateTime(2100);
+      return da.compareTo(db);
+    });
+  return pi;
+});
+
 /// Statistiche per la dashboard (home).
 final dashboardStatsProvider =
     FutureProvider<Map<WorkOrderStatus, int>>((ref) async {

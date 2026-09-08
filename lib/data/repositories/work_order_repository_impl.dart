@@ -143,6 +143,12 @@ class WorkOrderRepositoryImpl implements WorkOrderRepository {
         return _updateStatusOffline(externalCode, newStatus,
             reason: reason, note: note);
       }
+      // Errore del server: mostra il messaggio vero del backend (es. "Stato
+      // non valido" o "non assegnato"), non la stringa tecnica di Dio.
+      if (e is DioException) {
+        return Err(ServerFailure(
+            _serverMessage(e) ?? e.message ?? 'Errore aggiornamento stato.'));
+      }
       return Err(ServerFailure(e.toString()));
     }
   }
@@ -244,9 +250,32 @@ class WorkOrderRepositoryImpl implements WorkOrderRepository {
       await remote.deleteWorkOrder(externalCode);
       await local.deleteWorkOrder(externalCode);
       return const Success<void>(null);
+    } on DioException catch (e) {
+      // Il backend dichiara 501 su DELETE /work-orders/:id: gli ordini
+      // provengono da SAP e la cancellazione richiede il servizio SAP di
+      // scrittura, non ancora collegato. Messaggio chiaro all'operatore,
+      // niente stack Dio grezzo. Un'eliminazione solo locale sarebbe finta:
+      // l'ordine è anche sul cruscotto e tornerebbe al primo poll.
+      if (e.response?.statusCode == 501) {
+        return Err(ServerFailure(_serverMessage(e) ??
+            'Eliminazione non disponibile: gli ordini provengono da SAP e '
+                'non possono essere eliminati dal tablet.'));
+      }
+      return Err(ServerFailure(
+          _serverMessage(e) ?? e.message ?? 'Errore eliminazione ordine.'));
     } catch (e) {
       return Err(ServerFailure(e.toString()));
     }
+  }
+
+  /// Estrae il messaggio leggibile dal corpo dell'errore del backend
+  /// (`{ error: "…" }`), evitando di mostrare la stringa tecnica di Dio.
+  String? _serverMessage(DioException e) {
+    final data = e.response?.data;
+    if (data is Map && data['error'] != null) {
+      return data['error'].toString();
+    }
+    return null;
   }
 
   @override

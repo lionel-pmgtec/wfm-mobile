@@ -28,9 +28,7 @@ class _WfmAppState extends ConsumerState<WfmApp> {
 
     // Inizializza il notifier per registrare onReceived sul servizio push.
     ref.read(notificationsProvider.notifier);
-
-    // Attiva il polling dei nuovi OdL/Avvisi (parte al login, stop al logout):
-    // rileva gli elementi creati lato Cruscotto e mostra una notifica locale.
+    
     ref.read(newItemsPollServiceProvider);
 
     // Attiva il processore della coda offline: al ritorno della connettività
@@ -65,8 +63,6 @@ class _WfmAppState extends ConsumerState<WfmApp> {
       themeMode: settings.themeMode,
       routerConfig: router,
       builder: (context, child) {
-        // Applica il fattore di scala del testo scelto nelle Impostazioni a
-        // tutta l'app, ignorando l'eventuale valore di sistema per coerenza.
         final mq = MediaQuery.of(context);
         return MediaQuery(
           data: mq.copyWith(

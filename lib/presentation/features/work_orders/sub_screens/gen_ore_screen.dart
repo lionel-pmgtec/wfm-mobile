@@ -14,6 +14,8 @@ import '../../../../core/utils/formatters.dart';
 import '../../../../core/widgets/widgets.dart';
 import '../widgets/odl_actions_menu.dart';
 import '../../../../domain/entities/entities.dart';
+import '../../../providers/auth_provider.dart';
+import '../../../providers/odl_extension_provider.dart';
 import '../../../providers/work_orders_provider.dart';
 
 class GenOreScreen extends ConsumerStatefulWidget {
@@ -43,7 +45,7 @@ class _GenOreScreenState extends ConsumerState<GenOreScreen> {
   Widget build(BuildContext context) {
     final async = ref.watch(workOrderDetailProvider(widget.code));
     return Scaffold(
-      appBar: AppBar(title: const Text('Genera ore'), actions: [OdlActionsMenu(code: widget.code)]),
+      appBar: AppBar(title: const Text('Genera ore'), actions: [OdlActionsMenu(code: widget.code, scope: OdlMenuScope.genOre)]),
       body: async.when(
         loading: () => const WfmLoading(),
         error: (e, _) => WfmErrorState(message: e.toString()),
@@ -52,8 +54,15 @@ class _GenOreScreenState extends ConsumerState<GenOreScreen> {
     );
   }
 
+  /// Automezzo = voce le cui ore NON si scrivono: sono la somma delle voci di
+  /// lavoro. Escluso dalla scelta perché è calcolato, non digitato.
+  bool _isAutomezzo(Operation op) =>
+      '${op.testoBreve} ${op.description}'.toLowerCase().contains('automezz');
+
   Widget _buildForm(BuildContext context, WorkOrder order) {
-    final ops = order.operations;
+    // Solo le voci di LAVORO: l'automezzo è la somma, non si digita.
+    final ops =
+        order.operations.where((o) => !_isAutomezzo(o)).toList();
     if (ops.isEmpty) {
       return const EmptyState(
         title: 'Nessuna operazione',
@@ -62,7 +71,11 @@ class _GenOreScreenState extends ConsumerState<GenOreScreen> {
         icon: Icons.work_outline,
       );
     }
-    _operationNumber ??= ops.first.number;
+    if (_operationNumber == null ||
+        !ops.any((o) => o.number == _operationNumber)) {
+      _operationNumber = ops.first.number;
+    }
+    final cid = ref.read(authControllerProvider.notifier).user?.cid ?? '';
     return Form(
       key: _formKey,
       child: ListView(
@@ -72,6 +85,9 @@ class _GenOreScreenState extends ConsumerState<GenOreScreen> {
           FieldRow(label: 'Numero ordine', value: order.externalCode),
           const SizedBox(height: 12),
           FieldRow(label: 'Descrizione', value: order.woTypeDescription, fullWidth: true),
+          const SizedBox(height: 12),
+          // Operatore che registra le ore = tecnico loggato (non più vuoto).
+          FieldRow(label: 'Operatore (CID)', value: cid.isEmpty ? '—' : cid),
           const SectionHeader(title: 'OPERAZIONE'),
           DropdownButtonFormField<String>(
             initialValue: _operationNumber,
@@ -197,13 +213,39 @@ class _GenOreScreenState extends ConsumerState<GenOreScreen> {
       return;
     }
     setState(() => _saving = true);
-    // TODO(backend): inviare la conferma ore al Cruscotto (P69/TimeConfirmation)
-    // via un endpoint dedicato / SyncRepository quando disponibile.
-    await Future<void>.delayed(const Duration(milliseconds: 350));
+
+    // Ore + minuti -> ore decimali (il backend `hoursWorked` usa `hours`).
+    final decimali = _hours + _minutes / 60.0;
+    final order = ref.read(workOrderDetailProvider(widget.code)).valueOrNull;
+    final op = order?.operations.firstWhere(
+      (o) => o.number == _operationNumber,
+      orElse: () => Operation(number: _operationNumber ?? '', description: ''),
+    );
+    final descr = (op?.testoBreve.isNotEmpty ?? false)
+        ? op!.testoBreve
+        : (op?.description ?? '');
+
+    // Merge nello stesso stock usato dalla scheda Operazioni e trasmesso alla
+    // chiusura (POST /esiti → hoursWorked). Sostituisce l'eventuale riga della
+    // stessa operazione invece di duplicarla.
+    final notifier = ref.read(odlExtensionProvider(widget.code).notifier);
+    final attuali = ref.read(odlExtensionProvider(widget.code)).ore;
+    final aggiornate = <OdlOreLavorate>[
+      for (final o in attuali)
+        if (o.operationNumber != _operationNumber) o,
+      OdlOreLavorate(
+        operationNumber: _operationNumber ?? '',
+        description: descr,
+        hours: decimali,
+        isAutomezzo: false,
+      ),
+    ];
+    await notifier.setOre(aggiornate);
+
     if (!mounted) return;
     setState(() => _saving = false);
     showSapToast(context,
-        'Ore registrate: $_hours h $_minutes min su op. $_operationNumber');
+        'Ore registrate: $_hours h $_minutes min su op. $_operationNumber — verranno inviate alla chiusura');
     context.pop();
   }
 }

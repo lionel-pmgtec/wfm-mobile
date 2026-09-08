@@ -86,8 +86,16 @@ Meter? meterFromJson(Map<String, dynamic>? j) {
     materialCode: j['materialCode']?.toString() ?? '',
     location: j['location'] ?? '',
     sector: j['sector'] ?? '',
+    ubicazione: j['ubicazione']?.toString() ?? '',
+    ubicazioneDesc: j['ubicazioneDesc']?.toString() ?? '',
+    posizioneInBatteria: j['posizioneInBatteria']?.toString() ?? '',
+    oggettoAllacciamento: j['oggettoAllacciamento']?.toString() ?? '',
     lastReading: j['lastReading'] as num?,
     lastReadingDate: _date(j['lastReadingDate']),
+    previousReading: j['previousReading'] as num?,
+    previousReadingDate: _date(j['previousReadingDate']),
+    previousReadingTime: _s(j['previousReadingTime']),
+    previousReadingStatus: _s(j['previousReadingStatus']),
   );
 }
 
@@ -207,6 +215,9 @@ WorkOrder workOrderFromJson(Map<String, dynamic> j) {
     dataFine: _date(j['dataFine']),
     accountingSector: j['accountingSector'] ?? '',
     notes: j['notes'] ?? '',
+    // Note SAP (sola lettura) e note aggiunte sul campo, separate dal backend.
+    noteSap: j['noteSap']?.toString() ?? '',
+    noteAggiunte: j['noteAggiunte']?.toString() ?? '',
   );
 }
 
@@ -528,10 +539,43 @@ Map<String, dynamic> esitoToJson(Esito e) => {
                 'readingDateTime': r.readingDateTime.toIso8601String(),
               })
           .toList(),
-      'materialsUsed': const [],
+      // Il backend legge `materials` (o `materialiUsati`), non `materialsUsed`:
+      // usa `materialCode`, `usedQuantity`, `warehouseCode` di ogni riga.
+      'materials': e.materials.map(materialUsageToJson).toList(),
+      // Esito appuntamento nel nodo `appointment` (chiavi del backend).
+      if (e.appointment != null)
+        'appointment': {
+          'result': e.appointment!.esito,
+          'causeCode': e.appointment!.causa,
+          'reasonCode': e.appointment!.motivo,
+          'customerPresent': e.appointment!.clientePresente == null
+              ? null
+              : (e.appointment!.clientePresente! ? 'SI' : 'NO'),
+          'visitDate': e.appointment!.sopralluogoData?.toIso8601String(),
+          'visitTime': e.appointment!.sopralluogoOra,
+          'pickup': e.appointment!.ritiro,
+          'delayCauseCode': e.appointment!.causaRitardo,
+          'delayReason': e.appointment!.motivoRitardo,
+        },
+      // Ore per operazione: forma attesa dal backend/cruscotto.
+      // Il backend odierno ne somma solo `hours` (oreLavorate); `operation` e
+      // `description` servono al cruscotto per la colonna "Ore lavorate" per
+      // riga, appena il backend le inoltrerà.
       'hoursWorked': e.hoursWorked
-          .map((h) => {'technicianCID': h.technicianCid, 'hours': h.hours})
+          .map((h) => {
+                'operation': h.operation,
+                'description': h.description,
+                'hours': h.hours,
+              })
           .toList(),
+      // Spostamento contatore (nodo `contatore` di POST /esiti). Inviato solo
+      // se l'operatore ha indicato una nuova ubicazione.
+      if ((e.newMeterLocation ?? '').trim().isNotEmpty ||
+          (e.newMeterLocationAdditional ?? '').trim().isNotEmpty)
+        'contatore': {
+          'newLocation': e.newMeterLocation,
+          'newLocationAdditional': e.newMeterLocationAdditional,
+        },
       'geolocation': e.geolocation == null
           ? null
           : {

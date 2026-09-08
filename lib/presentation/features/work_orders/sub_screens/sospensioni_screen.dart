@@ -39,7 +39,7 @@ class SospensioniScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final list = ref.watch(sospensioniProvider(code));
     return Scaffold(
-      appBar: AppBar(title: Text('Sospensioni · $code'), actions: [OdlActionsMenu(code: code)]),
+      appBar: AppBar(title: Text('Sospensioni · $code'), actions: [OdlActionsMenu(code: code, scope: OdlMenuScope.sospensioni)]),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _openEditor(context, ref),
         icon: const Icon(Icons.add),

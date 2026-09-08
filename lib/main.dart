@@ -30,15 +30,12 @@ Future<void> main() async {
     DeviceOrientation.landscapeRight,
   ]);
 
-  // Edge-to-edge: l'app disegna DIETRO le barre di sistema (status + navigation),
-  // così il gradiente copre tutto lo schermo senza fasce opache.
   await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
 
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.light,
-    // Barra di navigazione trasparente + niente scrim automatico di Android
-    // (contrast enforced = false): niente più banda scura in basso.
+
     systemNavigationBarColor: Colors.transparent,
     systemNavigationBarIconBrightness: Brightness.dark,
     systemNavigationBarContrastEnforced: false,

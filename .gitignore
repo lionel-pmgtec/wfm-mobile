@@ -18,8 +18,8 @@ migrate_working_dir/
 *.ipr
 *.iws
 
-# --- Claude local config ---
-.claude/settings.local.json
+# --- Claude (tutta la cartella, non deve andare su GitHub) ---
+.claude/
 
 # --- Flutter / Dart ---
 .dart_tool/

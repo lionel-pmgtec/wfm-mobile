@@ -7,54 +7,78 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/constants/app_constants.dart';
 import '../../../core/router/app_routes.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/widgets.dart';
 import '../../../domain/entities/entities.dart';
-import '../../providers/auth_provider.dart';
 import '../../providers/avviso_extension_provider.dart';
 import '../../providers/avvisi_provider.dart';
 import '../../providers/realtime_provider.dart';
 import '../../widgets/sync_widgets.dart';
-import 'widgets/avviso_widgets.dart';
 
-/// Categoria di filtro dashboard.
-enum AvvisiViewFilter {
+/// Filtro di stato dell'Avviso. Non è un valore SAP codificato a mano: è la
+/// partizione aperto/chiuso derivata dal dato reale ([NotificationAvviso.isChiuso]).
+enum AvvisiStatoFilter {
   tutti,
-  miei,
-  urgenti,
-  inAttesa,
-  conPreventivo,
-  daFirmare,
+  aperti,
   chiusi;
 
   String get label => switch (this) {
-        AvvisiViewFilter.tutti => 'Tutti',
-        AvvisiViewFilter.miei => 'Miei',
-        AvvisiViewFilter.urgenti => 'Urgenti',
-        AvvisiViewFilter.inAttesa => 'In attesa',
-        AvvisiViewFilter.conPreventivo => 'Con preventivo',
-        AvvisiViewFilter.daFirmare => 'Da firmare',
-        AvvisiViewFilter.chiusi => 'Chiusi',
+        AvvisiStatoFilter.tutti => 'Tutti',
+        AvvisiStatoFilter.aperti => 'Aperti',
+        AvvisiStatoFilter.chiusi => 'Chiusi',
       };
 
   IconData get icon => switch (this) {
-        AvvisiViewFilter.tutti => Icons.list_alt_rounded,
-        AvvisiViewFilter.miei => Icons.person_outline,
-        AvvisiViewFilter.urgenti => Icons.priority_high_rounded,
-        AvvisiViewFilter.inAttesa => Icons.hourglass_bottom_rounded,
-        AvvisiViewFilter.conPreventivo => Icons.description_outlined,
-        AvvisiViewFilter.daFirmare => Icons.draw_outlined,
-        AvvisiViewFilter.chiusi => Icons.check_circle_outline,
+        AvvisiStatoFilter.tutti => Icons.all_inclusive_rounded,
+        AvvisiStatoFilter.aperti => Icons.radio_button_unchecked_rounded,
+        AvvisiStatoFilter.chiusi => Icons.check_circle_outline,
       };
 }
 
-final avvisiViewFilterProvider =
-    StateProvider<AvvisiViewFilter>((ref) => AvvisiViewFilter.tutti);
+/// Tipo d'Avviso selezionato (codice SAP grezzo `tipo`), oppure null = tutti.
+/// I valori possibili NON sono una lista statica: vengono generati a runtime
+/// dai tipi realmente presenti nei dati caricati dal Cruscotto.
+final avvisiTipoFilterProvider = StateProvider<String?>((ref) => null);
 
-final avvisiCategoryFilterProvider =
-    StateProvider<AvvisoCategory?>((ref) => null);
+/// Filtro stato (Aperto/Chiuso) — derivato dal dato, non da valori hardcoded.
+final avvisiStatoFilterProvider =
+    StateProvider<AvvisiStatoFilter>((ref) => AvvisiStatoFilter.tutti);
+
+/// Un tipo d'Avviso disponibile fra i dati, col conteggio. Prodotto a runtime.
+class _TipoOption {
+  final String code; // codice SAP grezzo (a.tipo)
+  final String label; // etichetta leggibile (a.sottotipo.label)
+  final int count;
+  final bool isPi; // almeno un avviso di questo tipo è Pronto Intervento
+  const _TipoOption(this.code, this.label, this.count, this.isPi);
+}
+
+/// Costruisce l'elenco dei tipi presenti nei dati caricati. Nessuna lista
+/// statica: le opzioni escono dai soli tipi realmente ricevuti dal backend,
+/// ordinate coi Pronto Intervento in testa, poi per frequenza.
+List<_TipoOption> _buildTipoOptions(List<NotificationAvviso> raw) {
+  final byCode = <String, List<NotificationAvviso>>{};
+  for (final a in raw) {
+    final code = a.tipo.trim();
+    if (code.isEmpty) continue;
+    byCode.putIfAbsent(code, () => []).add(a);
+  }
+  final options = byCode.entries.map((e) {
+    final items = e.value;
+    // Etichetta allineata al Cruscotto: "CODICE · Descrizione".
+    final label = items.first.tipoLabel;
+    final isPi = items.any((a) => a.isProntoIntervento);
+    return _TipoOption(e.key, label, items.length, isPi);
+  }).toList()
+    ..sort((a, b) {
+      if (a.isPi != b.isPi) return a.isPi ? -1 : 1;
+      return b.count.compareTo(a.count);
+    });
+  return options;
+}
 
 class AvvisiScreen extends ConsumerStatefulWidget {
   const AvvisiScreen({super.key});
@@ -75,14 +99,13 @@ class _AvvisiScreenState extends ConsumerState<AvvisiScreen> {
     void resetPage() {
       if (_visible != _pageSize) setState(() => _visible = _pageSize);
     }
-    ref.listen(avvisiViewFilterProvider, (_, __) => resetPage());
-    ref.listen(avvisiCategoryFilterProvider, (_, __) => resetPage());
+    ref.listen(avvisiTipoFilterProvider, (_, __) => resetPage());
+    ref.listen(avvisiStatoFilterProvider, (_, __) => resetPage());
     ref.listen(avvisiQueryProvider, (_, __) => resetPage());
 
     final async = ref.watch(avvisiProvider);
-    final view = ref.watch(avvisiViewFilterProvider);
-    final categoria = ref.watch(avvisiCategoryFilterProvider);
-    final user = ref.watch(authControllerProvider.notifier).user;
+    final tipo = ref.watch(avvisiTipoFilterProvider);
+    final stato = ref.watch(avvisiStatoFilterProvider);
 
     return Scaffold(
       appBar: AppBar(
@@ -103,9 +126,9 @@ class _AvvisiScreenState extends ConsumerState<AvvisiScreen> {
             },
           ),
           IconButton(
-            tooltip: 'Filtri avanzati',
+            tooltip: 'Filtra per stato',
             icon: Badge(
-              isLabelVisible: categoria != null,
+              isLabelVisible: stato != AvvisiStatoFilter.tutti,
               child: const Icon(Icons.tune_rounded),
             ),
             onPressed: () => _openFilters(context, ref),
@@ -132,52 +155,69 @@ class _AvvisiScreenState extends ConsumerState<AvvisiScreen> {
                   ref.read(avvisiQueryProvider.notifier).state = v,
             ),
           ),
-          // Chips di stato.
-          SizedBox(
-            height: 50,
-            child: ListView(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              scrollDirection: Axis.horizontal,
-              children: [
-                for (final f in AvvisiViewFilter.values)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 8),
-                    child: FilterChip(
-                      avatar: Icon(f.icon,
-                          size: 16,
-                          color: view == f
-                              ? Colors.white
-                              : AppColors.primary),
-                      label: Text(f.label),
-                      selected: view == f,
-                      onSelected: (_) => ref
-                          .read(avvisiViewFilterProvider.notifier)
-                          .state = f,
-                      showCheckmark: false,
-                      selectedColor: AppColors.primary,
-                      backgroundColor: AppColors.surface,
-                      labelStyle: TextStyle(
-                          fontWeight: FontWeight.w700,
-                          color: view == f
-                              ? Colors.white
-                              : AppColors.primary),
+          // Chip per Tipo d'Avviso — generate dai tipi realmente presenti nei
+          // dati del Cruscotto (nessuna lista statica). "Tutti" + un chip per
+          // ogni tipo, coi Pronto Intervento in testa.
+          async.maybeWhen(
+            data: (raw) {
+              final tipi = _buildTipoOptions(raw);
+              if (tipi.isEmpty) return const SizedBox(height: 4);
+              return SizedBox(
+                height: 50,
+                child: ListView(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  scrollDirection: Axis.horizontal,
+                  children: [
+                    _tipoChip(
+                      ref,
+                      label: 'Tutti',
+                      icon: Icons.list_alt_rounded,
+                      selected: tipo == null,
+                      isPi: false,
+                      onTap: () => ref
+                          .read(avvisiTipoFilterProvider.notifier)
+                          .state = null,
                     ),
-                  ),
-              ],
-            ),
+                    for (final t in tipi)
+                      _tipoChip(
+                        ref,
+                        label: '${t.label} (${t.count})',
+                        icon: t.isPi
+                            ? Icons.flash_on_rounded
+                            : Icons.sell_outlined,
+                        selected: tipo == t.code,
+                        isPi: t.isPi,
+                        onTap: () => ref
+                            .read(avvisiTipoFilterProvider.notifier)
+                            .state = t.code,
+                      ),
+                  ],
+                ),
+              );
+            },
+            orElse: () => const SizedBox(height: 4),
           ),
-          // Filtro categoria attivo (chip removibile).
-          if (categoria != null)
+          // Chip dei filtri attivi (removibili): tipo e stato.
+          if (tipo != null || stato != AvvisiStatoFilter.tutti)
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 2, 12, 4),
               child: Wrap(spacing: 8, children: [
-                Chip(
-                  avatar: Icon(categoria.icon, size: 14),
-                  label: Text('Categoria: ${categoria.label}'),
-                  onDeleted: () => ref
-                      .read(avvisiCategoryFilterProvider.notifier)
-                      .state = null,
-                ),
+                if (tipo != null)
+                  Chip(
+                    avatar: const Icon(Icons.sell_outlined, size: 14),
+                    label: Text(avvisoTipoLabel(tipo)),
+                    onDeleted: () => ref
+                        .read(avvisiTipoFilterProvider.notifier)
+                        .state = null,
+                  ),
+                if (stato != AvvisiStatoFilter.tutti)
+                  Chip(
+                    avatar: Icon(stato.icon, size: 14),
+                    label: Text('Stato: ${stato.label}'),
+                    onDeleted: () => ref
+                        .read(avvisiStatoFilterProvider.notifier)
+                        .state = AvvisiStatoFilter.tutti,
+                  ),
               ]),
             ),
           Expanded(
@@ -189,8 +229,7 @@ class _AvvisiScreenState extends ConsumerState<AvvisiScreen> {
                     message: e.toString(),
                     onRetry: () => ref.invalidate(avvisiProvider)),
                 data: (raw) {
-                  final filtered = _applyFilters(
-                      raw, view, categoria, user?.cid, ref);
+                  final filtered = _applyFilters(raw, tipo, stato);
                   if (filtered.isEmpty) {
                     return const EmptyState(
                         title: 'Nessun avviso',
@@ -238,10 +277,41 @@ class _AvvisiScreenState extends ConsumerState<AvvisiScreen> {
     );
   }
 
+  /// Chip di un filtro Tipo. I Pronto Intervento sono resi in rosso per
+  /// coerenza con l'evidenziazione nella lista.
+  Widget _tipoChip(
+    WidgetRef ref, {
+    required String label,
+    required IconData icon,
+    required bool selected,
+    required bool isPi,
+    required VoidCallback onTap,
+  }) {
+    final accent = isPi ? const Color(0xFFD32F2F) : AppColors.primary;
+    return Padding(
+      padding: const EdgeInsets.only(right: 8),
+      child: FilterChip(
+        avatar: Icon(icon,
+            size: 16, color: selected ? Colors.white : accent),
+        label: Text(label),
+        selected: selected,
+        onSelected: (_) => onTap(),
+        showCheckmark: false,
+        selectedColor: accent,
+        backgroundColor: AppColors.surface,
+        side: BorderSide(
+            color: isPi ? accent.withValues(alpha: 0.5) : AppColors.border),
+        labelStyle: TextStyle(
+            fontWeight: FontWeight.w700,
+            color: selected ? Colors.white : accent),
+      ),
+    );
+  }
+
+  /// Sheet di filtro per Stato (Aperto/Chiuso), derivato dai dati reali.
   Future<void> _openFilters(BuildContext context, WidgetRef ref) async {
-    AvvisoCategory? selected =
-        ref.read(avvisiCategoryFilterProvider);
-    final res = await showModalBottomSheet<AvvisoCategory?>(
+    AvvisiStatoFilter selected = ref.read(avvisiStatoFilterProvider);
+    final res = await showModalBottomSheet<AvvisiStatoFilter>(
       context: context,
       backgroundColor: Colors.transparent,
       builder: (_) => StatefulBuilder(builder: (ctx, setSt) {
@@ -255,23 +325,22 @@ class _AvvisiScreenState extends ConsumerState<AvvisiScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text('Filtra per categoria',
+              const Text('Filtra per stato',
                   style: AppTextStyles.headingMedium),
               const SizedBox(height: 12),
-              for (final c in [null, ...AvvisoCategory.values])
-                RadioListTile<AvvisoCategory?>(
-                  value: c,
+              for (final s in AvvisiStatoFilter.values)
+                RadioListTile<AvvisiStatoFilter>(
+                  value: s,
                   groupValue: selected,
-                  onChanged: (v) => setSt(() => selected = v),
-                  title: Text(c?.label ?? 'Tutte'),
-                  secondary: Icon(c?.icon ?? Icons.all_inclusive,
-                      color: AppColors.primary),
+                  onChanged: (v) => setSt(() => selected = v!),
+                  title: Text(s.label),
+                  secondary: Icon(s.icon, color: AppColors.primary),
                 ),
               const SizedBox(height: 8),
               Row(children: [
                 Expanded(
                   child: OutlinedButton(
-                    onPressed: () => Navigator.pop(ctx, null),
+                    onPressed: () => Navigator.pop(ctx),
                     child: const Text('Annulla'),
                   ),
                 ),
@@ -289,47 +358,36 @@ class _AvvisiScreenState extends ConsumerState<AvvisiScreen> {
       }),
     );
     if (res != null) {
-      ref.read(avvisiCategoryFilterProvider.notifier).state =
-          res == AvvisoCategory.prontoIntervento ||
-                  res == AvvisoCategory.richiestaPreventivo
-              ? res
-              : null;
+      ref.read(avvisiStatoFilterProvider.notifier).state = res;
     }
   }
 
+  /// Applica i filtri Tipo + Stato e porta i Pronto Intervento in cima.
   List<NotificationAvviso> _applyFilters(
     List<NotificationAvviso> raw,
-    AvvisiViewFilter view,
-    AvvisoCategory? categoria,
-    String? myCid,
-    WidgetRef ref,
+    String? tipo,
+    AvvisiStatoFilter stato,
   ) {
-    return raw.where((a) {
-      if (categoria != null && a.categoria != categoria) return false;
-      switch (view) {
-        case AvvisiViewFilter.tutti:
+    final filtered = raw.where((a) {
+      if (tipo != null && a.tipo.trim() != tipo) return false;
+      switch (stato) {
+        case AvvisiStatoFilter.tutti:
           return true;
-        case AvvisiViewFilter.miei:
-          return myCid != null && a.cidAssegnato == myCid;
-        case AvvisiViewFilter.urgenti:
-          return a.isUrgente;
-        case AvvisiViewFilter.inAttesa:
-          return !a.hasOrdineCollegato && !a.isChiuso;
-        case AvvisiViewFilter.conPreventivo:
-          final ext = ref.read(avvisoExtensionProvider(a.numeroAvviso));
-          return ext.preventivo?.hasMateriali == true;
-        case AvvisiViewFilter.daFirmare:
-          final ext = ref.read(avvisoExtensionProvider(a.numeroAvviso));
-          return ext.preventivo?.hasMateriali == true &&
-              ext.preventivo?.hasFirma != true;
-        case AvvisiViewFilter.chiusi:
-          return a.isChiuso ||
-              ref.read(avvisoExtensionProvider(a.numeroAvviso))
-                      .preventivo
-                      ?.stato ==
-                  PreventivoStato.chiuso;
+        case AvvisiStatoFilter.aperti:
+          return !a.isChiuso;
+        case AvvisiStatoFilter.chiusi:
+          return a.isChiuso;
       }
     }).toList();
+
+    // I Pronto Intervento sempre prima degli altri (ordinamento stabile:
+    // preserva l'ordine relativo all'interno di ciascun gruppo).
+    final pi = <NotificationAvviso>[];
+    final altri = <NotificationAvviso>[];
+    for (final a in filtered) {
+      (a.isProntoIntervento ? pi : altri).add(a);
+    }
+    return [...pi, ...altri];
   }
 }
 
@@ -395,50 +453,122 @@ class _AvvisoItem extends ConsumerWidget {
     final ext = ref.watch(avvisoExtensionProvider(avviso.numeroAvviso));
     final hasPreventivo = ext.preventivo?.hasMateriali == true;
     final hasFirma = ext.preventivo?.hasFirma == true;
+    final isPi = avviso.isProntoIntervento;
+    const piRed = Color(0xFFD32F2F);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
-      child: WfmCard(
-        onTap: onTap,
-        child: Row(
-          children: [
-            Container(
-              width: 44,
-              height: 44,
-              decoration: BoxDecoration(
-                  color: avviso.isUrgente
-                      ? AppColors.accentRed.withValues(alpha: 0.14)
-                      : avviso.interruzioneFornitura
-                          ? AppColors.statusInProgressBg
-                          : AppColors.statusNewBg,
-                  borderRadius: BorderRadius.circular(10)),
-              child: Icon(
-                  avviso.sottotipo.icon,
-                  color: avviso.isUrgente
-                      ? AppColors.accentRed
-                      : avviso.interruzioneFornitura
-                          ? AppColors.accentOrange
-                          : AppColors.statusNew),
+      child: Material(
+        color: isPi ? const Color(0xFFFFF5F5) : AppColors.surface,
+        borderRadius: BorderRadius.circular(kRadiusMd),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(kRadiusMd),
+          child: Container(
+            padding: const EdgeInsets.all(kSpacingLg),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(kRadiusMd),
+              border: Border.all(
+                color: isPi ? piRed.withValues(alpha: 0.55) : AppColors.border,
+                width: isPi ? 1.3 : 1,
+              ),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(children: [
-                    Text(avviso.numeroAvviso,
-                        style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.primary)),
-                    const SizedBox(width: 8),
-                    WfmCategoryChip(
-                        sottotipo: avviso.sottotipo, dense: true),
-                    if (avviso.isUrgente) ...[
-                      const SizedBox(width: 6),
-                      const Icon(Icons.priority_high_rounded,
-                          size: 14, color: AppColors.accentRed),
-                    ],
-                  ]),
+            child: Row(
+              children: [
+                // Banda rossa verticale: marca subito i Pronto Intervento.
+                if (isPi) ...[
+                  Container(
+                    width: 4,
+                    height: 52,
+                    decoration: BoxDecoration(
+                      color: piRed,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                ],
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                      color: isPi
+                          ? piRed.withValues(alpha: 0.14)
+                          : avviso.interruzioneFornitura
+                              ? AppColors.statusInProgressBg
+                              : AppColors.statusNewBg,
+                      borderRadius: BorderRadius.circular(10)),
+                  child: Icon(
+                      avviso.sottotipo.icon,
+                      color: isPi
+                          ? piRed
+                          : avviso.interruzioneFornitura
+                              ? AppColors.accentOrange
+                              : AppColors.statusNew),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      if (isPi) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: piRed,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Row(mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.flash_on_rounded,
+                                    size: 11, color: Colors.white),
+                                SizedBox(width: 3),
+                                Text('PRONTO INTERVENTO',
+                                    style: TextStyle(
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w800,
+                                        letterSpacing: 0.4,
+                                        color: Colors.white)),
+                              ]),
+                        ),
+                        const SizedBox(height: 6),
+                      ],
+                      Row(children: [
+                        Text(avviso.numeroAvviso,
+                            style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.primary)),
+                        const SizedBox(width: 8),
+                        // Badge tipo leggibile "CODICE · Descrizione" (Cruscotto).
+                        Flexible(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: (isPi ? piRed : AppColors.primary)
+                                  .withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(
+                                  color: (isPi ? piRed : AppColors.primary)
+                                      .withValues(alpha: 0.25)),
+                            ),
+                            child: Text(
+                              avviso.tipoLabel,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: isPi ? piRed : AppColors.primary),
+                            ),
+                          ),
+                        ),
+                        if (avviso.isUrgente) ...[
+                          const SizedBox(width: 6),
+                          const Icon(Icons.priority_high_rounded,
+                              size: 14, color: piRed),
+                        ],
+                      ]),
                   const SizedBox(height: 4),
                   Text(avviso.descrizione,
                       maxLines: 2,
@@ -492,7 +622,7 @@ class _AvvisoItem extends ConsumerWidget {
                             color: AppColors.primary),
                       if (hasFirma) ...[
                         const SizedBox(width: 6),
-                        _MiniBadge(
+                        const _MiniBadge(
                             icon: Icons.draw_outlined,
                             label: 'Firmato',
                             color: AppColors.accentGreen),
@@ -504,9 +634,11 @@ class _AvvisoItem extends ConsumerWidget {
             ),
             const Icon(Icons.chevron_right, color: AppColors.textHint),
           ],
+              ),
+            ),
+          ),
         ),
-      ),
-    );
+      );
   }
 }
 

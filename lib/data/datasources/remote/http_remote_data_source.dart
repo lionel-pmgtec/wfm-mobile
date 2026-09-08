@@ -29,6 +29,7 @@ class HttpRemoteDataSource implements WfmRemoteDataSource {
   static const _tamCodes = '/anagrafica/tam-codes';
   static const _causes = '/anagrafica/causes';
   static const _solutions = '/anagrafica/solutions';
+  static const _priorities = '/anagrafica/priorities'; // priorità per schema SAP
   static const _equipment = '/anagrafica/equipment';
   static const _tecnici = '/anagrafica/tecnici';
   static const _woTypes = '/anagrafica/wo-types'; // tipi OdL selezionabili
@@ -261,6 +262,22 @@ class HttpRemoteDataSource implements WfmRemoteDataSource {
   Future<List<CodeLabel>> getSolutionCodes() async {
     final r = await _dio.get(_solutions);
     return (r.data as List).map((e) => codeLabelFromJson(e)).toList();
+  }
+
+  @override
+  Future<List<CodeLabel>> getPriorities({String? schema}) async {
+    // Il backend restituisce [{code, description}] per lo schema (default WO
+    // per gli ordini): mappiamo `description` sull'etichetta.
+    final r = await _dio.get(_priorities, queryParameters: {
+      if (schema != null && schema.isNotEmpty) 'schema': schema,
+    });
+    return (r.data as List).map((e) {
+      final m = e as Map<String, dynamic>;
+      return CodeLabel(
+        m['code']?.toString() ?? '',
+        (m['label'] ?? m['description'] ?? '').toString(),
+      );
+    }).toList();
   }
 
   @override

@@ -9,6 +9,8 @@ import '../../../../core/constants/app_constants.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/widgets/widgets.dart';
+import '../../../providers/anagrafica_provider.dart';
+import '../../../providers/appointments_provider.dart';
 import '../widgets/odl_actions_menu.dart';
 
 class EsitoAppuntamentoScreen extends ConsumerStatefulWidget {
@@ -25,48 +27,80 @@ class _EsitoAppuntamentoScreenState
   DateTime _dataSopralluogo = DateTime.now();
   String _oraSopralluogo = '${DateTime.now().hour.toString().padLeft(2, '0')}:${DateTime.now().minute.toString().padLeft(2, '0')}';
 
+  // Dominio SAP fisso dell'esito appuntamento (flussi D58/D59): non è un
+  // catalogo anagrafico, è l'insieme chiuso dei codici di esito. Il backend
+  // non espone un lookup per questi valori.
   static const _esitoOptions = [
     ('OK', 'OK — Esito positivo', AppColors.accentGreen),
     ('NO', 'NO — Esito negativo', AppColors.accentRed),
     ('ER', 'ER — Errore inserimento', AppColors.accentOrange),
     ('MN', 'MN — Mancato accesso', AppColors.statusSuspended),
   ];
-  static const _ritiroOptions = [
-    '-NONE-',
-    'Documento ritirato',
-    'Materiale ritirato',
-    'Chiavi ritirate',
-  ];
-  static const _causaOptions = [
-    '-NONE-',
-    'C001 — Cliente assente',
-    'C002 — Indirizzo errato',
-    'C003 — Maltempo',
-    'C004 — Materiale mancante',
-    'C005 — Problema tecnico',
-  ];
-  static const _causaRitardoOptions = [
-    '-NONE-',
-    'CR01 — Traffico',
-    'CR02 — Intervento precedente più lungo',
-    'CR03 — Comunicazione tardiva',
-  ];
 
   String? _esito;
-  String _ritiro = '-NONE-';
+  final _ritiroCtrl = TextEditingController();
   final _motivoCtrl = TextEditingController();
-  String _causa = '-NONE-';
-  String _causaRitardo = '-NONE-';
+  String? _causaCode; // codice dal catalogo backend (/anagrafica/causes)
+  final _causaRitardoCtrl = TextEditingController();
   final _motivoRitardoCtrl = TextEditingController();
   bool _dispAnticipazione = false;
   bool _presenzaCliente = true;
   bool _saving = false;
 
   @override
+  void initState() {
+    super.initState();
+    // Ricarica l'esito salvato in precedenza per questo OdL (se presente).
+    final saved = ref.read(esitoAppuntamentoProvider(widget.code));
+    if (saved != null) {
+      _dataSopralluogo = saved.dataSopralluogo;
+      _oraSopralluogo = saved.oraSopralluogo;
+      _esito = saved.esito;
+      _ritiroCtrl.text = saved.ritiro;
+      _motivoCtrl.text = saved.motivo;
+      _causaCode = saved.causaCode;
+      _causaRitardoCtrl.text = saved.causaRitardo;
+      _motivoRitardoCtrl.text = saved.motivoRitardo;
+      _dispAnticipazione = saved.dispAnticipazione;
+      _presenzaCliente = saved.presenzaCliente;
+    }
+  }
+
+  @override
   void dispose() {
+    _ritiroCtrl.dispose();
     _motivoCtrl.dispose();
+    _causaRitardoCtrl.dispose();
     _motivoRitardoCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (_esito == null) {
+      showSapToast(context, 'Selezionare l\'esito dell\'appuntamento',
+          isError: true);
+      return;
+    }
+    setState(() => _saving = true);
+    // Salvataggio reale in locale (il backend non espone ancora la rotta).
+    ref.read(esitoAppuntamentoProvider(widget.code).notifier).save(
+          EsitoAppuntamentoData(
+            dataSopralluogo: _dataSopralluogo,
+            oraSopralluogo: _oraSopralluogo,
+            esito: _esito!,
+            ritiro: _ritiroCtrl.text.trim(),
+            motivo: _motivoCtrl.text.trim(),
+            causaCode: _causaCode,
+            causaRitardo: _causaRitardoCtrl.text.trim(),
+            motivoRitardo: _motivoRitardoCtrl.text.trim(),
+            dispAnticipazione: _dispAnticipazione,
+            presenzaCliente: _presenzaCliente,
+          ),
+        );
+    if (!mounted) return;
+    setState(() => _saving = false);
+    showSapToast(context, 'Esito appuntamento salvato sul dispositivo');
+    context.pop();
   }
 
   Future<void> _pickDate() async {
@@ -92,24 +126,10 @@ class _EsitoAppuntamentoScreenState
     }
   }
 
-  Future<void> _submit() async {
-    if (_esito == null) {
-      showSapToast(context, 'Selezionare l\'esito dell\'appuntamento',
-          isError: true);
-      return;
-    }
-    setState(() => _saving = true);
-    await Future<void>.delayed(const Duration(milliseconds: 400));
-    if (!mounted) return;
-    setState(() => _saving = false);
-    showSapToast(context, 'Esito appuntamento "$_esito" registrato');
-    context.pop();
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Esito appuntamento'), actions: [OdlActionsMenu(code: widget.code)]),
+      appBar: AppBar(title: const Text('Esito appuntamento'), actions: [OdlActionsMenu(code: widget.code, scope: OdlMenuScope.esitoAppuntamento)]),
       body: ListView(
         padding: kPagePadding,
         children: [
@@ -181,14 +201,9 @@ class _EsitoAppuntamentoScreenState
             );
           }),
           const SectionHeader(title: 'DETTAGLI'),
-          DropdownButtonFormField<String>(
-            initialValue: _ritiro,
-            isExpanded: true,
+          TextField(
+            controller: _ritiroCtrl,
             decoration: const InputDecoration(labelText: 'Ritiro'),
-            items: _ritiroOptions
-                .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-                .toList(),
-            onChanged: (v) => setState(() => _ritiro = v ?? '-NONE-'),
           ),
           const SizedBox(height: 12),
           TextField(
@@ -196,25 +211,29 @@ class _EsitoAppuntamentoScreenState
             decoration: const InputDecoration(labelText: 'Motivo (testo libero)'),
           ),
           const SizedBox(height: 12),
-          DropdownButtonFormField<String>(
-            initialValue: _causa,
-            isExpanded: true,
-            decoration: const InputDecoration(labelText: 'Causa'),
-            items: _causaOptions
-                .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-                .toList(),
-            onChanged: (v) => setState(() => _causa = v ?? '-NONE-'),
-          ),
+          // "Causa" dal catalogo reale del backend (/anagrafica/causes) —
+          // niente più valori inventati.
+          ref.watch(causeCodesProvider).when(
+                loading: () => const LinearProgressIndicator(),
+                error: (e, _) => Text('Errore cause: $e',
+                    style: AppTextStyles.bodySmall),
+                data: (list) => DropdownButtonFormField<String>(
+                  initialValue: _causaCode,
+                  isExpanded: true,
+                  decoration: const InputDecoration(labelText: 'Causa'),
+                  items: list
+                      .map((c) => DropdownMenuItem(
+                          value: c.code,
+                          child: Text(c.label,
+                              overflow: TextOverflow.ellipsis)))
+                      .toList(),
+                  onChanged: (v) => setState(() => _causaCode = v),
+                ),
+              ),
           const SizedBox(height: 12),
-          DropdownButtonFormField<String>(
-            initialValue: _causaRitardo,
-            isExpanded: true,
+          TextField(
+            controller: _causaRitardoCtrl,
             decoration: const InputDecoration(labelText: 'Causa ritardo'),
-            items: _causaRitardoOptions
-                .map((s) => DropdownMenuItem(value: s, child: Text(s)))
-                .toList(),
-            onChanged: (v) =>
-                setState(() => _causaRitardo = v ?? '-NONE-'),
           ),
           const SizedBox(height: 12),
           TextField(
@@ -243,9 +262,10 @@ class _EsitoAppuntamentoScreenState
                     height: 18,
                     child: CircularProgressIndicator(
                         strokeWidth: 2, color: Colors.white))
-                : const Icon(Icons.send_rounded),
-            label: Text(_saving ? 'Invio…' : 'Salva esito appuntamento'),
+                : const Icon(Icons.save_outlined),
+            label: Text(_saving ? 'Salvataggio…' : 'Salva esito appuntamento'),
           ),
+          const SizedBox(height: 24),
         ],
       ),
     );

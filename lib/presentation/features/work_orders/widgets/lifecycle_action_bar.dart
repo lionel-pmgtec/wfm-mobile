@@ -193,12 +193,16 @@ class LifecycleActionBar extends ConsumerWidget {
             geolocation: geo,
           );
       if (context.mounted) {
-        if (res.isSuccess) {
-          showSapToast(context, 'OdL sospeso — restituito al Cruscotto');
-          context.pop(); // rimuove dal tablet e torna alla lista
-        } else {
-          showSapToast(context, 'Errore sospensione', isError: true);
-        }
+        res.when(
+          success: (_) {
+            showSapToast(context, 'OdL sospeso — restituito al Cruscotto');
+            context.pop(); // rimuove dal tablet e torna alla lista
+          },
+          // Mostra il messaggio vero del backend, non un generico "Errore".
+          failure: (f) => showSapToast(
+              context, 'Sospensione non riuscita: ${f.message}',
+              isError: true),
+        );
       }
     }
   }

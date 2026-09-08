@@ -7,6 +7,7 @@ import '../../../core/router/app_routes.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/widgets.dart';
 import '../../../domain/entities/enums.dart';
+import '../../../domain/entities/work_order.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/connectivity_provider.dart';
 import '../../providers/notifications_provider.dart';
@@ -89,6 +90,9 @@ class HomeScreen extends ConsumerWidget {
               subtitle: _headerSubtitle(stats.valueOrNull),
             ),
             const SizedBox(height: kSpacingLg),
+            // Banner interventi urgenti: visibile subito, sopra il riepilogo.
+            // Si auto-nasconde quando non ci sono Pronto Intervento aperti.
+            const _ProntoInterventoBanner(),
             const Text('Riepilogo di oggi', style: AppTextStyles.headingMedium),
             const SizedBox(height: kSpacingMd),
             stats.when(
@@ -97,7 +101,7 @@ class HomeScreen extends ConsumerWidget {
               error: (e, _) => WfmErrorState(
                   message: e.toString(),
                   onRetry: () => ref.invalidate(dashboardStatsProvider)),
-              data: (m) => _statsGrid(m),
+              data: (m) => _statsGrid(context, m),
             ),
             const SizedBox(height: kSpacingXl),
             const Text('Accessi rapidi', style: AppTextStyles.headingMedium),
@@ -161,7 +165,7 @@ class HomeScreen extends ConsumerWidget {
     return 'Nessun ordine assegnato';
   }
 
-  Widget _statsGrid(Map<WorkOrderStatus, int> m) {
+  Widget _statsGrid(BuildContext context, Map<WorkOrderStatus, int> m) {
     final items = [
       (WorkOrderStatus.ricevuto, Icons.inbox_rounded),
       (WorkOrderStatus.inEsecuzione, Icons.play_arrow_rounded),
@@ -174,50 +178,70 @@ class HomeScreen extends ConsumerWidget {
       crossAxisCount: 3,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      mainAxisSpacing: kSpacingMd,
-      crossAxisSpacing: kSpacingMd,
-      childAspectRatio: 1.15,
+      mainAxisSpacing: kSpacingSm,
+      crossAxisSpacing: kSpacingSm,
+      childAspectRatio: 1.5,
       children: items.map((e) {
         final style = getStatusStyle(e.$1.label);
         final count = m[e.$1] ?? 0;
         final active = count > 0;
-        return Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: active ? style.background : AppColors.surface,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: active
-                  ? style.color.withValues(alpha: 0.35)
-                  : AppColors.border,
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 34,
-                height: 34,
-                decoration: BoxDecoration(
-                  color: active ? style.color : style.background,
-                  shape: BoxShape.circle,
+        // Ogni card apre la lista filtrata per quello stato (card cliccabili).
+        return Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () => context
+                .push(AppRoutes.workOrdersByStatusPath(e.$1.name)),
+            child: Container(
+              padding: const EdgeInsets.all(9),
+              decoration: BoxDecoration(
+                color: active ? style.background : AppColors.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: active
+                      ? style.color.withValues(alpha: 0.35)
+                      : AppColors.border,
                 ),
-                child: Icon(e.$2,
-                    size: 20, color: active ? Colors.white : style.color),
               ),
-              const Spacer(),
-              Text('$count',
-                  style: TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w800,
-                      height: 1,
-                      color: active ? style.color : AppColors.textPrimary)),
-              const SizedBox(height: 2),
-              Text(e.$1.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: AppTextStyles.bodySmall),
-            ],
+              child: Row(
+                children: [
+                  Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: active ? style.color : style.background,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(e.$2,
+                        size: 16,
+                        color: active ? Colors.white : style.color),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text('$count',
+                            style: TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.w800,
+                                height: 1,
+                                color: active
+                                    ? style.color
+                                    : AppColors.textPrimary)),
+                        const SizedBox(height: 2),
+                        Text(e.$1.label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: AppTextStyles.bodySmall),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ),
         );
       }).toList(),
@@ -267,6 +291,211 @@ class HomeScreen extends ConsumerWidget {
       await ref.read(authControllerProvider.notifier).logout();
       if (context.mounted) context.go(AppRoutes.login);
     }
+  }
+}
+
+/// Banner "Pronto Intervento": bottone rosso molto visibile per gli interventi
+/// urgenti, sopra il riepilogo. Mostra i dati del PI più urgente (nome, codice,
+/// priorità, tipo) e apre subito il dettaglio (uno solo) o la lista (più d'uno).
+/// Si nasconde da sé quando non ci sono Pronto Intervento aperti.
+class _ProntoInterventoBanner extends ConsumerWidget {
+  const _ProntoInterventoBanner();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final piAsync = ref.watch(prontoInterventoWorkOrdersProvider);
+    final orders = piAsync.valueOrNull ?? const <WorkOrder>[];
+    if (orders.isEmpty) return const SizedBox.shrink();
+
+    final primary = orders.first; // il più urgente (lista già ordinata)
+    final extra = orders.length - 1;
+
+    void onTap() {
+      if (orders.length == 1) {
+        context.push(AppRoutes.workOrderDetailPath(primary.externalCode));
+      } else {
+        context.push(AppRoutes.prontoIntervento);
+      }
+    }
+
+    const red = Color(0xFFD32F2F);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: kSpacingLg),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(18),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(18),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(18),
+              gradient: const LinearGradient(
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+                colors: [Color(0xFFE53935), Color(0xFFB71C1C)],
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: red.withValues(alpha: 0.4),
+                  blurRadius: 16,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.20),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(Icons.flash_on_rounded,
+                          color: Colors.white, size: 24),
+                    ),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'PRONTO INTERVENTO',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 0.6,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                    if (extra > 0)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(20),
+                        ),
+                        child: Text(
+                          '${orders.length}',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            color: red,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                // Dati del PI più urgente.
+                Text(
+                  primary.displayName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Icon(Icons.tag_rounded,
+                        size: 14, color: Colors.white70),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Text(
+                        primary.externalCode,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 13, color: Colors.white),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    _piChip(primary.woType.isEmpty
+                        ? primary.typeCategoryLabel
+                        : primary.woType),
+                    if (primary.priorita.isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      _piChip('Priorità: ${primary.priorita}',
+                          highlight: primary.isHighPriority),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        extra > 0
+                            ? 'Tocca per vedere i $extra interventi urgenti in più'
+                            : 'Tocca per avviare subito l\'intervento',
+                        style: const TextStyle(
+                            fontSize: 12, color: Colors.white70),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(24),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            orders.length == 1 ? 'Avvia' : 'Vedi tutti',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                              color: red,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          const Icon(Icons.arrow_forward_rounded,
+                              size: 16, color: red),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _piChip(String label, {bool highlight = false}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: highlight ? 0.30 : 0.16),
+        borderRadius: BorderRadius.circular(6),
+        border: highlight
+            ? Border.all(color: Colors.white.withValues(alpha: 0.7))
+            : null,
+      ),
+      child: Text(
+        label,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          fontSize: 11,
+          fontWeight: highlight ? FontWeight.w800 : FontWeight.w600,
+          color: Colors.white,
+        ),
+      ),
+    );
   }
 }
 

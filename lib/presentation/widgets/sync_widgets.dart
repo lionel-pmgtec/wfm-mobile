@@ -14,8 +14,7 @@ import '../../core/theme/app_theme.dart';
 import '../../core/widgets/widgets.dart';
 import '../providers/creation_provider.dart';
 
-/// Apre il centro di sincronizzazione: l'operatore vede tutto ciò che attende
-/// di partire (ordini e avvisi) e sceglie per ognuno la destinazione.
+
 void openSyncCenter(BuildContext context) =>
     context.push(AppRoutes.syncCenter);
 
@@ -49,15 +48,11 @@ class SyncIconButton extends ConsumerWidget {
   }
 }
 
-/// Banner mostrato sul dettaglio di un oggetto ancora presente solo sul tablet
-/// (id provvisorio `TMP-…`): spiega lo stato e offre l'azione immediata.
+
 class SyncPendingBanner extends ConsumerWidget {
   /// Testo descrittivo (es. "Questo ordine è stato creato sul tablet").
   final String message;
 
-  /// Codice OdL o numero avviso da controllare. Se valorizzato, il banner
-  /// scompare non appena l'oggetto è stato inviato. Se `null`, il banner
-  /// segue il totale degli elementi ancora da sincronizzare.
   final String? id;
 
   const SyncPendingBanner({super.key, required this.message, this.id});
@@ -110,9 +105,7 @@ class SyncPendingBanner extends ConsumerWidget {
               backgroundColor: AppColors.accentOrange,
               foregroundColor: Colors.white,
               padding: const EdgeInsets.symmetric(horizontal: 14),
-              // Il tema globale usa Size.fromHeight(56), che impone larghezza
-              // infinita: dentro una Row (larghezza non vincolata) manderebbe
-              // in errore il layout. Qui il pulsante si adatta al contenuto.
+
               minimumSize: const Size(0, 40),
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
               textStyle:
@@ -128,6 +121,7 @@ class SyncPendingBanner extends ConsumerWidget {
 /// Conferma mostrata subito dopo la creazione di un OdL/avviso: comunica che
 /// l'oggetto è salvato sul tablet e propone la sincronizzazione immediata.
 /// Ritorna true se l'operatore ha scelto di sincronizzare subito.
+
 Future<bool> showCreatedSyncDialog(
   BuildContext context,
   WidgetRef ref, {
@@ -149,3 +143,4 @@ Future<bool> showCreatedSyncDialog(
   openSyncCenter(context);
   return true;
 }
+

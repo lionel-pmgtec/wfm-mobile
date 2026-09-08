@@ -49,6 +49,7 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
   final _formKey = GlobalKey<FormState>();
 
   String? _woType;
+  String? _priorita; // etichetta priorità scelta (catalogo backend /priorities)
   final _descCtrl = TextEditingController();
   final _cityCtrl = TextEditingController();
   final _streetCtrl = TextEditingController();
@@ -175,7 +176,7 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
       woTypeDescription: _descCtrl.text.trim(),
       tam: _woType!,
       status: WorkOrderStatus.ricevuto,
-      priorita: 'Media',
+      priorita: _priorita ?? '',
       creatoDa: creatore,
       appointmentDate: _appointmentDate ?? DateTime.now(),
       appointmentStartTime: _startTime,
@@ -348,6 +349,28 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
                     validator: Validators.required,
                     maxLines: 2,
                   ),
+                  const SizedBox(height: 14),
+                  // Priorità dal catalogo reale del backend (/anagrafica/priorities,
+                  // schema WO) — non più codificata in modo fisso.
+                  ref.watch(orderPrioritiesProvider).when(
+                        loading: () => const LinearProgressIndicator(),
+                        error: (e, _) => Text('Priorità non disponibili: $e',
+                            style: const TextStyle(
+                                fontSize: 12, color: AppColors.textHint)),
+                        data: (list) => DropdownButtonFormField<String>(
+                          initialValue: _priorita,
+                          isExpanded: true,
+                          decoration:
+                              const InputDecoration(labelText: 'Priorità'),
+                          items: list
+                              .map((c) => DropdownMenuItem(
+                                  value: c.label,
+                                  child: Text(c.label,
+                                      overflow: TextOverflow.ellipsis)))
+                              .toList(),
+                          onChanged: (v) => setState(() => _priorita = v),
+                        ),
+                      ),
                 ],
               ),
             ),

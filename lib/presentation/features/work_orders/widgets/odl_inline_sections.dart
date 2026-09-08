@@ -1,11 +1,10 @@
 // Sezioni inline editabili da inserire nel Dettaglio OdL :
-//   • ATTIVITÀ (CRUD inline)
 //   • APPUNTAMENTI (CRUD inline)
-//   • SOSPENSIONI (CRUD inline)
 //   • PREVENTIVO (summary + apri/crea)
 //
+// ATTIVITÀ e SOSPENSIONI rimosse: erano solo locali (Hive), il backend non le
+// espone/persiste (nessun endpoint).
 // Le firme (cliente + operatore) sono raccolte sul Preventivo, non qui.
-// Tutte le sezioni usano [WfmCollapsibleSection] e [odlExtensionProvider].
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -14,7 +13,6 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/router/app_routes.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/formatters.dart';
-import '../../../../core/widgets/widgets.dart';
 import '../../../../domain/entities/entities.dart';
 import '../../../providers/avviso_extension_provider.dart';
 import '../../../providers/odl_extension_provider.dart';
@@ -32,13 +30,8 @@ class OdlInlineSections extends ConsumerWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        WfmCollapsibleSection(
-          title: 'ATTIVITÀ',
-          icon: Icons.task_outlined,
-          badge: ext.attivita.isEmpty ? null : ext.attivita.length.toString(),
-          initiallyExpanded: false,
-          child: _AttivitaInline(odlCode: code, ext: ext),
-        ),
+        // ATTIVITÀ e SOSPENSIONI rimosse: erano solo locali (Hive), nessun
+        // endpoint backend le persiste. Restano APPUNTAMENTI e PREVENTIVO.
         WfmCollapsibleSection(
           title: 'APPUNTAMENTI',
           icon: Icons.event_outlined,
@@ -47,15 +40,6 @@ class OdlInlineSections extends ConsumerWidget {
               : ext.appuntamenti.length.toString(),
           initiallyExpanded: false,
           child: _AppuntamentiInline(odlCode: code, ext: ext),
-        ),
-        WfmCollapsibleSection(
-          title: 'SOSPENSIONI',
-          icon: Icons.pause_circle_outline,
-          badge: ext.sospensioni.isEmpty
-              ? null
-              : ext.sospensioni.length.toString(),
-          initiallyExpanded: false,
-          child: _SospensioniInline(odlCode: code, ext: ext),
         ),
         if (hasAvviso || order.hasPreventivo)
           WfmCollapsibleSection(
@@ -72,233 +56,6 @@ class OdlInlineSections extends ConsumerWidget {
         // La firma del preventivo è solo del preventivo (per il PDF del devis);
         // la firma di chiusura dell'OdL è separata (esito).
       ],
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// ATTIVITÀ
-// ═══════════════════════════════════════════════════════════════════════
-
-class _AttivitaInline extends ConsumerWidget {
-  final String odlCode;
-  final OdlExtension ext;
-  const _AttivitaInline({required this.odlCode, required this.ext});
-
-  Future<void> _edit(BuildContext context, WidgetRef ref,
-      OdlAttivita? existing) async {
-    final res = await showModalBottomSheet<OdlAttivita>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _AttivitaSheet(existing: existing),
-    );
-    if (res == null) return;
-    final n = ref.read(odlExtensionProvider(odlCode).notifier);
-    if (existing == null) {
-      await n.addAttivita(res);
-    } else {
-      await n.updateAttivita(res);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (ext.attivita.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 6),
-            child: Text('Nessuna attività registrata',
-                style: TextStyle(
-                    fontStyle: FontStyle.italic,
-                    color: AppColors.textSecondary)),
-          )
-        else
-          for (final a in ext.attivita)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: InkWell(
-                onTap: () => _edit(context, ref, a),
-                child: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: AppColors.surface,
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppColors.borderLight),
-                  ),
-                  child: Row(children: [
-                    Icon(a.stato.icon, size: 18, color: a.stato.color),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('${a.codice} — ${a.descrizione}',
-                              style: AppTextStyles.bodyMedium.copyWith(
-                                  fontWeight: FontWeight.w600)),
-                          if (a.note.isNotEmpty)
-                            Text(a.note,
-                                style: AppTextStyles.bodySmall,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis),
-                        ],
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: a.stato.color.withValues(alpha: 0.14),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Text(a.stato.label,
-                          style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              color: a.stato.color)),
-                    ),
-                    IconButton(
-                      visualDensity: VisualDensity.compact,
-                      icon: const Icon(Icons.delete_outline,
-                          size: 16, color: AppColors.accentRed),
-                      onPressed: () => ref
-                          .read(odlExtensionProvider(odlCode).notifier)
-                          .removeAttivita(a.id),
-                    ),
-                  ]),
-                ),
-              ),
-            ),
-        const SizedBox(height: 6),
-        OutlinedButton.icon(
-          onPressed: () => _edit(context, ref, null),
-          icon: const Icon(Icons.add_circle_outline, size: 16),
-          label: const Text('Aggiungi attività'),
-        ),
-      ],
-    );
-  }
-}
-
-class _AttivitaSheet extends StatefulWidget {
-  final OdlAttivita? existing;
-  const _AttivitaSheet({this.existing});
-  @override
-  State<_AttivitaSheet> createState() => _AttivitaSheetState();
-}
-
-class _AttivitaSheetState extends State<_AttivitaSheet> {
-  late final TextEditingController _codiceCtrl;
-  late final TextEditingController _descCtrl;
-  late final TextEditingController _noteCtrl;
-  late OdlAttivitaStato _stato;
-
-  @override
-  void initState() {
-    super.initState();
-    final e = widget.existing;
-    _codiceCtrl = TextEditingController(text: e?.codice ?? '');
-    _descCtrl = TextEditingController(text: e?.descrizione ?? '');
-    _noteCtrl = TextEditingController(text: e?.note ?? '');
-    _stato = e?.stato ?? OdlAttivitaStato.pianificata;
-  }
-
-  @override
-  void dispose() {
-    _codiceCtrl.dispose();
-    _descCtrl.dispose();
-    _noteCtrl.dispose();
-    super.dispose();
-  }
-
-  void _save() {
-    if (_codiceCtrl.text.trim().isEmpty ||
-        _descCtrl.text.trim().isEmpty) {
-      showSapToast(context, 'Codice e descrizione obbligatori',
-          isError: true);
-      return;
-    }
-    final a = (widget.existing ??
-            OdlAttivita(
-                id: 'ATT-${DateTime.now().millisecondsSinceEpoch}',
-                codice: '',
-                descrizione: '',
-                createdAt: DateTime.now()))
-        .copyWith(
-      codice: _codiceCtrl.text.trim(),
-      descrizione: _descCtrl.text.trim(),
-      stato: _stato,
-      note: _noteCtrl.text.trim(),
-    );
-    Navigator.pop(context, a);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: AppColors.backgroundPage,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      padding: EdgeInsets.only(
-        left: 16,
-        right: 16,
-        top: 16,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-      ),
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-                widget.existing == null
-                    ? 'Nuova attività'
-                    : 'Modifica attività',
-                style: AppTextStyles.headingMedium),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _codiceCtrl,
-              decoration: const InputDecoration(
-                  labelText: 'Codice Attività *',
-                  hintText: 'es. ADS-001'),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _descCtrl,
-              maxLines: 2,
-              decoration: const InputDecoration(
-                  labelText: 'Descrizione Attività *'),
-            ),
-            const SizedBox(height: 10),
-            DropdownButtonFormField<OdlAttivitaStato>(
-              initialValue: _stato,
-              isExpanded: true,
-              decoration: const InputDecoration(labelText: 'Stato'),
-              items: OdlAttivitaStato.values
-                  .map((s) => DropdownMenuItem(
-                      value: s, child: Text(s.label)))
-                  .toList(),
-              onChanged: (v) => setState(() => _stato = v ?? _stato),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _noteCtrl,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                  labelText: 'Note Tecnico', alignLabelWithHint: true),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton.icon(
-              onPressed: _save,
-              icon: const Icon(Icons.save_outlined),
-              label: const Text('Salva attività'),
-            ),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -639,182 +396,6 @@ class _AppuntamentoSheetState extends State<_AppuntamentoSheet> {
               onPressed: _save,
               icon: const Icon(Icons.save_outlined),
               label: const Text('Salva appuntamento'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// SOSPENSIONI INLINE
-// ═══════════════════════════════════════════════════════════════════════
-
-class _SospensioniInline extends ConsumerWidget {
-  final String odlCode;
-  final OdlExtension ext;
-  const _SospensioniInline({required this.odlCode, required this.ext});
-
-  Future<void> _add(BuildContext context, WidgetRef ref) async {
-    final res = await showModalBottomSheet<Suspension>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _SospensioneSheet(parentCode: odlCode),
-    );
-    if (res != null) {
-      await ref
-          .read(odlExtensionProvider(odlCode).notifier)
-          .addSospensione(res);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final list = ext.sospensioni;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (list.isEmpty)
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 6),
-            child: Text('Nessuna sospensione',
-                style: TextStyle(
-                    fontStyle: FontStyle.italic,
-                    color: AppColors.textSecondary)),
-          )
-        else
-          for (final s in list)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 6),
-              child: Row(children: [
-                Icon(
-                    s.isActive
-                        ? Icons.pause_circle_outline
-                        : Icons.check_circle_outline,
-                    size: 18,
-                    color: s.isActive
-                        ? AppColors.accentOrange
-                        : AppColors.accentGreen),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(s.type.label,
-                          style: AppTextStyles.bodyMedium.copyWith(
-                              fontWeight: FontWeight.w600)),
-                      Text(Fmt.dateTime(s.startDateTime),
-                          style: AppTextStyles.bodySmall),
-                    ],
-                  ),
-                ),
-                if (s.isActive)
-                  IconButton(
-                    tooltip: 'Chiudi',
-                    icon: const Icon(Icons.check, size: 16),
-                    onPressed: () => ref
-                        .read(odlExtensionProvider(odlCode).notifier)
-                        .closeSospensione(s.id, DateTime.now()),
-                  ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline,
-                      size: 16, color: AppColors.accentRed),
-                  onPressed: () => ref
-                      .read(odlExtensionProvider(odlCode).notifier)
-                      .removeSospensione(s.id),
-                ),
-              ]),
-            ),
-        const SizedBox(height: 6),
-        OutlinedButton.icon(
-          onPressed: () => _add(context, ref),
-          icon: const Icon(Icons.add_circle_outline, size: 16),
-          label: const Text('Aggiungi sospensione'),
-        ),
-      ],
-    );
-  }
-}
-
-class _SospensioneSheet extends StatefulWidget {
-  final String parentCode;
-  const _SospensioneSheet({required this.parentCode});
-  @override
-  State<_SospensioneSheet> createState() => _SospensioneSheetState();
-}
-
-class _SospensioneSheetState extends State<_SospensioneSheet> {
-  SuspensionType _type = SuspensionType.lavoro;
-  final _causaCtrl = TextEditingController();
-  final _noteCtrl = TextEditingController();
-
-  @override
-  void dispose() {
-    _causaCtrl.dispose();
-    _noteCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: AppColors.backgroundPage,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      padding: EdgeInsets.only(
-        left: 16,
-        right: 16,
-        top: 16,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-      ),
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            const Text('Aggiungi sospensione',
-                style: AppTextStyles.headingMedium),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<SuspensionType>(
-              initialValue: _type,
-              isExpanded: true,
-              decoration:
-                  const InputDecoration(labelText: 'Tipo sospensione *'),
-              items: SuspensionType.values
-                  .map((t) => DropdownMenuItem(
-                      value: t, child: Text(t.label)))
-                  .toList(),
-              onChanged: (v) => setState(() => _type = v ?? _type),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _causaCtrl,
-              decoration: const InputDecoration(labelText: 'Causa'),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _noteCtrl,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                  labelText: 'Note', alignLabelWithHint: true),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton.icon(
-              onPressed: () => Navigator.pop(
-                  context,
-                  Suspension(
-                    id: 'SOSP-${DateTime.now().millisecondsSinceEpoch}',
-                    parentCode: widget.parentCode,
-                    type: _type,
-                    cause: _causaCtrl.text.trim(),
-                    note: _noteCtrl.text.trim(),
-                    startDateTime: DateTime.now(),
-                  )),
-              icon: const Icon(Icons.save_outlined),
-              label: const Text('Salva'),
             ),
           ],
         ),

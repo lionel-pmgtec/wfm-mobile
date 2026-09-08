@@ -47,6 +47,7 @@ abstract interface class WfmRemoteDataSource {
   Future<List<String>> getTamCodes();
   Future<List<CodeLabel>> getCauseCodes();
   Future<List<CodeLabel>> getSolutionCodes();
+  Future<List<CodeLabel>> getPriorities({String? schema});
 
   /// Cataloghi selezionabili serviti dal cruscotto (niente hardcoded lato app).
   Future<List<WorkOrderTypeOption>> getWorkOrderTypes();

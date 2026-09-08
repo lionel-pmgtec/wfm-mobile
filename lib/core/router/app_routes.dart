@@ -1,10 +1,16 @@
 // Costanti dei percorsi di navigazione (go_router).
 
 class AppRoutes {
+  static const String splash = '/splash';
   static const String login = '/login';
   static const String home = '/home';
 
   static const String workOrders = '/work-orders';
+  // Lista OdL filtrata per stato (card cliccabili della Home). Path distinto da
+  // /work-orders/:id per non collidere col dettaglio.
+  static const String workOrdersByStatus = '/ordini-per-stato/:status';
+  // Lista dei soli Pronto Intervento (urgenti).
+  static const String prontoIntervento = '/pronto-intervento';
   static const String workOrderDetail = '/work-orders/:id';
   static const String esito = '/work-orders/:id/esito';
   static const String meter = '/work-orders/:id/meter';
@@ -51,6 +57,7 @@ class AppRoutes {
 
   /// Helper per costruire path con id.
   static String workOrderDetailPath(String id) => '/work-orders/$id';
+  static String workOrdersByStatusPath(String status) => '/ordini-per-stato/$status';
   static String esitoPath(String id) => '/work-orders/$id/esito';
   static String meterPath(String id) => '/work-orders/$id/meter';
   static String appointmentsPath(String id) => '/work-orders/$id/appointments';

@@ -163,3 +163,40 @@ class AvvisoSubType {
       all.where((t) => t.allowsCreationFromApp).toList();
 }
 
+/// Descrizione leggibile del tipo Avviso dal codice SAP (TIPO_AVVISO).
+///
+/// **Rispecchia 1:1 la fonte di verità** del Cruscotto — la funzione
+/// `tipoAvvisoDescrizione` in `Cruscotto-WFM/src/services/sapMappers.ts`.
+/// Il backend invia al tablet solo il codice grezzo (nessuna descrizione),
+/// quindi per mostrare le stesse etichette del Cruscotto replichiamo qui la
+/// sua identica mappa. Se il Cruscotto aggiunge un codice, si aggiunge la
+/// stessa riga qui — nessun valore inventato.
+String avvisoTipoDescrizione(String codice) {
+  switch (codice.trim().toUpperCase()) {
+    case 'ZH':
+      return 'Pronto Intervento H2O';
+    case 'ZF':
+      return 'Pronto Intervento Fognatura';
+    case 'PA':
+      return 'Richiesta Preventivo Acqua';
+    case 'M1':
+      return 'Manutenzione';
+    case 'M2':
+      return 'Avviso di attività';
+    default:
+      return 'Avviso SAP';
+  }
+}
+
+/// Etichetta completa "CODICE · Descrizione" (formato del Cruscotto).
+String avvisoTipoLabel(String codice) {
+  final code = codice.trim();
+  final desc = avvisoTipoDescrizione(code);
+  return code.isEmpty ? desc : '$code · $desc';
+}
+
+/// Vero se il tipo è un Pronto Intervento secondo la mappa del Cruscotto
+/// (le descrizioni che iniziano con "Pronto Intervento" — oggi ZH e ZF).
+bool avvisoTipoIsProntoIntervento(String codice) =>
+    avvisoTipoDescrizione(codice).startsWith('Pronto Intervento');
+

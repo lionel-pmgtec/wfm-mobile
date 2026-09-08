@@ -46,6 +46,37 @@ class OdlNota {
       );
 }
 
+/// Ora lavorata su una singola operazione (fase). L'operatore la digita nella
+/// scheda Operazioni; alla chiusura la somma delle voci di LAVORO (escluso
+/// l'automezzo, che è già la somma) viaggia in POST /esiti come `hoursWorked`.
+class OdlOreLavorate {
+  final String operationNumber;
+  final String description;
+  final num hours;
+  final bool isAutomezzo;
+
+  const OdlOreLavorate({
+    required this.operationNumber,
+    this.description = '',
+    required this.hours,
+    this.isAutomezzo = false,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'operationNumber': operationNumber,
+        'description': description,
+        'hours': hours,
+        'isAutomezzo': isAutomezzo,
+      };
+
+  factory OdlOreLavorate.fromJson(Map json) => OdlOreLavorate(
+        operationNumber: (json['operationNumber'] as String?) ?? '',
+        description: (json['description'] as String?) ?? '',
+        hours: (json['hours'] as num?) ?? 0,
+        isAutomezzo: (json['isAutomezzo'] as bool?) ?? false,
+      );
+}
+
 class OdlExtension {
   final String odlCode; // externalCode dell'OdL
   final List<OdlAttivita> attivita;
@@ -60,6 +91,10 @@ class OdlExtension {
   /// cruscotto accetta i materiali solo con l'esito, non sull'ordine.
   final List<MaterialUsage> materiali;
 
+  /// Ore effettive per operazione digitate dal tecnico (scheda Operazioni).
+  /// Trasmesse alla chiusura come `hoursWorked` (il backend ne salva la somma).
+  final List<OdlOreLavorate> ore;
+
   final DateTime updatedAt;
 
   const OdlExtension({
@@ -72,6 +107,7 @@ class OdlExtension {
     this.firmaTecnico,
     this.chiusura = const OdlChiusura(),
     this.materiali = const [],
+    this.ore = const [],
     required this.updatedAt,
   });
 
@@ -91,6 +127,7 @@ class OdlExtension {
     bool clearFirmaTecnico = false,
     OdlChiusura? chiusura,
     List<MaterialUsage>? materiali,
+    List<OdlOreLavorate>? ore,
   }) =>
       OdlExtension(
         odlCode: odlCode,
@@ -106,6 +143,7 @@ class OdlExtension {
             : (firmaTecnico ?? this.firmaTecnico),
         chiusura: chiusura ?? this.chiusura,
         materiali: materiali ?? this.materiali,
+        ore: ore ?? this.ore,
         updatedAt: DateTime.now(),
       );
 
@@ -119,6 +157,7 @@ class OdlExtension {
         'firmaTecnico': firmaTecnico?.toJson(),
         'chiusura': chiusura.toJson(),
         'materiali': materiali.map(_materialeToJson).toList(),
+        'ore': ore.map((o) => o.toJson()).toList(),
         'updatedAt': updatedAt.toIso8601String(),
       };
 
@@ -147,6 +186,9 @@ class OdlExtension {
             : const OdlChiusura(),
         materiali: ((json['materiali'] as List?) ?? [])
             .map((e) => _materialeFromJson(e as Map))
+            .toList(),
+        ore: ((json['ore'] as List?) ?? [])
+            .map((e) => OdlOreLavorate.fromJson(e as Map))
             .toList(),
         updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? '') ??
             DateTime.now(),

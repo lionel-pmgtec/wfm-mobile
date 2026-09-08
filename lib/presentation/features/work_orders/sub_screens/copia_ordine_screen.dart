@@ -56,7 +56,7 @@ class _CopiaOrdineScreenState extends ConsumerState<CopiaOrdineScreen> {
   Widget build(BuildContext context) {
     final async = ref.watch(workOrderDetailProvider(widget.code));
     return Scaffold(
-      appBar: AppBar(title: const Text('Copia ordine'), actions: [OdlActionsMenu(code: widget.code)]),
+      appBar: AppBar(title: const Text('Copia ordine'), actions: [OdlActionsMenu(code: widget.code, scope: OdlMenuScope.copia)]),
       body: async.when(
         loading: () => const WfmLoading(),
         error: (e, _) => WfmErrorState(message: e.toString()),

@@ -22,6 +22,7 @@ import '../../providers/capabilities_provider.dart';
 import '../../providers/odl_extension_provider.dart';
 import '../../providers/work_orders_provider.dart';
 import '../../widgets/sync_widgets.dart';
+import '../esito/esito_screen.dart';
 import 'widgets/lifecycle_action_bar.dart';
 import 'widgets/odl_actions_menu.dart';
 import 'widgets/odl_inline_sections.dart';
@@ -85,6 +86,10 @@ class _DetailViewState extends ConsumerState<_DetailView>
     // Conteggio allegati dalla lista reale (locale + remoto), non da order.
     final attCount = ref.watch(attachmentsProvider(order.externalCode)).valueOrNull?.length ??
         order.attachmentsCount;
+    // Materiali = pianificati SAP + impegnati sul campo (locali). Watch così il
+    // contatore dell'etichetta si aggiorna a ogni aggiunta/rimozione.
+    final matCount = order.plannedMaterials.length +
+        ref.watch(odlExtensionProvider(order.externalCode)).materiali.length;
     return Scaffold(
       appBar: AppBar(
         title: Text('OdL ${order.externalCode}'),
@@ -104,7 +109,7 @@ class _DetailViewState extends ConsumerState<_DetailView>
           tabs: [
             const Tab(text: 'Dettaglio'),
             Tab(text: 'Operazioni (${order.operations.length})'),
-            Tab(text: 'Materiali (${order.plannedMaterials.length})'),
+            Tab(text: 'Materiali ($matCount)'),
             Tab(text: 'Allegati ($attCount)'),
             const Tab(text: 'Chiusura'),
           ],
@@ -174,6 +179,57 @@ class _DettaglioTab extends ConsumerWidget {
       SectionHeader(title: title),
       CapabilityGate(enabled: enabled, reason: reason, child: child),
     ];
+  }
+
+  /// "gg/mm/aaaa hh:mm" — o solo la data se manca l'ora, o '' se manca tutto.
+  String _fmtDataOra(DateTime? d, String? ora) {
+    if (d == null) return '';
+    final data = Fmt.date(d);
+    return (ora ?? '').trim().isEmpty ? data : '$data ${ora!.trim()}';
+  }
+
+  /// Modifica la nota ordine e la invia al backend (PATCH /work-orders/:id,
+  /// che accetta solo `notes`).
+  Future<void> _editNota(BuildContext context, WidgetRef ref) async {
+    // Si modifica SOLO la nota del campo: la descrizione SAP resta intatta.
+    final ctrl = TextEditingController(text: order.noteAggiunte);
+    final nuovo = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Nota del campo'),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          maxLines: 5,
+          minLines: 3,
+          decoration: const InputDecoration(
+            hintText: 'Inserisci la nota del tecnico…',
+          ),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Annulla')),
+          ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
+              child: const Text('Salva')),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (nuovo == null || nuovo == order.noteAggiunte.trim()) return;
+    if (!context.mounted) return;
+    // `notes` = ciò che il PATCH invia al backend (→ nota del campo `a.note`);
+    // `noteAggiunte` aggiorna subito la visualizzazione locale.
+    final res = await ref
+        .read(workOrderActionsProvider)
+        .save(order.copyWith(notes: nuovo, noteAggiunte: nuovo));
+    if (!context.mounted) return;
+    res.when(
+      success: (_) => showSapToast(context, 'Nota aggiornata'),
+      failure: (f) =>
+          showSapToast(context, 'Errore: ${f.message}', isError: true),
+    );
   }
 
   @override
@@ -451,22 +507,40 @@ class _DettaglioTab extends ConsumerWidget {
               ? FormGrid(children: [
                   FieldRow(label: 'Matricola', value: order.meter!.matricola),
                   FieldRow(
-                      label: 'Marca/Modello', value: order.meter!.displayName),
+                      label: 'Marca/Modello',
+                      value: order.meter!.displayName,
+                      hideIfEmpty: true),
                   FieldRow(
                       label: 'Calibro',
                       value: order.meter!.caliber,
                       hideIfEmpty: true),
                   FieldRow(
+                      label: 'Settore',
+                      value: order.meter!.sector,
+                      hideIfEmpty: true),
+                  FieldRow(
                       label: 'Ubicazione',
                       value: order.meter!.location,
                       hideIfEmpty: true),
+                  // "Ultima Lettura" = lettura precedente reale (SAP PREC_VALORE),
+                  // il campo `lastReading` (LETTURA corrente) di solito è vuoto.
                   FieldRow(
                       label: 'Ultima Lettura',
-                      value: order.meter!.lastReading?.toString() ?? '',
+                      value: (order.meter!.previousReading ??
+                                  order.meter!.lastReading)
+                              ?.toString() ??
+                          '',
                       hideIfEmpty: true),
                   FieldRow(
                       label: 'Data Lettura',
-                      value: Fmt.date(order.meter!.lastReadingDate),
+                      value: _fmtDataOra(
+                          order.meter!.previousReadingDate ??
+                              order.meter!.lastReadingDate,
+                          order.meter!.previousReadingTime),
+                      hideIfEmpty: true),
+                  FieldRow(
+                      label: 'Stato Lettura',
+                      value: order.meter!.previousReadingStatus ?? '',
                       hideIfEmpty: true),
                 ])
               // Capability spenta e nessun contatore: si mostra la forma della
@@ -605,21 +679,55 @@ class _DettaglioTab extends ConsumerWidget {
         ),
 
         // ── NOTE OPERATIVE ────────────────────────────────────────
-        // Il testo lungo non sta in AUFK ma in STXH/STXL e richiede una
-        // chiamata separata a READ_TEXT: ZWFMT_SERVIZIO_PM non lo espone.
-        ..._section(
-          enabled: caps.has(Cap.odlNote),
-          reason: reason,
-          hasData: order.notes.trim().isNotEmpty,
-          title: 'NOTE',
-          child: FieldRow(
-              label: 'Nota Ordine',
-              value: order.notes,
-              fullWidth: true,
-              maxLines: 4,
-              unavailable: !caps.has(Cap.odlNote),
-              unavailableReason: reason),
-        ),
+        // Unico campo del dettaglio modificabile: il backend persiste solo la
+        // nota (PATCH /work-orders/:id accetta esclusivamente `notes`). Gli
+        // altri campi sono dati SAP in sola lettura.
+        const SectionHeader(title: 'NOTE'),
+        // Nota SAP: descrizione dell'ordine, SOLA LETTURA (arriva da SAP).
+        FieldRow(
+            label: 'Descrizione ordine (SAP)',
+            value: order.noteSap.trim().isEmpty
+                ? (order.notes.trim().isEmpty ? '—' : order.notes)
+                : order.noteSap,
+            fullWidth: true,
+            maxLines: 4),
+        const SizedBox(height: 8),
+        // Note del campo: aggiunte dal tecnico, modificabili (PATCH `notes`).
+        if (caps.has(Cap.odlNote))
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              FieldRow(
+                  label: 'Note del campo',
+                  value: order.noteAggiunte.trim().isEmpty
+                      ? '—'
+                      : order.noteAggiunte,
+                  fullWidth: true,
+                  maxLines: 4),
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: () => _editNota(context, ref),
+                  icon: const Icon(Icons.edit_outlined, size: 16),
+                  label: Text(order.noteAggiunte.trim().isEmpty
+                      ? 'Aggiungi nota'
+                      : 'Modifica nota'),
+                ),
+              ),
+            ],
+          )
+        else
+          CapabilityGate(
+            enabled: false,
+            reason: reason,
+            child: FieldRow(
+                label: 'Note del campo',
+                value: order.noteAggiunte,
+                fullWidth: true,
+                maxLines: 4,
+                unavailable: true,
+                unavailableReason: reason),
+          ),
 
         // ── SEZIONI INLINE (Attività · Appuntamenti · Sospensioni ·
         //                    Preventivo collegato · Firme) ─────────
@@ -770,60 +878,10 @@ class _ChiusuraTab extends StatelessWidget {
         ],
       );
     }
-    return ListView(
-      padding: kPagePadding,
-      children: [
-        const SectionHeader(title: 'CHIUSURA INTERVENTO'),
-        WfmCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Row(children: [
-                const Icon(Icons.flag_rounded, color: AppColors.primary),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: const Text('Concludi l\'intervento',
-                      style: AppTextStyles.headingSmall),
-                ),
-              ]),
-              const SizedBox(height: 8),
-              const Text(
-                  'Per chiudere l\'OdL compila e invia l\'esito. Contiene tutte le '
-                  'informazioni di chiusura:',
-                  style: AppTextStyles.bodyMedium),
-              const SizedBox(height: 8),
-              _bullet('Tempi intervento (inizio / fine)'),
-              _bullet('Esito: Riuscito / Rinviato / Impossibile'),
-              _bullet('Causa e soluzione'),
-              _bullet('Ore lavorate e costi extra'),
-              _bullet('Commenti e firma del cliente'),
-            ],
-          ),
-        ),
-        const SizedBox(height: 20),
-        SizedBox(
-          height: 56,
-          child: ElevatedButton.icon(
-            onPressed: () => context.push(AppRoutes.esitoPath(order.externalCode)),
-            icon: const Icon(Icons.flag_rounded),
-            label: const Text('Concludi e invia esito'),
-          ),
-        ),
-        const SizedBox(height: 80),
-      ],
-    );
+    // Niente pagina intermedia: la scheda "Chiusura" mostra direttamente il
+    // form di esito (in modalità incorporata, senza Scaffold/AppBar propri).
+    return EsitoScreen(code: order.externalCode, embedded: true);
   }
-
-  Widget _bullet(String text) => Padding(
-        padding: const EdgeInsets.only(top: 6),
-        child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          const Padding(
-            padding: EdgeInsets.only(top: 7, right: 8),
-            child: Icon(Icons.circle, size: 6, color: AppColors.primary),
-          ),
-          Expanded(child: Text(text, style: AppTextStyles.bodyMedium)),
-        ]),
-      );
 }
 
 // ─── SCHEDA OPERAZIONI ─────────────────────────────────────────────────────
@@ -832,54 +890,93 @@ class _ChiusuraTab extends StatelessWidget {
 //          Fine Prev | Durata Eff. | Tempo Lavoro
 // L'operatore puo aggiungere righe (anche piu righe per lo stesso CID).
 
-class _OperazioniTab extends StatefulWidget {
+class _OperazioniTab extends ConsumerStatefulWidget {
   final WorkOrder order;
   const _OperazioniTab({required this.order});
 
   @override
-  State<_OperazioniTab> createState() => _OperazioniTabState();
+  ConsumerState<_OperazioniTab> createState() => _OperazioniTabState();
 }
 
-class _OperazioniTabState extends State<_OperazioniTab> {
+class _OperazioniTabState extends ConsumerState<_OperazioniTab> {
   late List<Operation> _ops;
+  final Map<String, TextEditingController> _hoursCtrls = {};
 
   @override
   void initState() {
     super.initState();
     _ops = List.of(widget.order.operations);
+    // Ripristina le ore già digitate (persistite in locale, per la chiusura).
+    final salvate = {
+      for (final o
+          in ref.read(odlExtensionProvider(widget.order.externalCode)).ore)
+        o.operationNumber: o.hours,
+    };
+    if (salvate.isNotEmpty) {
+      _ops = [
+        for (final op in _ops)
+          salvate.containsKey(op.number)
+              ? op.copyWith(durataEffettiva: salvate[op.number])
+              : op,
+      ];
+    }
   }
 
-  Future<void> _editRow(Operation? existing) async {
-    final res = await showModalBottomSheet<Operation>(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _OperazioneSheet(
-        existing: existing,
-        defaultCid: widget.order.cidAssegnato ?? '',
-        defaultNumber: _ops.isEmpty
-            ? '0010'
-            : _nextNumber(_ops.last.number),
-      ),
-    );
-    if (res == null) return;
-    setState(() {
-      if (existing == null) {
-        _ops.add(res);
-      } else {
-        final i = _ops.indexWhere((o) => o.id == existing.id);
-        if (i >= 0) _ops[i] = res;
-      }
-    });
+  /// Salva le ore in locale così che la chiusura possa trasmetterle
+  /// (POST /esiti → `hoursWorked`, di cui il backend conserva la somma).
+  void _persistOre() {
+    final ore = [
+      for (final op in _ops)
+        if (op.effectiveHours != null)
+          OdlOreLavorate(
+            operationNumber: op.number,
+            description:
+                op.testoBreve.isNotEmpty ? op.testoBreve : op.description,
+            hours: op.effectiveHours!,
+            isAutomezzo: _isAutomezzo(op),
+          ),
+    ];
+    ref
+        .read(odlExtensionProvider(widget.order.externalCode).notifier)
+        .setOre(ore);
   }
 
-  String _nextNumber(String last) {
-    final n = int.tryParse(last) ?? 0;
-    return (n + 10).toString().padLeft(4, '0');
+  @override
+  void dispose() {
+    for (final c in _hoursCtrls.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  String _opKey(Operation op) => op.id.isNotEmpty ? op.id : op.number;
+
+  /// Automezzo = voce le cui ore NON si scrivono: sono la somma delle voci di
+  /// lavoro. Il backend non manda un tipo (A_LAVO/A_AUTO), quindi lo si
+  /// riconosce dal testo ("Automezzi"/"Automezzo").
+  bool _isAutomezzo(Operation op) =>
+      '${op.testoBreve} ${op.description}'.toLowerCase().contains('automezz');
+
+  /// Somma delle ore effettive delle voci di LAVORO (non automezzo).
+  num _lavoroSum() => _ops
+      .where((o) => !_isAutomezzo(o))
+      .fold<num>(0, (s, o) => s + (o.effectiveHours ?? 0));
+
+  TextEditingController _hoursCtrl(Operation op) => _hoursCtrls.putIfAbsent(
+        _opKey(op),
+        () => TextEditingController(
+            text: op.effectiveHours == null ? '' : '${op.effectiveHours}'),
+      );
+
+  void _setHoursAt(int i, String raw) {
+    final v = num.tryParse(raw.replaceAll(',', '.'));
+    setState(() => _ops[i] = _ops[i].copyWith(durataEffettiva: v));
+    _persistOre();
   }
 
   void _remove(Operation op) {
     setState(() => _ops.removeWhere((o) => o.id == op.id));
+    _persistOre();
   }
 
   void _toggleDone(Operation op) {
@@ -897,7 +994,7 @@ class _OperazioniTabState extends State<_OperazioniTab> {
           const EmptyState(
             title: 'Nessuna operazione',
             subtitle:
-                'Tocca "Aggiungi operazione" in basso a destra per inserire la prima riga.',
+                'Le operazioni arrivano da SAP con l\'ordine (Trasferimento, Lavori Idraulici, Automezzi).',
             icon: Icons.list_alt_outlined,
           )
         else
@@ -905,22 +1002,20 @@ class _OperazioniTabState extends State<_OperazioniTab> {
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 100),
             itemCount: _ops.length,
             separatorBuilder: (_, __) => const SizedBox(height: 8),
-            itemBuilder: (_, i) => _OperazioneRow(
-              op: _ops[i],
-              onEdit: () => _editRow(_ops[i]),
-              onDelete: () => _remove(_ops[i]),
-              onToggleDone: () => _toggleDone(_ops[i]),
-            ),
+            itemBuilder: (_, i) {
+              final op = _ops[i];
+              final auto = _isAutomezzo(op);
+              return _OperazioneRow(
+                op: op,
+                isAutomezzo: auto,
+                computedHours: auto ? _lavoroSum() : null,
+                hoursCtrl: auto ? null : _hoursCtrl(op),
+                onHoursChanged: (v) => _setHoursAt(i, v),
+                onDelete: () => _remove(op),
+                onToggleDone: () => _toggleDone(op),
+              );
+            },
           ),
-        Positioned(
-          right: 16,
-          bottom: 16,
-          child: FloatingActionButton.extended(
-            onPressed: () => _editRow(null),
-            icon: const Icon(Icons.add),
-            label: const Text('Aggiungi operazione'),
-          ),
-        ),
       ],
     );
   }
@@ -928,21 +1023,26 @@ class _OperazioniTabState extends State<_OperazioniTab> {
 
 class _OperazioneRow extends StatelessWidget {
   final Operation op;
-  final VoidCallback onEdit;
+  final bool isAutomezzo;
+  final num? computedHours; // ore = somma (solo automezzo)
+  final TextEditingController? hoursCtrl; // editabile (solo voci di lavoro)
+  final ValueChanged<String>? onHoursChanged;
   final VoidCallback onDelete;
   final VoidCallback onToggleDone;
   const _OperazioneRow({
     required this.op,
-    required this.onEdit,
+    this.isAutomezzo = false,
+    this.computedHours,
+    this.hoursCtrl,
+    this.onHoursChanged,
     required this.onDelete,
     required this.onToggleDone,
   });
 
   @override
   Widget build(BuildContext context) {
-    final hours = op.effectiveHours;
     return Container(
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(10),
@@ -959,7 +1059,7 @@ class _OperazioneRow extends StatelessWidget {
               onTap: onToggleDone,
               borderRadius: BorderRadius.circular(20),
               child: CircleAvatar(
-                radius: 18,
+                radius: 15,
                 backgroundColor: op.completed
                     ? AppColors.accentGreen.withValues(alpha: 0.14)
                     : AppColors.primarySurface,
@@ -976,99 +1076,71 @@ class _OperazioneRow extends StatelessWidget {
             ),
             const SizedBox(width: 10),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                      op.testoBreve.isEmpty
-                          ? op.description
-                          : op.testoBreve,
-                      style: AppTextStyles.headingSmall,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis),
-                  if (op.codice.isNotEmpty)
-                    Text('Codice: ${op.codice}',
-                        style: AppTextStyles.bodySmall),
-                ],
-              ),
+              child: Text(
+                  op.testoBreve.isEmpty ? op.description : op.testoBreve,
+                  style: AppTextStyles.bodyLarge
+                      .copyWith(fontWeight: FontWeight.w700),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis),
             ),
-            // Badge CID
-            Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-              decoration: BoxDecoration(
-                color: AppColors.primary.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                const Icon(Icons.person_outline,
-                    size: 12, color: AppColors.primary),
-                const SizedBox(width: 4),
-                Text(op.cid.isEmpty ? '—' : op.cid,
+            if (op.cid.isNotEmpty) ...[
+              const SizedBox(width: 6),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(op.cid,
                     style: const TextStyle(
-                        fontSize: 11,
+                        fontSize: 10,
                         fontWeight: FontWeight.w700,
                         color: AppColors.primary)),
-              ]),
-            ),
-          ]),
-          if (op.description.isNotEmpty &&
-              op.description != op.testoBreve) ...[
-            const SizedBox(height: 6),
-            Text(op.description,
-                style: AppTextStyles.bodySmall,
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis),
-          ],
-          const SizedBox(height: 8),
-          // Date + ore
-          Wrap(
-            spacing: 12,
-            runSpacing: 6,
-            children: [
-              if (op.dataInizioPrevista != null)
-                _MiniInfo(
-                    icon: Icons.event_outlined,
-                    label: 'Inizio',
-                    value: Fmt.date(op.dataInizioPrevista)),
-              if (op.dataFinePrevista != null)
-                _MiniInfo(
-                    icon: Icons.event_outlined,
-                    label: 'Fine',
-                    value: Fmt.date(op.dataFinePrevista)),
-              if (op.plannedHours != null)
-                _MiniInfo(
-                    icon: Icons.schedule_outlined,
-                    label: 'Pianif.',
-                    value: '${op.plannedHours}h'),
-              if (hours != null)
-                _MiniInfo(
-                    icon: Icons.timer_outlined,
-                    label: 'Durata',
-                    value: '${hours}h',
-                    color: AppColors.accentGreen),
-              if ((op.tempoLavoroFase ?? '').isNotEmpty)
-                _MiniInfo(
-                    icon: Icons.label_outline,
-                    label: 'Fase',
-                    value: op.tempoLavoroFase!),
+              ),
             ],
-          ),
-          const SizedBox(height: 8),
+          ]),
+          const SizedBox(height: 6),
+          // Una sola riga: info + ore (editabili o somma automezzo) + azioni.
           Row(children: [
+            if (op.codice.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(right: 10),
+                child:
+                    Text('Cod. ${op.codice}', style: AppTextStyles.bodySmall),
+              ),
+            if (op.plannedHours != null)
+              Text('Pianif. ${op.plannedHours}h',
+                  style: AppTextStyles.bodySmall),
             const Spacer(),
-            TextButton.icon(
-              onPressed: onEdit,
-              icon: const Icon(Icons.edit_outlined, size: 16),
-              label: const Text('Modifica'),
-            ),
+            if (isAutomezzo)
+              Text('Automezzo: ${computedHours ?? 0} h',
+                  style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.accentGreen))
+            else
+              SizedBox(
+                width: 150,
+                child: TextField(
+                  controller: hoursCtrl,
+                  keyboardType:
+                      const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(
+                    labelText: 'Durata Effettiva',
+                    isDense: true,
+                    suffixText: 'h',
+                  ),
+                  onChanged: onHoursChanged,
+                ),
+              ),
             const SizedBox(width: 4),
-            TextButton.icon(
-              onPressed: onDelete,
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              tooltip: 'Elimina',
               icon: const Icon(Icons.delete_outline,
-                  size: 16, color: AppColors.accentRed),
-              label: const Text('Elimina',
-                  style: TextStyle(color: AppColors.accentRed)),
+                  size: 18, color: AppColors.accentRed),
+              onPressed: onDelete,
             ),
           ]),
         ],
@@ -1077,286 +1149,6 @@ class _OperazioneRow extends StatelessWidget {
   }
 }
 
-class _MiniInfo extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-  final Color? color;
-  const _MiniInfo({
-    required this.icon,
-    required this.label,
-    required this.value,
-    this.color,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final c = color ?? AppColors.textSecondary;
-    return Row(mainAxisSize: MainAxisSize.min, children: [
-      Icon(icon, size: 12, color: c),
-      const SizedBox(width: 4),
-      Text('$label: ',
-          style: TextStyle(
-              fontSize: 11, color: c, fontWeight: FontWeight.w500)),
-      Text(value,
-          style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: color ?? AppColors.textPrimary)),
-    ]);
-  }
-}
-
-/// Bottom sheet di edit operazione : tutti i campi spec.
-class _OperazioneSheet extends StatefulWidget {
-  final Operation? existing;
-  final String defaultCid;
-  final String defaultNumber;
-  const _OperazioneSheet({
-    required this.existing,
-    required this.defaultCid,
-    required this.defaultNumber,
-  });
-  @override
-  State<_OperazioneSheet> createState() => _OperazioneSheetState();
-}
-
-class _OperazioneSheetState extends State<_OperazioneSheet> {
-  late final TextEditingController _numberCtrl;
-  late final TextEditingController _codiceCtrl;
-  late final TextEditingController _testoBreveCtrl;
-  late final TextEditingController _cidCtrl;
-  late final TextEditingController _descCtrl;
-  late final TextEditingController _faseCtrl;
-  late final TextEditingController _orePianifCtrl;
-  late final TextEditingController _durataEffCtrl;
-  DateTime? _dataInizio;
-  DateTime? _dataFine;
-
-  @override
-  void initState() {
-    super.initState();
-    final e = widget.existing;
-    _numberCtrl =
-        TextEditingController(text: e?.number ?? widget.defaultNumber);
-    _codiceCtrl = TextEditingController(text: e?.codice ?? '');
-    _testoBreveCtrl = TextEditingController(text: e?.testoBreve ?? '');
-    _cidCtrl =
-        TextEditingController(text: e?.cid ?? widget.defaultCid);
-    _descCtrl = TextEditingController(text: e?.description ?? '');
-    _faseCtrl =
-        TextEditingController(text: e?.tempoLavoroFase ?? '');
-    _orePianifCtrl =
-        TextEditingController(text: e?.plannedHours?.toString() ?? '');
-    _durataEffCtrl = TextEditingController(
-        text: e?.effectiveHours?.toString() ?? '');
-    _dataInizio = e?.dataInizioPrevista;
-    _dataFine = e?.dataFinePrevista;
-  }
-
-  @override
-  void dispose() {
-    _numberCtrl.dispose();
-    _codiceCtrl.dispose();
-    _testoBreveCtrl.dispose();
-    _cidCtrl.dispose();
-    _descCtrl.dispose();
-    _faseCtrl.dispose();
-    _orePianifCtrl.dispose();
-    _durataEffCtrl.dispose();
-    super.dispose();
-  }
-
-  Future<DateTime?> _pickDate(DateTime? initial) => showDatePicker(
-        context: context,
-        initialDate: initial ?? DateTime.now(),
-        firstDate: DateTime(2020),
-        lastDate: DateTime(2035),
-      );
-
-  void _save() {
-    if (_numberCtrl.text.trim().isEmpty ||
-        _testoBreveCtrl.text.trim().isEmpty) {
-      showSapToast(context, 'Op. e testo breve sono obbligatori',
-          isError: true);
-      return;
-    }
-    final pianif = num.tryParse(_orePianifCtrl.text.replaceAll(',', '.'));
-    final eff = num.tryParse(_durataEffCtrl.text.replaceAll(',', '.'));
-    final op = (widget.existing ??
-            Operation(
-                id: 'OP-${DateTime.now().millisecondsSinceEpoch}',
-                number: '',
-                description: ''))
-        .copyWith(
-      number: _numberCtrl.text.trim(),
-      codice: _codiceCtrl.text.trim(),
-      testoBreve: _testoBreveCtrl.text.trim(),
-      cid: _cidCtrl.text.trim(),
-      description: _descCtrl.text.trim(),
-      dataInizioPrevista: _dataInizio,
-      dataFinePrevista: _dataFine,
-      plannedHours: pianif,
-      durataEffettiva: eff,
-      tempoLavoroFase: _faseCtrl.text.trim(),
-    );
-    Navigator.pop(context, op);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: const BoxDecoration(
-        color: AppColors.backgroundPage,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      padding: EdgeInsets.only(
-        left: 16,
-        right: 16,
-        top: 16,
-        bottom: MediaQuery.of(context).viewInsets.bottom + 16,
-      ),
-      child: SingleChildScrollView(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-                widget.existing == null
-                    ? 'Nuova operazione'
-                    : 'Modifica operazione',
-                style: AppTextStyles.headingMedium),
-            const SizedBox(height: 12),
-            Row(children: [
-              SizedBox(
-                width: 90,
-                child: TextField(
-                  controller: _numberCtrl,
-                  decoration: const InputDecoration(labelText: 'Op. *'),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: TextField(
-                  controller: _codiceCtrl,
-                  decoration: const InputDecoration(labelText: 'Codice'),
-                ),
-              ),
-            ]),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _testoBreveCtrl,
-              decoration: const InputDecoration(labelText: 'Testo Breve *'),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _cidCtrl,
-              decoration: const InputDecoration(
-                labelText: 'CID',
-                prefixIcon: Icon(Icons.person_outline),
-                helperText:
-                    'Identico al CID dell\'OdL per row aggiuntive sullo stesso operatore.',
-              ),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _descCtrl,
-              maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: 'Descrizione',
-                alignLabelWithHint: true,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(children: [
-              Expanded(
-                child: _DateField(
-                    label: 'Inizio Prev.',
-                    value: _dataInizio,
-                    onPick: () async {
-                      final d = await _pickDate(_dataInizio);
-                      if (d != null) setState(() => _dataInizio = d);
-                    }),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _DateField(
-                    label: 'Fine Prev.',
-                    value: _dataFine,
-                    onPick: () async {
-                      final d = await _pickDate(_dataFine);
-                      if (d != null) setState(() => _dataFine = d);
-                    }),
-              ),
-            ]),
-            const SizedBox(height: 10),
-            Row(children: [
-              Expanded(
-                child: TextField(
-                  controller: _orePianifCtrl,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(
-                      labelText: 'Ore Pianificate', suffixText: 'h'),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: TextField(
-                  controller: _durataEffCtrl,
-                  keyboardType:
-                      const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(
-                      labelText: 'Durata Effettiva', suffixText: 'h'),
-                ),
-              ),
-            ]),
-            const SizedBox(height: 10),
-            TextField(
-              controller: _faseCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Tempo Lavoro / Fase',
-                hintText: 'es. Scavo, Allaccio, Collaudo…',
-              ),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton.icon(
-              onPressed: _save,
-              icon: const Icon(Icons.save_outlined),
-              label: const Text('Salva operazione'),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _DateField extends StatelessWidget {
-  final String label;
-  final DateTime? value;
-  final VoidCallback onPick;
-  const _DateField(
-      {required this.label, required this.value, required this.onPick});
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onPick,
-      borderRadius: BorderRadius.circular(8),
-      child: InputDecorator(
-        decoration: InputDecoration(
-          labelText: label,
-          prefixIcon: const Icon(Icons.event_outlined),
-        ),
-        child: Text(
-          value == null ? '—' : Fmt.date(value),
-          style: AppTextStyles.bodyMedium,
-        ),
-      ),
-    );
-  }
-}
 
 // ─── SCHEDA COMPONENTI ─────────────────────────────────────────────────────
 

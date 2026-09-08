@@ -11,13 +11,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../domain/entities/enums.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../../presentation/providers/core_providers.dart';
 
 import '../../presentation/features/shell/app_shell.dart';
+import '../../presentation/features/splash/splash_screen.dart';
 import '../../presentation/features/auth/login_screen.dart';
 import '../../presentation/features/home/home_screen.dart';
 import '../../presentation/features/work_orders/work_orders_screen.dart';
+import '../../presentation/features/work_orders/filtered_work_orders_screen.dart';
 import '../../presentation/features/work_orders/work_order_detail_screen.dart';
 import '../../presentation/features/esito/esito_screen.dart';
 import '../../presentation/features/meter/meter_screen.dart';
@@ -65,8 +68,11 @@ final goRouterProvider = Provider<GoRouter>((ref) {
 
   return GoRouter(
     navigatorKey: _rootNavigatorKey,
-    initialLocation: AppRoutes.home,
+    initialLocation: AppRoutes.splash,
     redirect: (context, state) {
+      // Lo splash iniziale gestisce da sé la destinazione dopo i 6 secondi:
+      // non va deviato dal redirect, altrimenti sparirebbe subito.
+      if (state.matchedLocation == AppRoutes.splash) return null;
       final loggedIn = auth.currentUser != null;
       final onLogin = state.matchedLocation == AppRoutes.login;
       if (!loggedIn && !onLogin) return AppRoutes.login;
@@ -74,6 +80,8 @@ final goRouterProvider = Provider<GoRouter>((ref) {
       return null;
     },
     routes: [
+      GoRoute(
+          path: AppRoutes.splash, builder: (_, __) => const SplashScreen()),
       GoRoute(
           path: AppRoutes.login, builder: (_, __) => const LoginScreen()),
 
@@ -145,6 +153,23 @@ final goRouterProvider = Provider<GoRouter>((ref) {
               builder: (_, s) =>
                   SospensioniScreen(code: s.pathParameters['id']!)),
         ],
+      ),
+
+      // ─── Liste filtrate (card Home) e Pronto Intervento ──────────────────
+      GoRoute(
+        path: AppRoutes.workOrdersByStatus,
+        builder: (_, s) {
+          final raw = s.pathParameters['status'] ?? '';
+          final status = WorkOrderStatus.values.firstWhere(
+            (e) => e.name == raw,
+            orElse: () => WorkOrderStatus.ricevuto,
+          );
+          return FilteredWorkOrdersScreen.status(status);
+        },
+      ),
+      GoRoute(
+        path: AppRoutes.prontoIntervento,
+        builder: (_, __) => const FilteredWorkOrdersScreen.prontoIntervento(),
       ),
 
       // ─── Dettaglio Avviso + sotto-flussi (schermo intero) ────────────────

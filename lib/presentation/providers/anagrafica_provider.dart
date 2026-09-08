@@ -12,6 +12,13 @@ final solutionCodesProvider = FutureProvider<List<CodeLabel>>((ref) async {
   return res.valueOrNull ?? const [];
 });
 
+/// Priorità per la creazione OdL (schema WO). Endpoint reale del backend
+/// (/anagrafica/priorities): niente più priorità codificata in modo fisso.
+final orderPrioritiesProvider = FutureProvider<List<CodeLabel>>((ref) async {
+  final res = await ref.watch(anagraficaRepositoryProvider).getPriorities();
+  return res.valueOrNull ?? const [];
+});
+
 // ─── Cataloghi selezionabili dal cruscotto (niente hardcoded) ────────────────
 
 /// Tipi OdL selezionabili (creazione/copia/genera ordine).

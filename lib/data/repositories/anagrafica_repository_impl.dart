@@ -41,6 +41,10 @@ class AnagraficaRepositoryImpl implements AnagraficaRepository {
       _guard(() => remote.getSolutionCodes());
 
   @override
+  Future<Result<List<CodeLabel>>> getPriorities({String? schema}) =>
+      _guard(() => remote.getPriorities(schema: schema));
+
+  @override
   Future<Result<List<WorkOrderTypeOption>>> getWorkOrderTypes() =>
       _guard(() => remote.getWorkOrderTypes());
 

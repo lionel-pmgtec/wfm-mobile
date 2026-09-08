@@ -36,7 +36,7 @@ class _CambioCidScreenState extends ConsumerState<CambioCidScreen> {
   Widget build(BuildContext context) {
     final async = ref.watch(workOrderDetailProvider(widget.code));
     return Scaffold(
-      appBar: AppBar(title: const Text('Cambio CID'), actions: [OdlActionsMenu(code: widget.code)]),
+      appBar: AppBar(title: const Text('Cambio CID'), actions: [OdlActionsMenu(code: widget.code, scope: OdlMenuScope.cambioCid)]),
       body: async.when(
         loading: () => const WfmLoading(),
         error: (e, _) => WfmErrorState(message: e.toString()),

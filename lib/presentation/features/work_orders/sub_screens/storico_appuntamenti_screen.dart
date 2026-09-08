@@ -23,7 +23,7 @@ class StoricoAppuntamentiScreen extends ConsumerWidget {
     final sorted = [...list]..sort((a, b) => b.date.compareTo(a.date));
 
     return Scaffold(
-      appBar: AppBar(title: Text('Storico appuntamenti · $code'), actions: [OdlActionsMenu(code: code)]),
+      appBar: AppBar(title: Text('Storico appuntamenti · $code'), actions: [OdlActionsMenu(code: code, scope: OdlMenuScope.storico)]),
       body: sorted.isEmpty
           ? const EmptyState(
               title: 'Nessun appuntamento storico',

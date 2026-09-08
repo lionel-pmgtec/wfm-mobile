@@ -1,6 +1,8 @@
 // Componenti UI riutilizzabili aggiuntivi (Design System WFM, specifiche §10.3).
 
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+import '../router/app_routes.dart';
 import '../theme/app_theme.dart';
 import '../constants/app_constants.dart';
 import '../../domain/entities/enums.dart';
@@ -42,26 +44,43 @@ class WfmOfflineBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     if (!offline && pendingCount == 0) return const SizedBox.shrink();
     final color = offline ? AppColors.accentOrange : AppColors.primary;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
+    // Cliccabile: apre la schermata di sincronizzazione, dove "Riprova tutto"
+    // rigioca la coda (ed eventuali errori sono visibili). Prima era un semplice
+    // indicatore: toccarlo non faceva nulla.
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(20),
+      child: InkWell(
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withValues(alpha: 0.4)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(offline ? Icons.cloud_off_rounded : Icons.sync_rounded,
-              size: 14, color: color),
-          const SizedBox(width: 6),
-          Text(
-            offline
-                ? 'Offline${pendingCount > 0 ? ' · $pendingCount' : ''}'
-                : '$pendingCount in coda',
-            style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: color),
+        onTap: () => context.push(AppRoutes.syncQueue),
+        child: Tooltip(
+          message: offline
+              ? 'Offline: la coda partirà al ritorno della rete. Tocca per i dettagli.'
+              : 'Tocca per sincronizzare la coda',
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: color.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: color.withValues(alpha: 0.4)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(offline ? Icons.cloud_off_rounded : Icons.sync_rounded,
+                    size: 14, color: color),
+                const SizedBox(width: 6),
+                Text(
+                  offline
+                      ? 'Offline${pendingCount > 0 ? ' · $pendingCount' : ''}'
+                      : '$pendingCount in coda',
+                  style: TextStyle(
+                      fontSize: 11, fontWeight: FontWeight.w600, color: color),
+                ),
+              ],
+            ),
           ),
-        ],
+        ),
       ),
     );
   }

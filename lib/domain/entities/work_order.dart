@@ -115,7 +115,11 @@ class WorkOrder {
 
   // ── ALTRI ─────────────────────────────────────────────────────────
   final String accountingSector; // POT, FOG...
-  final String notes;
+  final String notes; // SAP + campo unite (retro-compat)
+  /// Nota SAP (DESCRIZIONE/NOTE dell'ordine) — SOLA LETTURA.
+  final String noteSap;
+  /// Note aggiunte sul campo dal tecnico — modificabili (PATCH `notes`).
+  final String noteAggiunte;
   final int attachmentsCount;
   final LocalSyncStatus localStatus;
   final DateTime? createdAt;
@@ -169,6 +173,8 @@ class WorkOrder {
     this.dataFine,
     this.accountingSector = '',
     this.notes = '',
+    this.noteSap = '',
+    this.noteAggiunte = '',
     this.attachmentsCount = 0,
     this.localStatus = LocalSyncStatus.synced,
     this.createdAt,
@@ -199,6 +205,32 @@ class WorkOrder {
 
   /// Apertura/attivazione fornitura: sigillo, lettura iniziale.
   bool get hasAttivazione => category == WorkOrderCategory.attivazione;
+
+  /// Posa contatore (prima attivazione): l'operatore INSTALLA un contatore
+  /// nuovo, quindi ne inserisce matricola/lettura di posa. Si riconosce dal
+  /// tipo di attività SAP (TP_ATT_PM = "POS") o dalla descrizione ("posa"):
+  /// il WS non manda un flag dedicato. Sui POS reali il DATI_APPARECCHIATURA
+  /// arriva vuoto ([meter] == null): è comunque una posa.
+  bool get isPosaContatore {
+    if (category != WorkOrderCategory.attivazione) return false;
+    final cod =
+        '${tipoAttivitaCodice ?? ''} $subTam'.trim().toUpperCase();
+    if (cod.split(RegExp(r'\s+')).contains('POS')) return true;
+    final txt = '${tipoAttivitaNome ?? ''} $woTypeDescription'.toLowerCase();
+    return txt.contains('posa');
+  }
+
+  /// Contatore da INSTALLARE sul campo: una posa, oppure un'attivazione senza
+  /// contatore in anagrafica (matricola assente). In questi casi l'operatore
+  /// digita la matricola e non esiste una lettura precedente.
+  bool get isNuovoContatore =>
+      isPosaContatore ||
+      (hasAttivazione && (meter?.matricola ?? matricola ?? '').trim().isEmpty);
+
+  /// L'intervento prevede una lettura del contatore da trasmettere alla
+  /// chiusura: qualunque OdL con contatore in anagrafica, più le attivazioni
+  /// (anche quando il contatore è nuovo e quindi assente da SAP).
+  bool get hasMeterReading => meter != null || hasAttivazione;
 
   /// Sostituzione contatore: matricola vecchio/nuovo, letture, calibro.
   bool get hasSostituzione => category == WorkOrderCategory.sostituzione;
@@ -252,6 +284,27 @@ class WorkOrder {
       status == WorkOrderStatus.annullato ||
       status == WorkOrderStatus.inviatoSAP;
 
+  /// Pronto Intervento — intervento urgente da rendere subito visibile in Home.
+  ///
+  /// Non è un flag dedicato di SAP: lo deriviamo dai campi già esposti dal
+  /// backend, senza inventare dati. È PI un ordine il cui tipo (AUFART) ricade
+  /// nella categoria [WorkOrderCategory.interventoRete] — cioè i codici di
+  /// pronto intervento rete/emergenza (ZA01, ZA02, ZF0x, SOPA…) — oppure
+  /// segnalato in reperibilità dal flag SAP [reperibilita].
+  bool get isProntoIntervento =>
+      category == WorkOrderCategory.interventoRete || reperibilita;
+
+  /// Vero se la priorità indica alta urgenza (Alta / 1 / urgente).
+  /// Usato per ordinare i Pronto Intervento e per l'etichetta in Home.
+  bool get isHighPriority {
+    final p = priorita.trim().toLowerCase();
+    if (p.isEmpty) return false;
+    return p.contains('alta') ||
+        p.contains('urgent') ||
+        p == '1' ||
+        p == 'a';
+  }
+
   /// Emoji indicativa in base alla tipologia (mostrata come testo accanto al
   /// nome). NB: deve restituire un vero glifo, non il nome di un'icona.
   String get typeEmoji => switch (category) {
@@ -267,6 +320,7 @@ class WorkOrder {
   WorkOrder copyWith({
     WorkOrderStatus? status,
     String? notes,
+    String? noteAggiunte,
     String? aggUbicazione,
     String? cidAssegnato,
     List<Operation>? operations,
@@ -323,6 +377,8 @@ class WorkOrder {
       dataFine: dataFine,
       accountingSector: accountingSector,
       notes: notes ?? this.notes,
+      noteSap: noteSap,
+      noteAggiunte: noteAggiunte ?? this.noteAggiunte,
       attachmentsCount: attachmentsCount ?? this.attachmentsCount,
       localStatus: localStatus ?? this.localStatus,
       createdAt: createdAt,

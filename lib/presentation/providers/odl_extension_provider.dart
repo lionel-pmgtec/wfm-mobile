@@ -47,6 +47,10 @@ class OdlExtensionNotifier extends StateNotifier<OdlExtension> {
         ),
       );
 
+  // ── Ore lavorate (scheda Operazioni) ────────────────────────────────────
+  Future<void> setOre(List<OdlOreLavorate> ore) =>
+      _persist(state.copyWith(ore: ore));
+
   // ── Appuntamenti ────────────────────────────────────────────────────────
   Future<void> addAppuntamento(OdlAppuntamento a) =>
       _persist(state.copyWith(appuntamenti: [...state.appuntamenti, a]));

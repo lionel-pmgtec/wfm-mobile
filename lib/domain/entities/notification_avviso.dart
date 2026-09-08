@@ -223,6 +223,12 @@ class NotificationAvviso {
   /// Sottotipo derivato dal campo [tipo] tramite il registry.
   AvvisoSubType get sottotipo => AvvisoSubType.fromCode(tipo);
 
+  /// Descrizione leggibile del tipo, allineata al Cruscotto (fonte di verità).
+  String get tipoDescrizione => avvisoTipoDescrizione(tipo);
+
+  /// Etichetta "CODICE · Descrizione" come nel filtro del Cruscotto.
+  String get tipoLabel => avvisoTipoLabel(tipo);
+
   /// Categoria macro (Pronto Intervento / Richiesta Preventivo).
   AvvisoCategory get categoria => sottotipo.category;
 
@@ -238,6 +244,18 @@ class NotificationAvviso {
     return p.contains('alta') || p.contains('critic') || p.contains('urg') ||
         p.startsWith('3') || p.startsWith('4');
   }
+
+  /// Pronto Intervento — avviso urgente da evidenziare e mostrare per primo.
+  ///
+  /// Allineato alla fonte di verità (Cruscotto): sono Pronto Intervento i tipi
+  /// la cui descrizione inizia con "Pronto Intervento" (oggi ZH e ZF). In più,
+  /// per gli altri tipi, restano PI gli avvisi coi flag reali di urgenza SAP:
+  /// servizio di Emergenza, reperibilità o interruzione della fornitura.
+  bool get isProntoIntervento =>
+      avvisoTipoIsProntoIntervento(tipo) ||
+      tipoServizio == TipoServizio.emergenza ||
+      reperibilita ||
+      interruzioneFornitura;
 
   /// Telefono utile per la visualizzazione (preferenza: indirizzo, poi cliente).
   String? get telefonoUtile =>

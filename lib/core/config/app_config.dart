@@ -54,11 +54,13 @@ class AppConfig {
     middlewareBaseUrl: String.fromEnvironment(
       'WFM_BASE_URL',
       // IP LAN del PC (Wi-Fi). ATTENZIONE: è DHCP, può cambiare → verifica con
-      // `ipconfig` e passa `--dart-define=WFM_BASE_URL=http192.168.1.60:4000/api/v1`.
-      defaultValue: 'http://192.168.1.8:4000/api/v1',
+      // `ipconfig` e passa --dart-define=WFM_BASE_URL=http://192.168.1.53:4000/api/v1.
+      // Backend del collega (dev): 192.168.1.53:4000  ·  wifi casa: 192.168.1.8
+      defaultValue: 'http://192.168.1.53:4000/api/v1',
     ),
   );
 
+//http://192.168.1.53:4000
    static const AppConfig qa = AppConfig(
      flavor: AppFlavor.qa,
      middlewareBaseUrl: 'https://wfm-cruscotto.qa.local',
