@@ -95,6 +95,11 @@ class OdlExtension {
   /// Trasmesse alla chiusura come `hoursWorked` (il backend ne salva la somma).
   final List<OdlOreLavorate> ore;
 
+  /// Momento in cui l'operatore ha premuto "Avvia" (inizio reale del lavoro sul
+  /// campo). Serve a precompilare l'orario di inizio nell'esito: non è più
+  /// mezzanotte dell'appuntamento, ma l'ora effettiva di avvio.
+  final DateTime? avviatoIl;
+
   final DateTime updatedAt;
 
   const OdlExtension({
@@ -108,6 +113,7 @@ class OdlExtension {
     this.chiusura = const OdlChiusura(),
     this.materiali = const [],
     this.ore = const [],
+    this.avviatoIl,
     required this.updatedAt,
   });
 
@@ -128,6 +134,7 @@ class OdlExtension {
     OdlChiusura? chiusura,
     List<MaterialUsage>? materiali,
     List<OdlOreLavorate>? ore,
+    DateTime? avviatoIl,
   }) =>
       OdlExtension(
         odlCode: odlCode,
@@ -144,6 +151,7 @@ class OdlExtension {
         chiusura: chiusura ?? this.chiusura,
         materiali: materiali ?? this.materiali,
         ore: ore ?? this.ore,
+        avviatoIl: avviatoIl ?? this.avviatoIl,
         updatedAt: DateTime.now(),
       );
 
@@ -158,6 +166,7 @@ class OdlExtension {
         'chiusura': chiusura.toJson(),
         'materiali': materiali.map(_materialeToJson).toList(),
         'ore': ore.map((o) => o.toJson()).toList(),
+        'avviatoIl': avviatoIl?.toIso8601String(),
         'updatedAt': updatedAt.toIso8601String(),
       };
 
@@ -190,6 +199,7 @@ class OdlExtension {
         ore: ((json['ore'] as List?) ?? [])
             .map((e) => OdlOreLavorate.fromJson(e as Map))
             .toList(),
+        avviatoIl: DateTime.tryParse(json['avviatoIl'] as String? ?? ''),
         updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? '') ??
             DateTime.now(),
       );

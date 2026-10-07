@@ -55,3 +55,8 @@ class HiveBoxes {
   static const String syncQueue = 'sync_queue';
   static const String settings = 'settings';
 }
+
+/// Tipi di OdL selezionabili nella demo (2026-09-28): gli altri tipi del
+/// catalogo restano visibili ma grigi, per non sceglierli per sbaglio. I tipi
+/// arrivano comunque dal backend (`wo-types`): qui non se ne aggiunge nessuno.
+const kTipiOdlAbilitati = {'SOST', 'ZA02'};

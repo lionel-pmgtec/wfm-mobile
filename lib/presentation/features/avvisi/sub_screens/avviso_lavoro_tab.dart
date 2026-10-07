@@ -19,6 +19,7 @@ import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/formatters.dart';
 import '../../../../core/widgets/widgets.dart';
 import '../../../../domain/entities/entities.dart';
+import '../../../providers/avvisi_provider.dart';
 import '../../../providers/avviso_extension_provider.dart';
 import '../widgets/avviso_widgets.dart';
 
@@ -118,22 +119,29 @@ class _FlussoSection extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final prev = ext.preventivo;
+    // L'OdL collegato: quello che il backend scrive sull'avviso (SAP) oppure,
+    // per gli OdL generati dal tablet, quello che porta il numero dell'avviso.
+    final locale =
+        ref.watch(ordineCollegatoProvider(avviso.numeroAvviso)).valueOrNull;
+    final codiceOdl =
+        avviso.hasOrdineCollegato ? avviso.ordineDiLavoro : locale?.externalCode;
+    final statoOdl = avviso.hasOrdineCollegato
+        ? (avviso.statoOdl ?? '—')
+        : (locale?.status.label ?? '—');
+    final collegato = codiceOdl != null && codiceOdl.isNotEmpty;
     final stages = <_FlussoStage>[
       // OdL
       _FlussoStage(
         icon: Icons.assignment_outlined,
-        title: avviso.hasOrdineCollegato
-            ? 'OdL ${avviso.ordineDiLavoro}'
-            : 'Ordine di Servizio',
-        subtitle: avviso.hasOrdineCollegato
-            ? 'Stato: ${avviso.statoOdl ?? '—'}'
+        title: collegato ? 'OdL $codiceOdl' : 'Ordine di Servizio',
+        subtitle: collegato
+            ? 'Stato: $statoOdl'
             : 'Nessun ordine — genera adesso',
-        done: avviso.hasOrdineCollegato,
-        ctaLabel: avviso.hasOrdineCollegato ? 'Apri OdL' : 'Genera OdL',
+        done: collegato,
+        ctaLabel: collegato ? 'Apri OdL' : 'Genera OdL',
         onCta: () {
-          if (avviso.hasOrdineCollegato) {
-            context.push(
-                AppRoutes.workOrderDetailPath(avviso.ordineDiLavoro!));
+          if (collegato) {
+            context.push(AppRoutes.workOrderDetailPath(codiceOdl));
           } else {
             context.push(
                 AppRoutes.generaOrdineDaAvvisoPath(avviso.numeroAvviso));
@@ -341,9 +349,10 @@ Future<(PreventivoStato, String?)?> _chiediEsitoCliente(
               TextField(
                 controller: motivoCtrl,
                 maxLines: 2,
-                decoration: const InputDecoration(
+                decoration: InputDecoration(
                     labelText: 'Motivo rifiuto',
-                    hintText: 'Es. Prezzo troppo alto'),
+                    hintText: 'Es. Prezzo troppo alto',
+                    suffixIcon: VoiceSuffixIcons(controller: motivoCtrl)),
               ),
             ],
           ],
@@ -502,8 +511,10 @@ class _PagamentoSheetState extends State<_PagamentoSheet> {
             TextField(
               controller: _noteCtrl,
               maxLines: 2,
-              decoration: const InputDecoration(
-                  labelText: 'Note', alignLabelWithHint: true),
+              decoration: InputDecoration(
+                  labelText: 'Note',
+                  alignLabelWithHint: true,
+                  suffixIcon: VoiceSuffixIcons(controller: _noteCtrl)),
             ),
             const SizedBox(height: 16),
             ElevatedButton.icon(
@@ -847,14 +858,18 @@ class _AddSospensioneSheetState extends State<_AddSospensioneSheet> {
             const SizedBox(height: 10),
             TextField(
               controller: _causaCtrl,
-              decoration: const InputDecoration(labelText: 'Causa'),
+              decoration: InputDecoration(
+                  labelText: 'Causa',
+                  suffixIcon: VoiceSuffixIcons(controller: _causaCtrl)),
             ),
             const SizedBox(height: 10),
             TextField(
               controller: _noteCtrl,
               maxLines: 3,
-              decoration: const InputDecoration(
-                  labelText: 'Note', alignLabelWithHint: true),
+              decoration: InputDecoration(
+                  labelText: 'Note',
+                  alignLabelWithHint: true,
+                  suffixIcon: VoiceSuffixIcons(controller: _noteCtrl)),
             ),
             const SizedBox(height: 16),
             ElevatedButton.icon(
@@ -1083,8 +1098,10 @@ class _PermessoSheetState extends State<_PermessoSheet> {
             TextField(
               controller: _noteCtrl,
               maxLines: 2,
-              decoration: const InputDecoration(
-                  labelText: 'Note', alignLabelWithHint: true),
+              decoration: InputDecoration(
+                  labelText: 'Note',
+                  alignLabelWithHint: true,
+                  suffixIcon: VoiceSuffixIcons(controller: _noteCtrl)),
             ),
             const SizedBox(height: 16),
             ElevatedButton.icon(
@@ -1254,9 +1271,10 @@ class _LavoroSheetState extends State<_LavoroSheet> {
             TextField(
               controller: _descCtrl,
               maxLines: 2,
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                   labelText: 'Descrizione *',
-                  hintText: 'Es. Predisporre vano contatore'),
+                  hintText: 'Es. Predisporre vano contatore',
+                  suffixIcon: VoiceSuffixIcons(controller: _descCtrl)),
             ),
             const SizedBox(height: 10),
             DropdownButtonFormField<LavoroClienteStato>(
@@ -1273,8 +1291,10 @@ class _LavoroSheetState extends State<_LavoroSheet> {
             TextField(
               controller: _noteCtrl,
               maxLines: 2,
-              decoration: const InputDecoration(
-                  labelText: 'Note', alignLabelWithHint: true),
+              decoration: InputDecoration(
+                  labelText: 'Note',
+                  alignLabelWithHint: true,
+                  suffixIcon: VoiceSuffixIcons(controller: _noteCtrl)),
             ),
             const SizedBox(height: 16),
             ElevatedButton.icon(

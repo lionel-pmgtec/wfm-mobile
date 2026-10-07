@@ -35,6 +35,8 @@ import '../../domain/repositories/odl_extension_repository.dart';
 // ─── CONFIG & SERVIZI DI BASE ─────────────────────────────────────────────
 
 final appConfigProvider = Provider<AppConfig>((ref) => kAppConfig);
+final backendStatusProvider =
+    Provider<String>((ref) => 'Backend non verificato');
 
 final connectivityProvider = Provider<ConnectivityService>((ref) {
   final service = ConnectivityService();
@@ -70,7 +72,12 @@ final remoteDataSourceProvider = Provider<WfmRemoteDataSource>((ref) {
 final authRepositoryProvider = Provider<AuthRepository>(
   (ref) => AuthRepositoryImpl(
     ref.watch(remoteDataSourceProvider),
-    onTokenChanged: (token) => ref.read(authTokenProvider.notifier).state = token,
+    onTokenChanged: (token) {
+      ref.read(authTokenProvider.notifier).state = token;
+      // Cambio di sessione (login/logout): azzera la cache OdL così un tecnico
+      // non eredita gli OdL del precedente, anche se il primo fetch fallisse.
+      ref.read(localDataSourceProvider).clearWorkOrders();
+    },
   ),
 );
 
@@ -114,8 +121,8 @@ final anagraficaRepositoryProvider = Provider<AnagraficaRepository>(
 
 /// Repository per i dati LOCALI estesi dell'Avviso (preventivo, permessi,
 /// lavori cliente, documenti, sospensioni, note). Persistenza Hive.
-final avvisoExtensionRepositoryProvider =
-    Provider<AvvisoExtensionRepository>((ref) => AvvisoExtensionRepositoryImpl());
+final avvisoExtensionRepositoryProvider = Provider<AvvisoExtensionRepository>(
+    (ref) => AvvisoExtensionRepositoryImpl());
 
 /// Repository per i dati LOCALI estesi dell'OdL (attivita, appuntamenti,
 /// sospensioni, firme, chiusura, note). Persistenza Hive.

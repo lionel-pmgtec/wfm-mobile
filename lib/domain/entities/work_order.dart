@@ -62,9 +62,23 @@ class WorkOrder {
   final String? tipoAttivitaNome; // nome attività
   final WorkOrderStatus status;
   final String? statoSap; // CO_STTXT — stringa stato grezza SAP (es. "RIL. CALP EDCO...")
-  final String priorita; // Alta / Media / Bassa
+  final String priorita; // descrizione mostrata (es. "Programmato")
+  /// Codice SAP della priorità scelta alla creazione ("1"…). È quello che il
+  /// backend vuole (in SAP il campo è il codice); [priorita] resta la
+  /// descrizione da mostrare. Null per gli OdL che arrivano dal backend.
+  final String? prioritaCodice;
+  /// Ciclo di lavoro (GRUPPO_CICLI, es. SOSCONT1/PROINT2): lo decide il
+  /// backend dal tipo attività, l'app lo mostra.
+  final String? gruppoCicli;
+  /// Il pianificatore l'ha già inviato a SAP dal cruscotto: da quel momento
+  /// il backend rifiuta ogni scrittura (409) e l'OdL è in sola lettura.
+  final bool inviatoSap;
   final String? creatoDa; // utente SAP creatore
   final String? avvisoOrigine; // riferimento avviso (back-compat con notificationNumberSap)
+  /// Ordine di lavoro di ORIGINE (es. SOST creato da un OdL di lettura):
+  /// tracciabilità "Ordine Precedente". Il backend non lo espone ancora: il
+  /// campo è pronto e viaggia nel payload, verrà letto quando disponibile.
+  final String? ordineOrigine;
   final String centroPianificazione;
   final String centroLavoro;
 
@@ -77,6 +91,12 @@ class WorkOrder {
   final Customer customer;
   final String? codiceCliente; // se non presente in customer
   final String? referente;
+
+  /// Nome che SAP ha sull'indirizzo di lavoro (ADRC-NAME1/NAME2): il nome del
+  /// BATTIMENTO/condominio o dell'attività che sta lì (es. "COND.VIA ROVERETO
+  /// 20A"). Non è il cliente: quello sta in [customer] solo se SAP manda
+  /// CLIENTE.NOME/COGNOME.
+  final String? nomeIndirizzo;
   final String? telefonoCliente;
 
   // ── INDIRIZZI ──────────────────────────────────────────────
@@ -98,6 +118,10 @@ class WorkOrder {
 
   // ── RISORSE ────────────────────────────────────────────────
   final String? cidAssegnato; // tecnico assegnato — modificabile
+  /// Solo per un OdL creato sul tablet e non ancora inviato: il collega a cui
+  /// passarlo appena il backend lo accetta. Il backend assegna sempre l'OdL a
+  /// chi lo crea; il passaggio al collega è la riassegnazione che segue.
+  final String? assegnaA;
   final String squadra;
   final String? responsabile;
   final String? fornitoreEsterno;
@@ -111,7 +135,22 @@ class WorkOrder {
   final String? ultimoCicloManutenzione;
   final String? postManut;
   final DateTime? dataEsec;
-  final DateTime? dataFine; // CO_GLTRP — data fine prevista SAP
+  /// Fine prevista = fine schedulata di SAP (AFKO-GLTRS), da
+  /// `testata.date.fineSchedulato`. Null finché il web service non la manda.
+  /// Sola lettura: non si rimanda al backend (`dataFine` in ingresso è il
+  /// DATA_FINE cardine, un'altra data).
+  final DateTime? dataFine;
+
+  /// Inizio cardine (DATA_INIZIO): per un OdL nato sul tablet o sul cruscotto
+  /// è il giorno in cui è stato assegnato al tecnico; per uno di SAP, la sua
+  /// data di inizio. Da `testata.date.inizioCardine`. Non è l'appuntamento col
+  /// cliente: serve a datare e ordinare un OdL che non ne ha uno.
+  final DateTime? dataInizio;
+
+  /// Data con cui mostrare e ordinare l'OdL: l'appuntamento col cliente se c'è,
+  /// altrimenti l'inizio cardine, la data di esecuzione e infine la creazione.
+  DateTime? get dataRiferimento =>
+      appointmentDate ?? dataInizio ?? dataEsec ?? createdAt;
 
   // ── ALTRI ─────────────────────────────────────────────────────────
   final String accountingSector; // POT, FOG...
@@ -137,8 +176,12 @@ class WorkOrder {
     this.status = WorkOrderStatus.ricevuto,
     this.statoSap,
     this.priorita = '',
+    this.prioritaCodice,
+    this.gruppoCicli,
+    this.inviatoSap = false,
     this.creatoDa,
     this.avvisoOrigine,
+    this.ordineOrigine,
     this.centroPianificazione = '',
     this.centroLavoro = '',
     this.appointmentDate,
@@ -148,6 +191,7 @@ class WorkOrder {
     this.customer = const Customer(),
     this.codiceCliente,
     this.referente,
+    this.nomeIndirizzo,
     this.telefonoCliente,
     this.indirizzoOggetto,
     this.indirizzoIntervento,
@@ -161,6 +205,7 @@ class WorkOrder {
     this.operations = const [],
     this.plannedMaterials = const [],
     this.cidAssegnato,
+    this.assegnaA,
     this.squadra = '',
     this.responsabile,
     this.fornitoreEsterno,
@@ -171,6 +216,7 @@ class WorkOrder {
     this.postManut,
     this.dataEsec,
     this.dataFine,
+    this.dataInizio,
     this.accountingSector = '',
     this.notes = '',
     this.noteSap = '',
@@ -276,10 +322,15 @@ class WorkOrder {
   bool get canComplete =>
       status == WorkOrderStatus.inEsecuzione || status == WorkOrderStatus.inPausa;
   bool get canCancel =>
+      !inviatoSap &&
       status != WorkOrderStatus.completato &&
       status != WorkOrderStatus.annullato &&
       status != WorkOrderStatus.inviatoSAP;
+
+  /// Sola lettura: chiuso, oppure già inviato a SAP dal pianificatore (il
+  /// backend rifiuterebbe ogni modifica con 409).
   bool get isClosed =>
+      inviatoSap ||
       status == WorkOrderStatus.completato ||
       status == WorkOrderStatus.annullato ||
       status == WorkOrderStatus.inviatoSAP;
@@ -328,6 +379,9 @@ class WorkOrder {
     LocalSyncStatus? localStatus,
     int? attachmentsCount,
     DateTime? updatedAt,
+    bool? inviatoSap,
+    /// Stringa vuota = nessun collega (resta a chi l'ha creato).
+    String? assegnaA,
   }) {
     return WorkOrder(
       externalCode: externalCode,
@@ -341,8 +395,12 @@ class WorkOrder {
       status: status ?? this.status,
       statoSap: statoSap,
       priorita: priorita,
+      prioritaCodice: prioritaCodice,
+      gruppoCicli: gruppoCicli,
+      inviatoSap: inviatoSap ?? this.inviatoSap,
       creatoDa: creatoDa,
       avvisoOrigine: avvisoOrigine,
+      ordineOrigine: ordineOrigine,
       centroPianificazione: centroPianificazione,
       centroLavoro: centroLavoro,
       appointmentDate: appointmentDate,
@@ -352,6 +410,7 @@ class WorkOrder {
       customer: customer,
       codiceCliente: codiceCliente,
       referente: referente,
+      nomeIndirizzo: nomeIndirizzo,
       telefonoCliente: telefonoCliente,
       indirizzoOggetto: indirizzoOggetto,
       indirizzoIntervento: indirizzoIntervento,
@@ -365,6 +424,9 @@ class WorkOrder {
       operations: operations ?? this.operations,
       plannedMaterials: plannedMaterials ?? this.plannedMaterials,
       cidAssegnato: cidAssegnato ?? this.cidAssegnato,
+      assegnaA: assegnaA == null
+          ? this.assegnaA
+          : (assegnaA.isEmpty ? null : assegnaA),
       squadra: squadra,
       responsabile: responsabile,
       fornitoreEsterno: fornitoreEsterno,
@@ -375,6 +437,7 @@ class WorkOrder {
       postManut: postManut,
       dataEsec: dataEsec,
       dataFine: dataFine,
+      dataInizio: dataInizio,
       accountingSector: accountingSector,
       notes: notes ?? this.notes,
       noteSap: noteSap,

@@ -144,8 +144,10 @@ class _GenOreScreenState extends ConsumerState<GenOreScreen> {
           const SizedBox(height: 12),
           TextFormField(
             controller: _noteCtrl,
-            decoration: const InputDecoration(
-                labelText: 'Note (facoltative)', alignLabelWithHint: true),
+            decoration: InputDecoration(
+                labelText: 'Note (facoltative)',
+                alignLabelWithHint: true,
+                suffixIcon: VoiceSuffixIcons(controller: _noteCtrl)),
             maxLines: 3,
           ),
           const SizedBox(height: 24),

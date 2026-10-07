@@ -214,7 +214,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen>
                     autocorrect: false,
                     textCapitalization: TextCapitalization.characters,
                     decoration: const InputDecoration(
-                      hintText: 'es. VAIOTTIM',
+                      hintText: '........',
                       prefixIcon: Icon(Icons.person_outline,
                           color: AppColors.textHint, size: 30),
                     ),

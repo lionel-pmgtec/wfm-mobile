@@ -117,8 +117,10 @@ class _WfmSidebar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final online = ref.watch(connectivityStatusProvider);
     final pending = ref.watch(pendingSyncCountProvider).valueOrNull ?? 0;
+    // Badge "Sincronizza": operazioni in coda (esiti/stati offline) + oggetti
+    // creati sul campo ancora da inviare.
     final daSincronizzare =
-        ref.watch(pendingCreationCountProvider).valueOrNull ?? 0;
+        pending + (ref.watch(pendingCreationCountProvider).valueOrNull ?? 0);
     final topInset = MediaQuery.of(context).padding.top;
     final iconScale = ref.watch(settingsProvider).iconScale;
 

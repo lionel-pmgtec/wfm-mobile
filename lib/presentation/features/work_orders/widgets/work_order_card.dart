@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/formatters.dart';
+import '../../../../core/services/arrival_store.dart';
 import '../../../../core/widgets/widgets.dart';
 import '../../../../domain/entities/entities.dart';
 import '../../../providers/creation_provider.dart';
@@ -121,8 +122,9 @@ class WorkOrderCard extends ConsumerWidget {
             const SizedBox(height: 4),
             // Indirizzo · data (+ priorità). Stesso formato degli avvisi.
             // L'indirizzo non è ancora esposto da SAP (ILOA/ADRC): fino ad allora
-            // resta la sola icona come segnaposto. La data è l'appuntamento se
-            // presente, altrimenti esecuzione/creazione SAP.
+            // resta la sola icona come segnaposto. La data dice sempre cos'è:
+            // "Appuntamento" è solo il rendez-vous col cliente; senza, l'inizio
+            // pianificato (cardine), la fine, o la creazione.
             Row(children: [
               const Icon(Icons.place_outlined,
                   size: 14, color: AppColors.textHint),
@@ -131,8 +133,8 @@ class WorkOrderCard extends ConsumerWidget {
                 child: Text(
                   (order.address.short.isNotEmpty &&
                           order.address.short != '—')
-                      ? '${order.address.short} · ${Fmt.date(order.appointmentDate ?? order.dataEsec ?? order.createdAt)}'
-                      : '· ${Fmt.date(order.appointmentDate ?? order.dataEsec ?? order.createdAt)}',
+                      ? '${order.address.short} · ${_dataEtichettata(order)}'
+                      : '· ${_dataEtichettata(order)}',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: AppTextStyles.bodySmall,
@@ -144,6 +146,15 @@ class WorkOrderCard extends ConsumerWidget {
                     size: 13, color: AppColors.textHint),
                 const SizedBox(width: 3),
                 Text(order.priorita, style: AppTextStyles.bodySmall),
+              ],
+              // Da quanto è arrivato sul tablet ("2 min fa"), accanto alla priorità.
+              if (ArrivalStore.of('odl', order.externalCode) != null) ...[
+                const SizedBox(width: 8),
+                const Icon(Icons.schedule, size: 13, color: AppColors.textHint),
+                const SizedBox(width: 3),
+                TempoFa(
+                    since: ArrivalStore.of('odl', order.externalCode)!,
+                    style: AppTextStyles.bodySmall),
               ],
               if (order.status == WorkOrderStatus.inPausa) ...[
                 const SizedBox(width: 6),
@@ -183,4 +194,17 @@ class WorkOrderCard extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// Data della card con la sua etichetta: "Appuntamento" solo se il cliente ha
+/// un appuntamento (data e, se c'è, ora); altrimenti la data di pianificazione.
+String _dataEtichettata(WorkOrder o) {
+  final a = o.appointmentDate;
+  if (a != null) {
+    final ora = o.appointmentStartTime.trim();
+    return 'Appuntamento ${Fmt.date(a)}${ora.isEmpty ? '' : ' $ora'}';
+  }
+  if (o.dataInizio != null) return 'Inizio ${Fmt.date(o.dataInizio)}';
+  if (o.dataEsec != null) return 'Esecuzione ${Fmt.date(o.dataEsec)}';
+  return 'Creato ${Fmt.date(o.createdAt)}';
 }

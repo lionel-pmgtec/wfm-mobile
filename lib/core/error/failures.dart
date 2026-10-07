@@ -27,6 +27,26 @@ class ServerFailure extends Failure {
   const ServerFailure(super.message, {super.code});
 }
 
+
+/// L'oggetto non esiste più (o non è più visibile) per questo tecnico: il
+/// backend risponde 404 con un messaggio (es. "Ordine … non più presente in SAP").
+/// Non è un guasto di rete: si scarta la copia locale e si torna alla lista.
+class NonTrovatoFailure extends Failure {
+  const NonTrovatoFailure(super.message) : super(code: 'NON_TROVATO');
+}
+
+/// Il pianificatore ha già inviato l'oggetto a SAP: il backend rifiuta ogni
+/// scrittura con 409 `{ inviatoSap: true }`. È definitivo, non si ritenta.
+class InviatoSapFailure extends Failure {
+  const InviatoSapFailure(super.message) : super(code: 'INVIATO_SAP');
+}
+
+class RevocatoFailure extends Failure {
+  final String? revocataIl;
+  const RevocatoFailure(super.message, {this.revocataIl})
+      : super(code: 'REVOCATO');
+}
+
 /// Errore lato cache locale (Hive).
 class CacheFailure extends Failure {
   const CacheFailure([super.message = 'Errore nella cache locale'])

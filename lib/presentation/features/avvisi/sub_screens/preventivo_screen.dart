@@ -198,8 +198,9 @@ class _PreventivoScreenState extends ConsumerState<PreventivoScreen> {
           TextField(
             controller: _motivoCtrl,
             maxLines: 2,
-            decoration:
-                const InputDecoration(labelText: 'Motivo dell\'ordine'),
+            decoration: InputDecoration(
+                labelText: 'Motivo dell\'ordine',
+                suffixIcon: VoiceSuffixIcons(controller: _motivoCtrl)),
             onChanged: (_) => _persistHeader(),
           ),
           const SizedBox(height: 12),

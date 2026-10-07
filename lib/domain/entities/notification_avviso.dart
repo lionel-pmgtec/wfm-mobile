@@ -72,6 +72,9 @@ class NotificationAvviso {
   final DateTime? dataPianificata;
   final DateTime? dataInterventoRichiesta; // spec PI
   final DateTime? dataInizioGuasto; // spec PI
+  final String? oraInterventoRichiesta; // INIZIO_RICH_ORA
+  final String? oraInizioGuasto; // GUASTO.INIZIO_ORA
+  final String? oraFineGuasto; // GUASTO.FINE_ORA
   final DateTime? dataFineGuasto; // spec PI
   final DateTime? dataInizioIntervento; // "Data Inizio Lavoro"
   final String? oraInizioIntervento;
@@ -175,6 +178,9 @@ class NotificationAvviso {
     this.dataPianificata,
     this.dataInterventoRichiesta,
     this.dataInizioGuasto,
+    this.oraInterventoRichiesta,
+    this.oraInizioGuasto,
+    this.oraFineGuasto,
     this.dataFineGuasto,
     this.dataChiusura,
     this.fasciaOraria,

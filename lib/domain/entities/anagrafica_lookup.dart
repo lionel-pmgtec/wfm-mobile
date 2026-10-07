@@ -17,6 +17,54 @@ class WorkOrderTypeOption {
   });
 }
 
+/// Riga di correlazione tipo ordine → tipo attività PM → ciclo → settore
+/// (da `GET /anagrafica/wo-templates?type=CODE`). Serve a proporre il tipo
+/// attività al tecnico: il ciclo/settore restano informativi (`daConfermare`
+/// dice quali valori sono dedotti e non ancora verificati su SAP).
+class WorkOrderActivityTemplate {
+  final String woType; // es. "SOST"
+  final String tipoAttivita; // codice PM (SOS, S01, D33…) → tipoAttivitaCodice
+  final String tipoAttivitaDesc; // descrizione (Sostituzione, Contatore fermo…)
+  final String gruppoCicli; // ciclo di lavoro (SOSCONT1, SOSPNRR…)
+  final String settoreContabile; // POT, FOG…
+  final String settoreContabileDesc; // "Servizio acqua potabile"…
+  final List<String> daConfermare; // valori dedotti, non verificati su SAP
+  final bool predefinita; // riga proposta di default
+
+  const WorkOrderActivityTemplate({
+    required this.woType,
+    required this.tipoAttivita,
+    this.tipoAttivitaDesc = '',
+    this.gruppoCicli = '',
+    this.settoreContabile = '',
+    this.settoreContabileDesc = '',
+    this.daConfermare = const [],
+    this.predefinita = false,
+  });
+
+  /// Etichetta pronta per la tendina: "SOS · Sostituzione".
+  String get label => tipoAttivitaDesc.isEmpty
+      ? tipoAttivita
+      : '$tipoAttivita · $tipoAttivitaDesc';
+
+  /// Etichetta da mostrare in una tendina con queste [rows]: se un'altra riga
+  /// ha la stessa etichetta (es. ZA02: DST sia con ciclo CONRCO1 sia con
+  /// CONRID1) si aggiunge il ciclo, l'unica cosa che le distingue.
+  String labelIn(List<WorkOrderActivityTemplate> rows) {
+    final doppione = rows.any((r) => !identical(r, this) && r.label == label);
+    return doppione && gruppoCicli.isNotEmpty ? '$label · $gruppoCicli' : label;
+  }
+
+  /// "SOSCONT1 · POT - Servizio acqua potabile" (riga informativa sotto).
+  String get cicloSettore => [
+        if (gruppoCicli.isNotEmpty) gruppoCicli,
+        if (settoreContabileDesc.isNotEmpty)
+          '$settoreContabile - $settoreContabileDesc'
+        else if (settoreContabile.isNotEmpty)
+          settoreContabile,
+      ].join(' · ');
+}
+
 /// Tipo di controllo di un campo dinamico.
 enum DynFieldType { text, multiline, number, select, date }
 

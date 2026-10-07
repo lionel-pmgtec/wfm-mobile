@@ -99,17 +99,20 @@ class AppTextStyles {
   );
 
   // Campi modulo
+  // Etichetta: piccola, pallida, MAIUSCOLA — è solo il "nome del campo".
   static const TextStyle fieldLabel = TextStyle(
     fontSize: 11, fontWeight: FontWeight.w600,
-    color: AppColors.textSecondary, letterSpacing: 0.4,
+    color: AppColors.textHint, letterSpacing: 0.5,
   );
   static const TextStyle fieldValue = TextStyle(
-    fontSize: 14, fontWeight: FontWeight.w400,
+    fontSize: 15, fontWeight: FontWeight.w600,
     color: AppColors.textPrimary,
   );
+  // Valore in sola lettura: SCURO e in evidenza, così si distingue nettamente
+  // dall'etichetta (che è pallida). Prima erano dello stesso colore = confusi.
   static const TextStyle fieldValueReadOnly = TextStyle(
-    fontSize: 14, fontWeight: FontWeight.w400,
-    color: AppColors.textSecondary,
+    fontSize: 15, fontWeight: FontWeight.w600,
+    color: AppColors.textPrimary,
   );
 }
 
@@ -208,6 +211,9 @@ ThemeData buildAppTheme({double iconScale = 1.0}) {
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: AppColors.surface,
+      // Etichetta SEMPRE sopra il campo (mai dentro): così il nome del campo
+      // non si confonde con il valore digitato, come nell'app precedente.
+      floatingLabelBehavior: FloatingLabelBehavior.always,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),

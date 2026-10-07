@@ -1,0 +1,338 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Messaggio SOAP riceviPM di TEST — simula SAP che spinge OdL e Avvisi al backend.
+  Formato identico a Backend-WFM-VIVA/examples/riceviPM-request.xml.
+  Numeri ordine/avviso e matricole: INVENTATI per il test (intervallo 0000900000xx / 0004000900xx).
+  Codici (TIPO_ORDINE, TP_ATT_PM, CHIAVE_CONTR, cicli, priorità): verificati sul backend.
+  Invio: vedi DATI_TEST.md (POST su /soap/pm, Content-Type text/xml).
+-->
+<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+                  xmlns:pm="urn:vivaservizi:wfm:pm">
+  <soapenv:Header/>
+  <soapenv:Body>
+    <pm:riceviPM>
+      <MESSAGGIO>
+        <ID_MSG>TEST0000000000000000000000000001</ID_MSG>
+        <DATA_ORA>20260924090000</DATA_ORA>
+        <SISTEMA>DG1</SISTEMA>
+        <MANDANTE>010</MANDANTE>
+        <ORDINI>
+
+          <!-- 1) ATTIVAZIONE — POSA contatore (TP_ATT_PM=POS): il contatore NON è in anagrafica -->
+          <item>
+            <ORDINE>000090000001</ORDINE>
+            <TIPO_ORDINE>ATTI</TIPO_ORDINE>
+            <TIPO_ORDINE_DESC>Misuratori - Apertura (sigillo)</TIPO_ORDINE_DESC>
+            <TP_ATT_PM>POS</TP_ATT_PM>
+            <DESCRIZIONE>Posa contatore - nuovo allaccio</DESCRIZIONE>
+            <DIVISIONE>SP1</DIVISIONE>
+            <CENTRO_MANUT>SP1</CENTRO_MANUT>
+            <CL_LAV_RESP>ACNOT01A</CL_LAV_RESP>
+            <STATO>RIL. CALP EDCO KKMP NLIA</STATO>
+            <DATA_CREAZ>2026-09-24</DATA_CREAZ>
+            <DATA_INIZIO>2026-09-24</DATA_INIZIO>
+            <DATA_FINE>2026-09-24</DATA_FINE>
+            <PRIORITA>3</PRIORITA>
+            <SETTORE_CONTABILE>POT</SETTORE_CONTABILE>
+            <CLIENTE>
+              <NOME>Mario</NOME>
+              <COGNOME>Rossi</COGNOME>
+              <TELEFONO>3401234567</TELEFONO>
+            </CLIENTE>
+            <INDIRIZZO>
+              <VIA>VIA ROMA</VIA>
+              <CIVICO>10</CIVICO>
+              <CAP>60019</CAP>
+              <LOCALITA>SENIGALLIA</LOCALITA>
+              <PROVINCIA>AN</PROVINCIA>
+            </INDIRIZZO>
+            <OPERAZIONI>
+              <item><OPERAZIONE>0010</OPERAZIONE><DESCRIZIONE>Trasferimento</DESCRIZIONE><CHIAVE_CONTR>PM01</CHIAVE_CONTR><CENTRO_LAVORO>ACNOT01A</CENTRO_LAVORO><LAVORO>0.0</LAVORO><UNITA>H</UNITA></item>
+              <item><OPERAZIONE>0040</OPERAZIONE><DESCRIZIONE>Lavori Idraulici</DESCRIZIONE><CHIAVE_CONTR>ZM01</CHIAVE_CONTR><CENTRO_LAVORO>ACNOT01A</CENTRO_LAVORO><LAVORO>0.0</LAVORO><UNITA>H</UNITA></item>
+              <item><OPERAZIONE>0200</OPERAZIONE><DESCRIZIONE>Automezzi</DESCRIZIONE><CHIAVE_CONTR>PM01</CHIAVE_CONTR><CENTRO_LAVORO>ACNOT01A</CENTRO_LAVORO><LAVORO>0.0</LAVORO><UNITA>H</UNITA></item>
+            </OPERAZIONI>
+          </item>
+
+          <!-- 2) ATTIVAZIONE — APERTURA su contatore esistente (TP_ATT_PM=ADS) -->
+          <item>
+            <ORDINE>000090000002</ORDINE>
+            <TIPO_ORDINE>ATTI</TIPO_ORDINE>
+            <TIPO_ORDINE_DESC>Misuratori - Apertura (sigillo)</TIPO_ORDINE_DESC>
+            <TP_ATT_PM>ADS</TP_ATT_PM>
+            <DESCRIZIONE>Apertura fornitura - subentro</DESCRIZIONE>
+            <DIVISIONE>SP1</DIVISIONE>
+            <CENTRO_MANUT>SP1</CENTRO_MANUT>
+            <CL_LAV_RESP>ACNOT01A</CL_LAV_RESP>
+            <STATO>RIL. CALP EDCO KKMP NLIA</STATO>
+            <DATA_CREAZ>2026-09-24</DATA_CREAZ>
+            <DATA_INIZIO>2026-09-24</DATA_INIZIO>
+            <DATA_FINE>2026-09-24</DATA_FINE>
+            <PRIORITA>3</PRIORITA>
+            <SETTORE_CONTABILE>POT</SETTORE_CONTABILE>
+            <CLIENTE>
+              <NOME>Luca</NOME>
+              <COGNOME>Bianchi</COGNOME>
+              <TELEFONO>3407654321</TELEFONO>
+            </CLIENTE>
+            <INDIRIZZO>
+              <VIA>VIA MAZZINI</VIA>
+              <CIVICO>22</CIVICO>
+              <CAP>60121</CAP>
+              <LOCALITA>ANCONA</LOCALITA>
+              <PROVINCIA>AN</PROVINCIA>
+            </INDIRIZZO>
+            <DATI_APPARECCHIATURA>
+              <PRODUTTORE>ABB</PRODUTTORE>
+              <NUMERO_SERIE>000000000090000002</NUMERO_SERIE>
+              <UBICAZIONE>A0144</UBICAZIONE>
+              <UBICAZIONE_AGG>Pozzetto su marciapiede</UBICAZIONE_AGG>
+            </DATI_APPARECCHIATURA>
+            <OPERAZIONI>
+              <item><OPERAZIONE>0010</OPERAZIONE><DESCRIZIONE>Trasferimento</DESCRIZIONE><CHIAVE_CONTR>PM01</CHIAVE_CONTR><CENTRO_LAVORO>ACNOT01A</CENTRO_LAVORO><LAVORO>0.0</LAVORO><UNITA>H</UNITA></item>
+              <item><OPERAZIONE>0040</OPERAZIONE><DESCRIZIONE>Lavori Idraulici</DESCRIZIONE><CHIAVE_CONTR>ZM01</CHIAVE_CONTR><CENTRO_LAVORO>ACNOT01A</CENTRO_LAVORO><LAVORO>0.0</LAVORO><UNITA>H</UNITA></item>
+              <item><OPERAZIONE>0200</OPERAZIONE><DESCRIZIONE>Automezzi</DESCRIZIONE><CHIAVE_CONTR>PM01</CHIAVE_CONTR><CENTRO_LAVORO>ACNOT01A</CENTRO_LAVORO><LAVORO>0.0</LAVORO><UNITA>H</UNITA></item>
+            </OPERAZIONI>
+          </item>
+
+          <!-- 3) DISATTIVAZIONE (chiusura fornitura) — contatore esistente -->
+          <item>
+            <ORDINE>000090000003</ORDINE>
+            <TIPO_ORDINE>DISA</TIPO_ORDINE>
+            <TIPO_ORDINE_DESC>Misuratori - Chiusura (sigillo)</TIPO_ORDINE_DESC>
+            <DESCRIZIONE>Chiusura fornitura - cessazione</DESCRIZIONE>
+            <DIVISIONE>SP1</DIVISIONE>
+            <CENTRO_MANUT>SP1</CENTRO_MANUT>
+            <CL_LAV_RESP>ACNOT01A</CL_LAV_RESP>
+            <STATO>RIL. CALP EDCO KKMP NLIA</STATO>
+            <DATA_CREAZ>2026-09-24</DATA_CREAZ>
+            <DATA_INIZIO>2026-09-24</DATA_INIZIO>
+            <DATA_FINE>2026-09-24</DATA_FINE>
+            <PRIORITA>3</PRIORITA>
+            <SETTORE_CONTABILE>POT</SETTORE_CONTABILE>
+            <CLIENTE>
+              <NOME>Anna</NOME>
+              <COGNOME>Verdi</COGNOME>
+              <TELEFONO>3391122334</TELEFONO>
+            </CLIENTE>
+            <INDIRIZZO>
+              <VIA>VIA GARIBALDI</VIA>
+              <CIVICO>5</CIVICO>
+              <CAP>60035</CAP>
+              <LOCALITA>JESI</LOCALITA>
+              <PROVINCIA>AN</PROVINCIA>
+            </INDIRIZZO>
+            <DATI_APPARECCHIATURA>
+              <PRODUTTORE>ABB</PRODUTTORE>
+              <NUMERO_SERIE>000000000090000003</NUMERO_SERIE>
+              <UBICAZIONE>A0144</UBICAZIONE>
+              <UBICAZIONE_AGG>Nicchia esterna</UBICAZIONE_AGG>
+            </DATI_APPARECCHIATURA>
+            <OPERAZIONI>
+              <item><OPERAZIONE>0010</OPERAZIONE><DESCRIZIONE>Trasferimento</DESCRIZIONE><CHIAVE_CONTR>PM01</CHIAVE_CONTR><CENTRO_LAVORO>ACNOT01A</CENTRO_LAVORO><LAVORO>0.0</LAVORO><UNITA>H</UNITA></item>
+              <item><OPERAZIONE>0040</OPERAZIONE><DESCRIZIONE>Lavori Idraulici</DESCRIZIONE><CHIAVE_CONTR>ZM01</CHIAVE_CONTR><CENTRO_LAVORO>ACNOT01A</CENTRO_LAVORO><LAVORO>0.0</LAVORO><UNITA>H</UNITA></item>
+              <item><OPERAZIONE>0200</OPERAZIONE><DESCRIZIONE>Automezzi</DESCRIZIONE><CHIAVE_CONTR>PM01</CHIAVE_CONTR><CENTRO_LAVORO>ACNOT01A</CENTRO_LAVORO><LAVORO>0.0</LAVORO><UNITA>H</UNITA></item>
+            </OPERAZIONI>
+          </item>
+
+          <!-- 4) SOST — METODO 1 "già creato in SAP": ciclo SOSCONT1, tipo attività SOS.
+                  SEDE_TECNICA/EQUIPMENT = coppia REALE dell'esempio ufficiale (ordine 000060000663) -->
+          <item>
+            <ORDINE>000090000004</ORDINE>
+            <TIPO_ORDINE>SOST</TIPO_ORDINE>
+            <TP_ATT_PM>SOS</TP_ATT_PM>
+            <TP_ATT_PM_DESC>Sostituzione</TP_ATT_PM_DESC>
+            <GRUPPO_CICLI>SOSCONT1</GRUPPO_CICLI>
+            <DESCRIZIONE>Sostituzione per vetustita</DESCRIZIONE>
+            <DIVISIONE>SP1</DIVISIONE>
+            <CENTRO_MANUT>SP1</CENTRO_MANUT>
+            <CL_LAV_RESP>ACNOT01A</CL_LAV_RESP>
+            <STATO>RIL. CALP EDCO KKMP NLIA</STATO>
+            <DATA_CREAZ>2026-09-24</DATA_CREAZ>
+            <DATA_INIZIO>2026-09-24</DATA_INIZIO>
+            <DATA_FINE>2026-09-24</DATA_FINE>
+            <PRIORITA>1</PRIORITA>
+            <SEDE_TECNICA>10021650</SEDE_TECNICA>
+            <EQUIPMENT>000000000010014546</EQUIPMENT>
+            <SETTORE_CONTABILE>POT</SETTORE_CONTABILE>
+            <CLIENTE>
+              <NOME>Paolo</NOME>
+              <COGNOME>Neri</COGNOME>
+              <TELEFONO>3385566778</TELEFONO>
+            </CLIENTE>
+            <INDIRIZZO>
+              <VIA>VIA DEI TIGLI</VIA>
+              <CIVICO>3</CIVICO>
+              <CAP>60012</CAP>
+              <LOCALITA>TRECASTELLI</LOCALITA>
+              <PROVINCIA>AN</PROVINCIA>
+            </INDIRIZZO>
+            <DATI_APPARECCHIATURA>
+              <PRODUTTORE>ABB</PRODUTTORE>
+              <NUMERO_SERIE>000000000090000004</NUMERO_SERIE>
+              <UBICAZIONE>A0144</UBICAZIONE>
+              <UBICAZIONE_AGG>Cassetta a muro</UBICAZIONE_AGG>
+            </DATI_APPARECCHIATURA>
+            <OPERAZIONI>
+              <item><OPERAZIONE>0010</OPERAZIONE><DESCRIZIONE>Trasferimento</DESCRIZIONE><CHIAVE_CONTR>PM01</CHIAVE_CONTR><CENTRO_LAVORO>ACNOT01A</CENTRO_LAVORO><LAVORO>0.0</LAVORO><UNITA>H</UNITA></item>
+              <item><OPERAZIONE>0040</OPERAZIONE><DESCRIZIONE>Lavori Idraulici</DESCRIZIONE><CHIAVE_CONTR>ZM01</CHIAVE_CONTR><CENTRO_LAVORO>ACNOT01A</CENTRO_LAVORO><LAVORO>0.0</LAVORO><UNITA>H</UNITA></item>
+              <item><OPERAZIONE>0200</OPERAZIONE><DESCRIZIONE>Automezzi</DESCRIZIONE><CHIAVE_CONTR>PM01</CHIAVE_CONTR><CENTRO_LAVORO>ACNOT01A</CENTRO_LAVORO><LAVORO>0.0</LAVORO><UNITA>H</UNITA></item>
+            </OPERAZIONI>
+          </item>
+
+          <!-- 5) SOST — CONTATORE FERMO (TP_ATT_PM=S01): stesso ciclo, con in testa la 0010 "SOST - Contatore Fermo"
+                  e le altre spostate di +10 (regola del backend: dominio/tipiOrdine.ts) -->
+          <item>
+            <ORDINE>000090000005</ORDINE>
+            <TIPO_ORDINE>SOST</TIPO_ORDINE>
+            <TP_ATT_PM>S01</TP_ATT_PM>
+            <TP_ATT_PM_DESC>Contatore fermo</TP_ATT_PM_DESC>
+            <GRUPPO_CICLI>SOSCONT1</GRUPPO_CICLI>
+            <DESCRIZIONE>Sostituzione - contatore fermo</DESCRIZIONE>
+            <DIVISIONE>SP1</DIVISIONE>
+            <CENTRO_MANUT>SP1</CENTRO_MANUT>
+            <CL_LAV_RESP>ACNOT01A</CL_LAV_RESP>
+            <STATO>RIL. CALP EDCO KKMP NLIA</STATO>
+            <DATA_CREAZ>2026-09-24</DATA_CREAZ>
+            <DATA_INIZIO>2026-09-24</DATA_INIZIO>
+            <DATA_FINE>2026-09-24</DATA_FINE>
+            <PRIORITA>1</PRIORITA>
+            <SETTORE_CONTABILE>POT</SETTORE_CONTABILE>
+            <CLIENTE>
+              <NOME>Giulia</NOME>
+              <COGNOME>Gialli</COGNOME>
+              <TELEFONO>3372233445</TELEFONO>
+            </CLIENTE>
+            <INDIRIZZO>
+              <VIA>VIA PASCOLI</VIA>
+              <CIVICO>18</CIVICO>
+              <CAP>61032</CAP>
+              <LOCALITA>FANO</LOCALITA>
+              <PROVINCIA>PU</PROVINCIA>
+            </INDIRIZZO>
+            <DATI_APPARECCHIATURA>
+              <PRODUTTORE>ABB</PRODUTTORE>
+              <NUMERO_SERIE>000000000090000005</NUMERO_SERIE>
+              <UBICAZIONE>A0144</UBICAZIONE>
+              <UBICAZIONE_AGG>Vano scala piano terra</UBICAZIONE_AGG>
+            </DATI_APPARECCHIATURA>
+            <OPERAZIONI>
+              <item><OPERAZIONE>0010</OPERAZIONE><DESCRIZIONE>SOST - Contatore Fermo</DESCRIZIONE><CHIAVE_CONTR>PM01</CHIAVE_CONTR><CENTRO_LAVORO>ACNOT01A</CENTRO_LAVORO><LAVORO>0.0</LAVORO><UNITA>H</UNITA></item>
+              <item><OPERAZIONE>0020</OPERAZIONE><DESCRIZIONE>Trasferimento</DESCRIZIONE><CHIAVE_CONTR>PM01</CHIAVE_CONTR><CENTRO_LAVORO>ACNOT01A</CENTRO_LAVORO><LAVORO>0.0</LAVORO><UNITA>H</UNITA></item>
+              <item><OPERAZIONE>0050</OPERAZIONE><DESCRIZIONE>Lavori Idraulici</DESCRIZIONE><CHIAVE_CONTR>ZM01</CHIAVE_CONTR><CENTRO_LAVORO>ACNOT01A</CENTRO_LAVORO><LAVORO>0.0</LAVORO><UNITA>H</UNITA></item>
+              <item><OPERAZIONE>0210</OPERAZIONE><DESCRIZIONE>Automezzi</DESCRIZIONE><CHIAVE_CONTR>PM01</CHIAVE_CONTR><CENTRO_LAVORO>ACNOT01A</CENTRO_LAVORO><LAVORO>0.0</LAVORO><UNITA>H</UNITA></item>
+            </OPERAZIONI>
+          </item>
+
+          <!-- 6) PRONTO INTERVENTO (OdL) — ZF01 Pronto Intervento Fognatura, ciclo PROINT2, settore FOG,
+                  nato dall'avviso ZF 000400090002 (come l'ordine reale 33062) -->
+          <item>
+            <ORDINE>000090000006</ORDINE>
+            <TIPO_ORDINE>ZF01</TIPO_ORDINE>
+            <TP_ATT_PM>PI</TP_ATT_PM>
+            <TP_ATT_PM_DESC>Pronto intervento</TP_ATT_PM_DESC>
+            <GRUPPO_CICLI>PROINT2</GRUPPO_CICLI>
+            <DESCRIZIONE>Pronto intervento - fognatura intasata</DESCRIZIONE>
+            <DIVISIONE>SP1</DIVISIONE>
+            <CENTRO_MANUT>SP1</CENTRO_MANUT>
+            <CL_LAV_RESP>ACNOT01A</CL_LAV_RESP>
+            <STATO>RIL. CALP EDCO KKMP NLIA</STATO>
+            <DATA_CREAZ>2026-09-24</DATA_CREAZ>
+            <DATA_INIZIO>2026-09-24</DATA_INIZIO>
+            <DATA_FINE>2026-09-24</DATA_FINE>
+            <PRIORITA>1</PRIORITA>
+            <SETTORE_CONTABILE>FOG</SETTORE_CONTABILE>
+            <AVVISO>000400090002</AVVISO>
+            <INDIRIZZO>
+              <VIA>VIA TRIESTE</VIA>
+              <CIVICO>40</CIVICO>
+              <CAP>60121</CAP>
+              <LOCALITA>ANCONA</LOCALITA>
+              <PROVINCIA>AN</PROVINCIA>
+            </INDIRIZZO>
+            <OPERAZIONI>
+              <item><OPERAZIONE>0010</OPERAZIONE><DESCRIZIONE>Trasferimento</DESCRIZIONE><CHIAVE_CONTR>PM01</CHIAVE_CONTR><CENTRO_LAVORO>ACNOT01A</CENTRO_LAVORO><LAVORO>0.0</LAVORO><UNITA>H</UNITA></item>
+              <item><OPERAZIONE>0080</OPERAZIONE><DESCRIZIONE>Altro</DESCRIZIONE><CENTRO_LAVORO>ACNOT01A</CENTRO_LAVORO><LAVORO>0.0</LAVORO><UNITA>H</UNITA></item>
+              <item><OPERAZIONE>0140</OPERAZIONE><DESCRIZIONE>Ispezione fognaria</DESCRIZIONE><CENTRO_LAVORO>ACNOT01A</CENTRO_LAVORO><LAVORO>0.0</LAVORO><UNITA>H</UNITA></item>
+              <item><OPERAZIONE>0200</OPERAZIONE><DESCRIZIONE>Automezzi</DESCRIZIONE><CHIAVE_CONTR>PM01</CHIAVE_CONTR><CENTRO_LAVORO>ACNOT01A</CENTRO_LAVORO><LAVORO>0.0</LAVORO><UNITA>H</UNITA></item>
+            </OPERAZIONI>
+          </item>
+
+        </ORDINI>
+        <AVVISI>
+
+          <!-- A) PRONTO INTERVENTO H2O — tipo ZH (priorità 5 = "Situazione di Peric." nello schema ZP) -->
+          <item>
+            <AVVISO>000400090001</AVVISO>
+            <TIPO_AVVISO>ZH</TIPO_AVVISO>
+            <DESCRIZIONE>Perdita idrica su strada - pronto intervento</DESCRIZIONE>
+            <CENTRO_MANUT>SP1</CENTRO_MANUT>
+            <PRIORITA>5</PRIORITA>
+            <DATA_AVVISO>2026-09-24</DATA_AVVISO>
+            <DATA_CREAZ>2026-09-24</DATA_CREAZ>
+            <ORA_AVVISO>083000</ORA_AVVISO>
+            <STATO>MSPR</STATO>
+            <CLIENTE>
+              <NOME>Franco</NOME>
+              <COGNOME>Blu</COGNOME>
+              <TELEFONO>3355566778</TELEFONO>
+            </CLIENTE>
+            <INDIRIZZO>
+              <VIA>VIA TRIESTE</VIA>
+              <CIVICO>12</CIVICO>
+              <CAP>60121</CAP>
+              <LOCALITA>ANCONA</LOCALITA>
+              <PROVINCIA>AN</PROVINCIA>
+            </INDIRIZZO>
+          </item>
+
+          <!-- B) PRONTO INTERVENTO FOGNATURA — tipo ZF (già collegato all'OdL ZF01 000090000006) -->
+          <item>
+            <AVVISO>000400090002</AVVISO>
+            <TIPO_AVVISO>ZF</TIPO_AVVISO>
+            <DESCRIZIONE>Fognatura intasata - pronto intervento</DESCRIZIONE>
+            <CENTRO_MANUT>SP1</CENTRO_MANUT>
+            <PRIORITA>1</PRIORITA>
+            <DATA_AVVISO>2026-09-24</DATA_AVVISO>
+            <DATA_CREAZ>2026-09-24</DATA_CREAZ>
+            <ORA_AVVISO>084500</ORA_AVVISO>
+            <ORDINE>000090000006</ORDINE>
+            <STATO>MSPR</STATO>
+            <INDIRIZZO>
+              <VIA>VIA TRIESTE</VIA>
+              <CIVICO>40</CIVICO>
+              <CAP>60121</CAP>
+              <LOCALITA>ANCONA</LOCALITA>
+              <PROVINCIA>AN</PROVINCIA>
+            </INDIRIZZO>
+          </item>
+
+          <!-- C) PRONTO INTERVENTO FOGNATURA libero — per testare "Genera ordine" dalla tablet (ZF01) -->
+          <item>
+            <AVVISO>000400090003</AVVISO>
+            <TIPO_AVVISO>ZF</TIPO_AVVISO>
+            <DESCRIZIONE>Tombino ostruito - pronto intervento</DESCRIZIONE>
+            <CENTRO_MANUT>SP1</CENTRO_MANUT>
+            <PRIORITA>1</PRIORITA>
+            <DATA_AVVISO>2026-09-24</DATA_AVVISO>
+            <DATA_CREAZ>2026-09-24</DATA_CREAZ>
+            <ORA_AVVISO>091500</ORA_AVVISO>
+            <STATO>MSPR</STATO>
+            <CLIENTE>
+              <NOME>Elena</NOME>
+              <COGNOME>Viola</COGNOME>
+              <TELEFONO>3312233445</TELEFONO>
+            </CLIENTE>
+            <INDIRIZZO>
+              <VIA>VIA LEOPARDI</VIA>
+              <CIVICO>7</CIVICO>
+              <CAP>60019</CAP>
+              <LOCALITA>SENIGALLIA</LOCALITA>
+              <PROVINCIA>AN</PROVINCIA>
+            </INDIRIZZO>
+          </item>
+
+        </AVVISI>
+      </MESSAGGIO>
+    </pm:riceviPM>
+  </soapenv:Body>
+</soapenv:Envelope>

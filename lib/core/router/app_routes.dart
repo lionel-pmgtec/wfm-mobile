@@ -36,7 +36,55 @@ class AppRoutes {
   static const String preventivoPdf = '/preventivo/:key/pdf';
 
   static const String createOrder = '/create-order';
+
+  /// Crea un OdL di sostituzione a partire da un altro OdL (scenario 2):
+  /// precompila tipo=SOST, contatore e OdL d'origine (tracciabilità).
+  static String createOrderSostPath(String originCode, String matricola) =>
+      '/create-order?type=SOST'
+      '&origin=${Uri.encodeComponent(originCode)}'
+      '&meter=${Uri.encodeComponent(matricola)}';
+  /// Crea un OdL SOST a partire da un AVVISO: stesso modulo di creazione (matricola,
+  /// tipo attività, priorità in codice…), precompilato con i dati dell'avviso.
+  static String createOrderSostDaAvvisoPath(String numeroAvviso) =>
+      createOrderDaAvvisoPath(numeroAvviso, 'SOST');
+
+  /// Stesso modulo, per un tipo qualunque (es. ZA02 dall'avviso ZI).
+  static String createOrderDaAvvisoPath(String numeroAvviso, String woType) =>
+      '/create-order?type=${Uri.encodeComponent(woType)}'
+      '&avviso=${Uri.encodeComponent(numeroAvviso)}';
   static const String createAvviso = '/create-avviso';
+
+  /// OdL da un punto della mappa (contatore, punto della rete, punto scelto):
+  /// tipo se noto, matricola se c'è, posizione, indirizzo del punto e ciclo
+  /// da proporre.
+  static String createOrderDaMappaPath(
+          {String? woType,
+          String? matricola,
+          required double lat,
+          required double lng,
+          String? ciclo,
+          IndirizzoMappa? indirizzo}) =>
+      Uri(path: createOrder, queryParameters: {
+        if ((woType ?? '').isNotEmpty) 'type': woType,
+        if ((matricola ?? '').isNotEmpty) 'meter': matricola,
+        'lat': '$lat',
+        'lng': '$lng',
+        if ((ciclo ?? '').isNotEmpty) 'ciclo': ciclo,
+        ...?indirizzo?.query,
+      }).toString();
+
+  /// Avviso da un punto della mappa: matricola, posizione e indirizzo.
+  static String createAvvisoDaMappaPath(
+          {String? matricola,
+          required double lat,
+          required double lng,
+          IndirizzoMappa? indirizzo}) =>
+      Uri(path: createAvviso, queryParameters: {
+        if ((matricola ?? '').isNotEmpty) 'meter': matricola,
+        'lat': '$lat',
+        'lng': '$lng',
+        ...?indirizzo?.query,
+      }).toString();
   static const String settings = '/settings';
   static const String notifications = '/notifications';
   static const String syncQueue = '/sync-queue';
@@ -76,4 +124,36 @@ class AppRoutes {
   static String preventivoPath(String key) => '/preventivo/$key';
   static String preventivoFirmaPath(String key) => '/preventivo/$key/firma';
   static String preventivoPdfPath(String key) => '/preventivo/$key/pdf';
+}
+
+/// Indirizzo di un punto della mappa, passato ai moduli di creazione nei
+/// parametri del percorso (via, civico, comune, CAP).
+class IndirizzoMappa {
+  final String via;
+  final String civico;
+  final String comune;
+  final String cap;
+
+  const IndirizzoMappa(
+      {this.via = '', this.civico = '', this.comune = '', this.cap = ''});
+
+  bool get isEmpty => via.isEmpty && comune.isEmpty;
+
+  Map<String, String> get query => {
+        if (via.isNotEmpty) 'via': via,
+        if (civico.isNotEmpty) 'civico': civico,
+        if (comune.isNotEmpty) 'comune': comune,
+        if (cap.isNotEmpty) 'cap': cap,
+      };
+
+  /// Null se nei parametri non c'è né la via né il comune.
+  static IndirizzoMappa? daQuery(Map<String, String> q) {
+    final i = IndirizzoMappa(
+      via: q['via']?.trim() ?? '',
+      civico: q['civico']?.trim() ?? '',
+      comune: q['comune']?.trim() ?? '',
+      cap: q['cap']?.trim() ?? '',
+    );
+    return i.isEmpty ? null : i;
+  }
 }

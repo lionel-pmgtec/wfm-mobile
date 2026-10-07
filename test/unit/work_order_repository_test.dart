@@ -36,6 +36,15 @@ class _FakeRemoteDataSource implements WfmRemoteDataSource {
       status: WorkOrderStatus.ricevuto,
       address: Address(street: 'CORSO ITALIA', streetNumber: '1', city: 'ANCONA'),
     ),
+    // Il server lo restituisce comunque (GET /work-orders non esclude nulla):
+    // è compito dell'app toglierlo, perché chiuso non serve più sul tablet.
+    WorkOrder(
+      externalCode: '50557265',
+      woType: 'ATTI',
+      woTypeDescription: 'Attivazione fornitura',
+      status: WorkOrderStatus.completato,
+      address: Address(street: 'VIA CHIUSA', streetNumber: '2', city: 'ANCONA'),
+    ),
   ];
 
   @override
@@ -152,5 +161,31 @@ void main() {
     final res = await repo.getWorkOrders();
     expect(res, isA<Success>());
     expect(res.valueOrNull, isNotEmpty);
+  });
+
+  group('OdL chiuso: esce dal tablet', () {
+    test('un OdL Completato non compare nell\'elenco (anche se il server lo manda)', () async {
+      final list = (await repo.getWorkOrders()).valueOrNull!;
+      expect(list.any((o) => o.externalCode == '50557265'), isFalse);
+      expect(list.any((o) => o.status == WorkOrderStatus.completato), isFalse);
+    });
+
+    test('non resta nemmeno filtrando esplicitamente per Completato', () async {
+      final res = await repo.getWorkOrders(
+          filter: const WorkOrderFilter(status: WorkOrderStatus.completato));
+      expect(res.valueOrNull, isEmpty);
+    });
+
+    test('non entra nella cache: resta fuori anche offline', () async {
+      await repo.getWorkOrders(); // popola la cache (già filtrata)
+      connectivity.setOnline(false);
+      final res = await repo.getWorkOrders();
+      expect(res.valueOrNull!.any((o) => o.externalCode == '50557265'), isFalse);
+    });
+
+    test('gli OdL attivi restano tutti', () async {
+      final list = (await repo.getWorkOrders()).valueOrNull!;
+      expect(list.length, 3); // i 3 non chiusi del fake, il 4° è escluso
+    });
   });
 }

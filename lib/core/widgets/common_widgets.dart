@@ -123,12 +123,22 @@ class FieldRow extends StatelessWidget {
 
     return Container(
       width: fullWidth ? double.infinity : null,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      decoration: BoxDecoration(
-        color: editable ? AppColors.surface : AppColors.surfaceVariant,
-        border: Border.all(color: editable ? AppColors.primary : AppColors.border, width: editable ? 2 : 1),
-        borderRadius: BorderRadius.circular(8),
-      ),
+      // Editabile = vero campo di input (cornice evidente). Sola lettura = dato,
+      // NON un input: niente cornice riquadrata, solo etichetta + valore con un
+      // sottile separatore. Così un dato non sembra più un campo compilabile.
+      padding: editable
+          ? const EdgeInsets.symmetric(horizontal: 14, vertical: 10)
+          : const EdgeInsets.symmetric(vertical: 8),
+      decoration: editable
+          ? BoxDecoration(
+              color: AppColors.surface,
+              border: Border.all(color: AppColors.primary, width: 2),
+              borderRadius: BorderRadius.circular(8),
+            )
+          : const BoxDecoration(
+              border: Border(
+                  bottom: BorderSide(color: AppColors.borderLight, width: 1)),
+            ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [

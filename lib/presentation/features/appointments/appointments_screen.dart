@@ -20,6 +20,19 @@ class AppointmentsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final appointments = ref.watch(appointmentsProvider(code));
+    // Esito registrato in "Esito appuntamento": decide lo stato mostrato.
+    final esito = ref.watch(esitoAppuntamentoProvider(code));
+    // L'esito riguarda l'appuntamento del giorno del sopralluogo; se nessuno
+    // coincide, l'ultimo della lista.
+    final esitoIdx = esito == null || appointments.isEmpty
+        ? -1
+        : (() {
+            final i = appointments.indexWhere((a) =>
+                a.date.year == esito.dataSopralluogo.year &&
+                a.date.month == esito.dataSopralluogo.month &&
+                a.date.day == esito.dataSopralluogo.day);
+            return i >= 0 ? i : appointments.length - 1;
+          })();
     return Scaffold(
       appBar: AppBar(title: Text('Appuntamenti · OdL $code'), actions: [OdlActionsMenu(code: code, scope: OdlMenuScope.appuntamenti)]),
       floatingActionButton: FloatingActionButton.extended(
@@ -38,6 +51,7 @@ class AppointmentsScreen extends ConsumerWidget {
               separatorBuilder: (_, __) => const SizedBox(height: 10),
               itemBuilder: (_, i) => _AppointmentCard(
                 a: appointments[i],
+                esito: i == esitoIdx ? esito : null,
                 // "Esito appuntamento" apre la pagina completa dedicata,
                 // non più un menu rapido incompleto.
                 onEsito: () =>
@@ -61,12 +75,36 @@ class AppointmentsScreen extends ConsumerWidget {
 
 class _AppointmentCard extends StatelessWidget {
   final Appointment a;
+  /// Esito registrato per questo appuntamento (null = ancora da effettuare).
+  final EsitoAppuntamentoData? esito;
   final VoidCallback onEsito;
-  const _AppointmentCard({required this.a, required this.onEsito});
+  const _AppointmentCard(
+      {required this.a, this.esito, required this.onEsito});
 
   @override
   Widget build(BuildContext context) {
-    final done = a.outcome == AppointmentOutcome.effettuato;
+    // Stato: se c'è un esito registrato vince quello (OK = effettuato, NO/ER/MN
+    // = esiti negativi con il loro colore); altrimenti lo stato dell'appuntamento.
+    final String statoLabel;
+    final Color statoColor;
+    final Color statoBg;
+    if (esito != null) {
+      statoLabel = esito!.statoLabel;
+      statoColor = switch (esito!.esito) {
+        'OK' => AppColors.statusDone,
+        'NO' => AppColors.accentRed,
+        'ER' => AppColors.accentOrange,
+        _ => AppColors.statusSuspended,
+      };
+      statoBg = esito!.effettuato
+          ? AppColors.statusDoneBg
+          : statoColor.withValues(alpha: 0.12);
+    } else {
+      final done = a.outcome == AppointmentOutcome.effettuato;
+      statoLabel = a.outcome.label;
+      statoColor = done ? AppColors.statusDone : AppColors.statusReceived;
+      statoBg = done ? AppColors.statusDoneBg : AppColors.statusReceivedBg;
+    }
     return WfmCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -83,17 +121,12 @@ class _AppointmentCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
-                  color: done
-                      ? AppColors.statusDoneBg
-                      : AppColors.statusReceivedBg,
-                  borderRadius: BorderRadius.circular(20)),
-              child: Text(a.outcome.label,
+                  color: statoBg, borderRadius: BorderRadius.circular(20)),
+              child: Text(statoLabel,
                   style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w600,
-                      color: done
-                          ? AppColors.statusDone
-                          : AppColors.statusReceived)),
+                      color: statoColor)),
             ),
           ]),
           const SizedBox(height: 8),
@@ -238,7 +271,9 @@ class _AppointmentEditorState extends State<_AppointmentEditor> {
             ),
             TextField(
               controller: _noteCtrl,
-              decoration: const InputDecoration(labelText: 'Note'),
+              decoration: InputDecoration(
+                  labelText: 'Note',
+                  suffixIcon: VoiceSuffixIcons(controller: _noteCtrl)),
               maxLines: 2,
             ),
             const SizedBox(height: 16),

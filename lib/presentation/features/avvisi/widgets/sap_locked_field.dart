@@ -22,6 +22,11 @@ class SapLockedField extends StatelessWidget {
   final bool unavailable;
   final String? unavailableReason;
 
+  /// Aggiunge l'altoparlante (lettura a voce alta) accanto al lucchetto — per
+  /// i testi lunghi (descrizioni, note) che conviene poter ascoltare invece
+  /// di leggere sullo schermo, es. in auto prima di arrivare sul posto.
+  final bool enableTts;
+
   const SapLockedField({
     super.key,
     required this.label,
@@ -30,6 +35,7 @@ class SapLockedField extends StatelessWidget {
     this.hideIfEmpty = true,
     this.unavailable = false,
     this.unavailableReason,
+    this.enableTts = false,
   });
 
   @override
@@ -48,11 +54,15 @@ class SapLockedField extends StatelessWidget {
         // l'icona è già quella del motivo.
         trailing: unavailable
             ? null
-            : const Tooltip(
-                message: 'Dato SAP — sola lettura',
-                child: Icon(Icons.lock_outline,
-                    size: 14, color: AppColors.textHint),
-              ),
+            : Row(mainAxisSize: MainAxisSize.min, children: [
+                if (enableTts && value.trim().isNotEmpty)
+                  VoiceSuffixIcons(text: value, enableSpeech: false),
+                const Tooltip(
+                  message: 'Dato SAP — sola lettura',
+                  child: Icon(Icons.lock_outline,
+                      size: 14, color: AppColors.textHint),
+                ),
+              ]),
       );
 }
 

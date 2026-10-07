@@ -35,6 +35,10 @@ class AvvisoExtensionNotifier extends StateNotifier<AvvisoExtension> {
   Future<void> clearPreventivo() =>
       _persist(state.copyWith(clearPreventivo: true));
 
+  // ── OdL generato dall'avviso (persistente) ───────────────────────────────
+  Future<void> setOrdineGenerato(String code) =>
+      _persist(state.copyWith(ordineGenerato: code));
+
   // ── Elaborazione (campi operatore inline) ────────────────────────────────
   Future<void> setElaborazione(AvvisoElaborazione e) =>
       _persist(state.copyWith(elaborazione: e));

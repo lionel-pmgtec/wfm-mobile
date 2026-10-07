@@ -13,6 +13,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../core/router/app_routes.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/utils/formatters.dart';
+import '../../../../core/widgets/widgets.dart';
 import '../../../../domain/entities/entities.dart';
 import '../../../providers/avviso_extension_provider.dart';
 import '../../../providers/odl_extension_provider.dart';
@@ -388,8 +389,10 @@ class _AppuntamentoSheetState extends State<_AppuntamentoSheet> {
             TextField(
               controller: _noteCtrl,
               maxLines: 2,
-              decoration: const InputDecoration(
-                  labelText: 'Note', alignLabelWithHint: true),
+              decoration: InputDecoration(
+                  labelText: 'Note',
+                  alignLabelWithHint: true,
+                  suffixIcon: VoiceSuffixIcons(controller: _noteCtrl)),
             ),
             const SizedBox(height: 16),
             ElevatedButton.icon(

@@ -118,6 +118,11 @@ abstract interface class WorkOrderRepository {
   /// Eliminazione di un OdL.
   Future<Result<void>> deleteWorkOrder(String externalCode);
 
+  /// Passa l'OdL a un collega. Serve la rete (è il backend a decidere se si
+  /// può); dopo il successo la copia locale si toglie dal tablet.
+  Future<Result<void>> reassign(String externalCode, String technicianCid,
+      {String? note});
+
   /// Statistiche per la dashboard home.
   Future<Result<Map<WorkOrderStatus, int>>> getStats();
 }

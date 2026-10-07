@@ -1,10 +1,7 @@
 // Centro di sincronizzazione: elenco di tutto ciò che è stato creato sul campo
 // e attende di partire, diviso in Ordini e Avvisi.
 //
-// Per ogni elemento l'operatore sceglie la destinazione:
-//  - Cruscotto: percorso normale (il cruscotto poi propaga a SAP);
-//  - SAP: invio diretto, per gli avvisi che non devono passare dal cruscotto.
-//    Il canale non è ancora configurato lato backend e viene dichiarato tale.
+// Ogni elemento viene inviato al Cruscotto, che poi lo propaga a SAP.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,6 +13,7 @@ import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/widgets.dart';
 import '../../../domain/entities/entities.dart';
 import '../../providers/creation_provider.dart';
+import '../../providers/sync_provider.dart';
 
 class SyncCenterScreen extends ConsumerStatefulWidget {
   const SyncCenterScreen({super.key});
@@ -34,7 +32,7 @@ class _SyncCenterScreenState extends ConsumerState<SyncCenterScreen>
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: 2, vsync: this);
+    _tab = TabController(length: 3, vsync: this);
   }
 
   @override
@@ -45,15 +43,14 @@ class _SyncCenterScreenState extends ConsumerState<SyncCenterScreen>
 
   Future<void> _invia({
     required String id,
-    required SyncDestination destination,
     WorkOrder? order,
     NotificationAvviso? avviso,
   }) async {
     setState(() => _inCorso = id);
     final ctrl = ref.read(creationControllerProvider);
     final res = order != null
-        ? await ctrl.sendWorkOrder(order, destination: destination)
-        : await ctrl.sendAvviso(avviso!, destination: destination);
+        ? await ctrl.sendWorkOrder(order)
+        : await ctrl.sendAvviso(avviso!);
     if (!mounted) return;
     setState(() => _inCorso = null);
     showSapToast(context, res.message, isError: !res.ok);
@@ -65,7 +62,10 @@ class _SyncCenterScreenState extends ConsumerState<SyncCenterScreen>
     final res = await ref.read(creationControllerProvider).syncAll();
     if (!mounted) return;
     setState(() => _inCorso = null);
-    if (res.failed == 0) {
+    if (res.failed == 0 && res.nonPassati > 0) {
+      // Inviati, ma almeno un OdL non è arrivato al collega scelto.
+      showSapToast(context, res.primoNonPassato!, isError: true);
+    } else if (res.failed == 0) {
       showSapToast(context, 'Inviati ${res.ok} elementi al cruscotto');
     } else if (res.ok == 0) {
       showSapToast(
@@ -84,8 +84,10 @@ class _SyncCenterScreenState extends ConsumerState<SyncCenterScreen>
   Widget build(BuildContext context) {
     final ordini = ref.watch(createdWorkOrdersProvider);
     final avvisi = ref.watch(createdAvvisiProvider);
+    final coda = ref.watch(syncQueueProvider);
     final nOrdini = ordini.valueOrNull?.length ?? 0;
     final nAvvisi = avvisi.valueOrNull?.length ?? 0;
+    final nCoda = coda.valueOrNull?.length ?? 0;
 
     return Scaffold(
       backgroundColor: AppColors.backgroundPage,
@@ -94,7 +96,7 @@ class _SyncCenterScreenState extends ConsumerState<SyncCenterScreen>
         actions: [
           if (nOrdini + nAvvisi > 0)
             IconButton(
-              tooltip: 'Invia tutto al cruscotto',
+              tooltip: 'Sincronizza tutto',
               icon: const Icon(Icons.cloud_upload_outlined),
               onPressed: _inCorso == null ? _inviaTutto : null,
             ),
@@ -110,9 +112,11 @@ class _SyncCenterScreenState extends ConsumerState<SyncCenterScreen>
           unselectedLabelColor: Colors.white70,
           indicatorColor: Colors.white,
           dividerColor: Colors.white24,
+          isScrollable: true,
           tabs: [
             Tab(text: 'Ordini ($nOrdini)'),
             Tab(text: 'Avvisi ($nAvvisi)'),
+            Tab(text: 'In coda ($nCoda)'),
           ],
         ),
       ),
@@ -133,14 +137,7 @@ class _SyncCenterScreenState extends ConsumerState<SyncCenterScreen>
               icona: Icons.assignment_outlined,
               busy: _inCorso == o.externalCode,
               bloccato: _inCorso != null,
-              onCruscotto: () => _invia(
-                  id: o.externalCode,
-                  destination: SyncDestination.cruscotto,
-                  order: o),
-              onSap: () => _invia(
-                  id: o.externalCode,
-                  destination: SyncDestination.sap,
-                  order: o),
+              onCruscotto: () => _invia(id: o.externalCode, order: o),
             ),
           ),
           _lista(
@@ -157,15 +154,16 @@ class _SyncCenterScreenState extends ConsumerState<SyncCenterScreen>
               icona: Icons.notifications_none_rounded,
               busy: _inCorso == a.numeroAvviso,
               bloccato: _inCorso != null,
-              onCruscotto: () => _invia(
-                  id: a.numeroAvviso,
-                  destination: SyncDestination.cruscotto,
-                  avviso: a),
-              onSap: () => _invia(
-                  id: a.numeroAvviso,
-                  destination: SyncDestination.sap,
-                  avviso: a),
+              onCruscotto: () => _invia(id: a.numeroAvviso, avviso: a),
             ),
+          ),
+          // Operazioni offline in coda: esiti e cambi di stato (OdL chiusi
+          // senza rete) che partiranno automaticamente al ritorno della rete.
+          _lista<SyncOperation>(
+            async: coda,
+            vuoto:
+                'Nessuna operazione in coda (esiti, chiusure, cambi di stato).',
+            builder: (op) => _CodaRow(op: op),
           ),
         ],
       ),
@@ -198,7 +196,7 @@ class _SyncCenterScreenState extends ConsumerState<SyncCenterScreen>
   }
 }
 
-/// Riga di un elemento da inviare, con le due destinazioni possibili.
+/// Riga di un elemento da sincronizzare con il Cruscotto.
 class _SyncRow extends StatelessWidget {
   final String titolo;
   final String codice;
@@ -207,7 +205,6 @@ class _SyncRow extends StatelessWidget {
   final bool busy;
   final bool bloccato;
   final VoidCallback onCruscotto;
-  final VoidCallback onSap;
 
   const _SyncRow({
     required this.titolo,
@@ -217,7 +214,6 @@ class _SyncRow extends StatelessWidget {
     required this.busy,
     required this.bloccato,
     required this.onCruscotto,
-    required this.onSap,
   });
 
   @override
@@ -277,42 +273,19 @@ class _SyncRow extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                   color: AppColors.textHint)),
           const Divider(height: 18, color: AppColors.borderLight),
-          Row(
-            children: [
-              const Text('Invia a:',
-                  style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textSecondary)),
-              const SizedBox(width: 10),
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: bloccato ? null : onCruscotto,
-                  icon: const Icon(Icons.dashboard_customize_outlined, size: 16),
-                  label: const Text('Cruscotto'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    textStyle: const TextStyle(
-                        fontSize: 13, fontWeight: FontWeight.w600),
-                  ),
-                ),
+          SizedBox(
+            width: double.infinity,
+            child: FilledButton.icon(
+              onPressed: bloccato ? null : onCruscotto,
+              icon: const Icon(Icons.sync_rounded, size: 16),
+              label: const Text('Sincronizza'),
+              style: FilledButton.styleFrom(
+                backgroundColor: AppColors.primary,
+                foregroundColor: Colors.white,
+                textStyle: const TextStyle(
+                    fontSize: 13, fontWeight: FontWeight.w600),
               ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: bloccato ? null : onSap,
-                  icon: const Icon(Icons.dns_outlined, size: 16),
-                  label: const Text('SAP'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.textSecondary,
-                    side: const BorderSide(color: AppColors.border),
-                    textStyle: const TextStyle(
-                        fontSize: 13, fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
           const SizedBox(height: 6),
           const Row(children: [
@@ -320,13 +293,68 @@ class _SyncRow extends StatelessWidget {
             SizedBox(width: 5),
             Expanded(
               child: Text(
-                'L\'invio diretto a SAP non è ancora configurato sul backend.',
+                'Invio tramite il Cruscotto.',
                 style: TextStyle(fontSize: 10.5, color: AppColors.textHint),
               ),
             ),
           ]),
         ],
       ),
+    );
+  }
+}
+
+/// Riga di un'operazione offline in coda (esito, chiusura, cambio di stato).
+/// Sola lettura: parte da sola al ritorno della rete.
+class _CodaRow extends StatelessWidget {
+  final SyncOperation op;
+  const _CodaRow({required this.op});
+
+  @override
+  Widget build(BuildContext context) {
+    final (icon, color, label) = switch (op.status) {
+      SyncStatus.pending => (
+          Icons.schedule_rounded,
+          AppColors.accentOrange,
+          'In attesa di connessione'
+        ),
+      SyncStatus.inProgress => (
+          Icons.sync_rounded,
+          AppColors.primary,
+          'Invio in corso…'
+        ),
+      SyncStatus.success => (
+          Icons.check_circle_rounded,
+          AppColors.accentGreen,
+          'Sincronizzato'
+        ),
+      SyncStatus.failed => (
+          Icons.error_outline_rounded,
+          AppColors.accentRed,
+          op.lastError ?? 'Azione richiesta'
+        ),
+    };
+    return WfmCard(
+      child: Row(children: [
+        Icon(icon, color: color),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(op.typeLabel, style: AppTextStyles.headingSmall),
+              const SizedBox(height: 2),
+              Text('Rif. ${op.entityId} · ${Fmt.dateTime(op.createdAt)}',
+                  style: AppTextStyles.bodySmall
+                      .copyWith(color: AppColors.textSecondary)),
+              const SizedBox(height: 4),
+              Text(label,
+                  style: AppTextStyles.labelSmall
+                      .copyWith(color: color, fontWeight: FontWeight.w600)),
+            ],
+          ),
+        ),
+      ]),
     );
   }
 }

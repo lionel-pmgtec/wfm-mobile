@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -7,9 +9,12 @@ import '../../../core/router/app_routes.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/widgets/widgets.dart';
 import '../../../domain/entities/enums.dart';
+import '../../../domain/entities/notification_avviso.dart';
 import '../../../domain/entities/work_order.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/avvisi_provider.dart';
 import '../../providers/connectivity_provider.dart';
+import '../../providers/creation_provider.dart';
 import '../../providers/notifications_provider.dart';
 import '../../providers/work_orders_provider.dart';
 
@@ -22,6 +27,9 @@ class HomeScreen extends ConsumerWidget {
     final stats = ref.watch(dashboardStatsProvider);
     final online = ref.watch(connectivityStatusProvider);
     final pending = ref.watch(pendingSyncCountProvider).valueOrNull ?? 0;
+    // Nessun endpoint mobile attuale restituisce l'elenco degli oggetti senza
+    // assegnatario: non riutilizzare il conteggio della coda di sincronizzazione.
+    const unassignedCount = 0;
     final unreadNotifs = ref.watch(unreadNotificationsCountProvider);
 
     return Scaffold(
@@ -87,13 +95,24 @@ class HomeScreen extends ConsumerWidget {
               name: (user?.nome ?? '').trim().isEmpty
                   ? 'Tecnico'
                   : (user?.nome ?? '').trim(),
-              subtitle: _headerSubtitle(stats.valueOrNull),
+              lines: _headerLines(
+                stats.valueOrNull,
+                (ref.watch(prontoInterventoWorkOrdersProvider).valueOrNull
+                            ?.length ??
+                        0) +
+                    (ref.watch(prontoInterventoAvvisiProvider).valueOrNull
+                            ?.length ??
+                        0),
+              ),
             ),
             const SizedBox(height: kSpacingLg),
+            // Banner PI anche per gli AVVISI (es. ZH), così l'operatore li vede
+            // sulla Home senza entrare in Avvisi.
+            const _ProntoInterventoAvvisiBanner(),
             // Banner interventi urgenti: visibile subito, sopra il riepilogo.
             // Si auto-nasconde quando non ci sono Pronto Intervento aperti.
             const _ProntoInterventoBanner(),
-            const Text('Riepilogo di oggi', style: AppTextStyles.headingMedium),
+            const Text('Riepilogo', style: AppTextStyles.headingMedium),
             const SizedBox(height: kSpacingMd),
             stats.when(
               loading: () => const SizedBox(
@@ -101,7 +120,7 @@ class HomeScreen extends ConsumerWidget {
               error: (e, _) => WfmErrorState(
                   message: e.toString(),
                   onRetry: () => ref.invalidate(dashboardStatsProvider)),
-              data: (m) => _statsGrid(context, m),
+              data: (m) => _statsGrid(context, m, unassignedCount),
             ),
             const SizedBox(height: kSpacingXl),
             const Text('Accessi rapidi', style: AppTextStyles.headingMedium),
@@ -119,21 +138,13 @@ class HomeScreen extends ConsumerWidget {
                     label: 'Crea OdL',
                     onTap: () => context.push(AppRoutes.createOrder)),
                 _quickAction(context,
-                    icon: Icons.qr_code_scanner_rounded,
-                    label: 'Scanner',
-                    onTap: () => context.push(AppRoutes.scanner)),
+                    icon: Icons.notification_add_outlined,
+                    label: 'Crea avviso',
+                    onTap: () => context.push(AppRoutes.createAvviso)),
                 _quickAction(context,
                     icon: Icons.widgets_outlined,
                     label: 'Standalone',
                     onTap: () => context.push(AppRoutes.standalone)),
-                _quickAction(context,
-                    icon: Icons.sync_rounded,
-                    label: 'Sincronizza',
-                    onTap: () => context.push(AppRoutes.syncCenter)),
-                _quickAction(context,
-                    icon: Icons.settings_outlined,
-                    label: 'Impostazioni',
-                    onTap: () => context.push(AppRoutes.settings)),
               ],
             ),
           ],
@@ -151,28 +162,34 @@ class HomeScreen extends ConsumerWidget {
   }
 
   /// Riga di sintesi sotto il saluto, ricavata dai contatori.
-  String _headerSubtitle(Map<WorkOrderStatus, int>? m) {
-    if (m == null) return 'Ecco la tua giornata';
+  /// Righe che scorrono sotto il saluto (in esecuzione, pronto intervento,
+  /// assegnati, chiusi…). Solo le voci con conteggio > 0; niente = riga neutra.
+  List<String> _headerLines(Map<WorkOrderStatus, int>? m, int piCount) {
+    if (m == null) return const ['Ecco la tua giornata'];
     final inEsec = m[WorkOrderStatus.inEsecuzione] ?? 0;
     final assegnati = m[WorkOrderStatus.ricevuto] ?? 0;
-    final daFare = inEsec + assegnati;
-    if (inEsec > 0) {
-      return '$inEsec ${inEsec == 1 ? 'ordine' : 'ordini'} in esecuzione';
-    }
-    if (daFare > 0) {
-      return '$daFare ${daFare == 1 ? 'ordine' : 'ordini'} da fare oggi';
-    }
-    return 'Nessun ordine assegnato';
+    final pausa = m[WorkOrderStatus.inPausa] ?? 0;
+    final sospeso = m[WorkOrderStatus.sospeso] ?? 0;
+    final chiuso = m[WorkOrderStatus.completato] ?? 0;
+    final lines = <String>[
+      if (piCount > 0) '🚨 $piCount pronto intervento',
+      if (inEsec > 0) '$inEsec ${inEsec == 1 ? 'ordine' : 'ordini'} in esecuzione',
+      if (assegnati > 0) '$assegnati assegnat${assegnati == 1 ? 'o' : 'i'}',
+      if (pausa > 0) '$pausa in pausa',
+      if (sospeso > 0) '$sospeso sospes${sospeso == 1 ? 'o' : 'i'}',
+      if (chiuso > 0) '$chiuso chius${chiuso == 1 ? 'o' : 'i'} oggi',
+    ];
+    if (lines.isEmpty) lines.add('Nessun ordine assegnato');
+    return lines;
   }
 
-  Widget _statsGrid(BuildContext context, Map<WorkOrderStatus, int> m) {
+  Widget _statsGrid(
+      BuildContext context, Map<WorkOrderStatus, int> m, int unassignedCount) {
     final items = [
       (WorkOrderStatus.ricevuto, Icons.inbox_rounded),
       (WorkOrderStatus.inEsecuzione, Icons.play_arrow_rounded),
       (WorkOrderStatus.inPausa, Icons.pause_rounded),
       (WorkOrderStatus.sospeso, Icons.stop_rounded),
-      (WorkOrderStatus.completato, Icons.check_rounded),
-      (WorkOrderStatus.inviatoSAP, Icons.send_rounded),
     ];
     return GridView.count(
       crossAxisCount: 3,
@@ -181,18 +198,24 @@ class HomeScreen extends ConsumerWidget {
       mainAxisSpacing: kSpacingSm,
       crossAxisSpacing: kSpacingSm,
       childAspectRatio: 1.5,
-      children: items.map((e) {
+      children: items.map<Widget>((e) {
         final style = getStatusStyle(e.$1.label);
         final count = m[e.$1] ?? 0;
         final active = count > 0;
-        // Ogni card apre la lista filtrata per quello stato (card cliccabili).
+        // Sospeso/Chiuso/Inviato SAP: l'OdL esce dal tablet non appena
+        // raggiunge uno di questi stati (non serve più all'operatore, resta
+        // sul cruscotto). Il conteggio (dal backend) resta per informazione,
+        // ma non si apre più una lista — sarebbe sempre vuota.
+        final apribile = e.$1 != WorkOrderStatus.sospeso;
         return Material(
           color: Colors.transparent,
           borderRadius: BorderRadius.circular(12),
           child: InkWell(
             borderRadius: BorderRadius.circular(12),
-            onTap: () => context
-                .push(AppRoutes.workOrdersByStatusPath(e.$1.name)),
+            onTap: apribile
+                ? () => context
+                    .push(AppRoutes.workOrdersByStatusPath(e.$1.name))
+                : null,
             child: Container(
               padding: const EdgeInsets.all(9),
               decoration: BoxDecoration(
@@ -244,26 +267,97 @@ class HomeScreen extends ConsumerWidget {
             ),
           ),
         );
-      }).toList(),
+      }).toList()
+        ..add(_daAssegnareTile(context, unassignedCount)),
+    );
+  }
+
+  Widget _daAssegnareTile(BuildContext context, int count) {
+    final style = getStatusStyle('Da assegnare');
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        // L'elenco affidabile degli oggetti non assegnati non è ancora esposto
+        // dall'API mobile; non aprire la coda di sincronizzazione al suo posto.
+        onTap: null,
+        child: Container(
+          padding: const EdgeInsets.all(9),
+          decoration: BoxDecoration(
+            color: count > 0 ? style.background : AppColors.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: count > 0
+                  ? style.color.withValues(alpha: 0.35)
+                  : AppColors.border,
+            ),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: count > 0 ? style.color : style.background,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(Icons.assignment_late_outlined,
+                    size: 16,
+                    color: count > 0 ? Colors.white : style.color),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text('$count',
+                        style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            height: 1,
+                            color: count > 0
+                                ? style.color
+                                : AppColors.textPrimary)),
+                    const SizedBox(height: 2),
+                    const Text('Da assegnare',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.bodySmall),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
   Widget _quickAction(BuildContext context,
-      {required IconData icon, required String label, required VoidCallback onTap}) {
+      {required IconData icon,
+      required String label,
+      required VoidCallback onTap,
+      int badge = 0}) {
     return WfmCard(
       onTap: onTap,
       padding: const EdgeInsets.symmetric(vertical: kSpacingMd, horizontal: 8),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Container(
-            width: 46,
-            height: 46,
-            decoration: const BoxDecoration(
-              color: AppColors.primarySurface,
-              shape: BoxShape.circle,
+          Badge(
+            isLabelVisible: badge > 0,
+            label: Text('$badge'),
+            child: Container(
+              width: 46,
+              height: 46,
+              decoration: const BoxDecoration(
+                color: AppColors.primarySurface,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(icon, color: AppColors.primary, size: 24),
             ),
-            child: Icon(icon, color: AppColors.primary, size: 24),
           ),
           const SizedBox(height: 8),
           Text(label,
@@ -298,223 +392,308 @@ class HomeScreen extends ConsumerWidget {
 /// urgenti, sopra il riepilogo. Mostra i dati del PI più urgente (nome, codice,
 /// priorità, tipo) e apre subito il dettaglio (uno solo) o la lista (più d'uno).
 /// Si nasconde da sé quando non ci sono Pronto Intervento aperti.
+/// Fa "lampeggiare" il contenuto (pulsazione di opacità) per rendere i Pronto
+/// Intervento impossibili da ignorare finché non vengono presi in carico.
+class _PulseBanner extends StatefulWidget {
+  final Widget child;
+  const _PulseBanner({required this.child});
+
+  @override
+  State<_PulseBanner> createState() => _PulseBannerState();
+}
+
+class _PulseBannerState extends State<_PulseBanner>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _ctrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 600))
+      ..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const red = Color(0xFFE53935);
+    // SOLO il colore della cornice pulsa; la LARGHEZZA resta FISSA. Animare la
+    // larghezza cambiava la dimensione del banner ad ogni frame => il ListView
+    // si ridisponeva e SEMBRAVA che tutta la pagina lampeggiasse. Con
+    // foregroundDecoration + larghezza fissa, lampeggia solo il bordo del
+    // banner, senza spostare nulla intorno.
+    return AnimatedBuilder(
+      animation: _ctrl,
+      child: widget.child,
+      builder: (context, child) {
+        final t = _ctrl.value; // 0..1
+        return Container(
+          foregroundDecoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: red.withValues(alpha: 0.10 + 0.90 * t),
+              width: 3,
+            ),
+          ),
+          child: child,
+        );
+      },
+    );
+  }
+}
+
 class _ProntoInterventoBanner extends ConsumerWidget {
   const _ProntoInterventoBanner();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final piAsync = ref.watch(prontoInterventoWorkOrdersProvider);
-    final orders = piAsync.valueOrNull ?? const <WorkOrder>[];
+    final orders =
+        ref.watch(prontoInterventoWorkOrdersProvider).valueOrNull ??
+            const <WorkOrder>[];
     if (orders.isEmpty) return const SizedBox.shrink();
 
-    final primary = orders.first; // il più urgente (lista già ordinata)
+    final primary = orders.first;
     final extra = orders.length - 1;
+    void onTap() => orders.length == 1
+        ? context.push(AppRoutes.workOrderDetailPath(primary.externalCode))
+        : context.push(AppRoutes.prontoIntervento);
 
-    void onTap() {
-      if (orders.length == 1) {
-        context.push(AppRoutes.workOrderDetailPath(primary.externalCode));
-      } else {
-        context.push(AppRoutes.prontoIntervento);
-      }
-    }
-
-    const red = Color(0xFFD32F2F);
     return Padding(
-      padding: const EdgeInsets.only(bottom: kSpacingLg),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(18),
-        child: InkWell(
-          onTap: onTap,
-          borderRadius: BorderRadius.circular(18),
-          child: Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(18),
-              gradient: const LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [Color(0xFFE53935), Color(0xFFB71C1C)],
+      padding: const EdgeInsets.only(bottom: kSpacingMd),
+      child: _PulseBanner(
+        child: Material(
+          color: Colors.transparent,
+          borderRadius: BorderRadius.circular(14),
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(14),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(14),
+                gradient: const LinearGradient(
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                  colors: [Color(0xFFE53935), Color(0xFFB71C1C)],
+                ),
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: red.withValues(alpha: 0.4),
-                  blurRadius: 16,
-                  offset: const Offset(0, 6),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 40,
-                      height: 40,
-                      decoration: BoxDecoration(
-                        color: Colors.white.withValues(alpha: 0.20),
-                        shape: BoxShape.circle,
-                      ),
-                      child: const Icon(Icons.flash_on_rounded,
-                          color: Colors.white, size: 24),
-                    ),
-                    const SizedBox(width: 12),
-                    const Expanded(
-                      child: Text(
-                        'PRONTO INTERVENTO',
-                        style: TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0.6,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                    if (extra > 0)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 10, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(20),
-                        ),
-                        child: Text(
-                          '${orders.length}',
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800,
-                            color: red,
+              child: Row(children: [
+                const Icon(Icons.flash_on_rounded,
+                    color: Colors.white, size: 22),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(children: [
+                        const Text('PRONTO INTERVENTO',
+                            style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: 0.5,
+                                color: Colors.white)),
+                        if (extra > 0) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 7, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text('+$extra',
+                                style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w800,
+                                    color: Color(0xFFD32F2F))),
                           ),
-                        ),
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                // Dati del PI più urgente.
-                Text(
-                  primary.displayName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w700,
-                    color: Colors.white,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    const Icon(Icons.tag_rounded,
-                        size: 14, color: Colors.white70),
-                    const SizedBox(width: 4),
-                    Flexible(
-                      child: Text(
-                        primary.externalCode,
+                        ],
+                      ]),
+                      const SizedBox(height: 1),
+                      Text(
+                        '${primary.displayName} · #${primary.externalCode}',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                            fontSize: 13, color: Colors.white),
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white),
                       ),
-                    ),
-                    const SizedBox(width: 10),
-                    _piChip(primary.woType.isEmpty
-                        ? primary.typeCategoryLabel
-                        : primary.woType),
-                    if (primary.priorita.isNotEmpty) ...[
-                      const SizedBox(width: 6),
-                      _piChip('Priorità: ${primary.priorita}',
-                          highlight: primary.isHighPriority),
                     ],
-                  ],
+                  ),
                 ),
-                const SizedBox(height: 14),
-                Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        extra > 0
-                            ? 'Tocca per vedere i $extra interventi urgenti in più'
-                            : 'Tocca per avviare subito l\'intervento',
-                        style: const TextStyle(
-                            fontSize: 12, color: Colors.white70),
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(24),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            orders.length == 1 ? 'Avvia' : 'Vedi tutti',
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w800,
-                              color: red,
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          const Icon(Icons.arrow_forward_rounded,
-                              size: 16, color: red),
-                        ],
-                      ),
-                    ),
-                  ],
+                const SizedBox(width: 8),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Row(mainAxisSize: MainAxisSize.min, children: [
+                    Text('Avvia',
+                        style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFFD32F2F))),
+                    SizedBox(width: 4),
+                    Icon(Icons.arrow_forward_rounded,
+                        size: 14, color: Color(0xFFD32F2F)),
+                  ]),
                 ),
-              ],
+              ]),
             ),
           ),
         ),
       ),
     );
   }
+}
 
-  Widget _piChip(String label, {bool highlight = false}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: highlight ? 0.30 : 0.16),
-        borderRadius: BorderRadius.circular(6),
-        border: highlight
-            ? Border.all(color: Colors.white.withValues(alpha: 0.7))
-            : null,
-      ),
-      child: Text(
-        label,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: highlight ? FontWeight.w800 : FontWeight.w600,
-          color: Colors.white,
+/// Banner "Pronto Intervento" per gli AVVISI (es. ZH): compatto, sotto quello
+/// degli OdL. Permette all'operatore di vedere un PI avviso dalla Home senza
+/// aprire la sezione Avvisi.
+class _ProntoInterventoAvvisiBanner extends ConsumerWidget {
+  const _ProntoInterventoAvvisiBanner();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final avvisi = ref.watch(prontoInterventoAvvisiProvider).valueOrNull ??
+        const <NotificationAvviso>[];
+    if (avvisi.isEmpty) return const SizedBox.shrink();
+
+    final primary = avvisi.first;
+    final extra = avvisi.length - 1;
+    final titolo = primary.descrizione.trim().isEmpty
+        ? 'Pronto Intervento'
+        : primary.descrizione.trim();
+
+    void onTap() => avvisi.length == 1
+        ? context.push(AppRoutes.avvisoDetailPath(primary.numeroAvviso))
+        : context.push(AppRoutes.avvisi);
+
+    const red = Color(0xFFD32F2F);
+    return Padding(
+      padding: const EdgeInsets.only(bottom: kSpacingMd),
+      child: _PulseBanner(
+        child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: red.withValues(alpha: 0.5)),
+              color: red.withValues(alpha: 0.08),
+            ),
+            child: Row(children: [
+              const Icon(Icons.warning_amber_rounded, color: red, size: 26),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('PRONTO INTERVENTO · AVVISO',
+                        style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.5,
+                            color: red)),
+                    const SizedBox(height: 2),
+                    Text(titolo,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            fontSize: 15, fontWeight: FontWeight.w700)),
+                    const SizedBox(height: 2),
+                    Text(
+                      extra > 0
+                          ? '${primary.numeroAvviso} · +$extra altri urgenti'
+                          : primary.numeroAvviso,
+                      style: AppTextStyles.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded, color: red),
+            ]),
+          ),
         ),
+      ),
       ),
     );
   }
 }
 
 /// Intestazione di benvenuto con gradiente: saluto + nome + sintesi giornata.
-class _WelcomeHeader extends StatelessWidget {
+class _WelcomeHeader extends StatefulWidget {
   final String greeting;
   final String name;
-  final String subtitle;
+  final List<String> lines;
   const _WelcomeHeader({
     required this.greeting,
     required this.name,
-    required this.subtitle,
+    required this.lines,
   });
 
   @override
+  State<_WelcomeHeader> createState() => _WelcomeHeaderState();
+}
+
+class _WelcomeHeaderState extends State<_WelcomeHeader> {
+  int _i = 0;
+  Timer? _timer;
+
+  @override
+  void initState() {
+    super.initState();
+    _startRotation();
+  }
+
+  void _startRotation() {
+    _timer?.cancel();
+    if (widget.lines.length > 1) {
+      _timer = Timer.periodic(const Duration(seconds: 3), (_) {
+        if (!mounted) return;
+        setState(() => _i = (_i + 1) % widget.lines.length);
+      });
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _WelcomeHeader old) {
+    super.didUpdateWidget(old);
+    // La lista è cambiata (nuovi conteggi): riparti dall'inizio.
+    if (old.lines.length != widget.lines.length) {
+      _i = 0;
+      _startRotation();
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final line =
+        widget.lines.isEmpty ? '' : widget.lines[_i % widget.lines.length];
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
         gradient: LinearGradient(
@@ -540,7 +719,7 @@ class _WelcomeHeader extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text('$greeting, $name',
+                Text('${widget.greeting}, ${widget.name}',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
@@ -548,11 +727,22 @@ class _WelcomeHeader extends StatelessWidget {
                         fontWeight: FontWeight.w800,
                         color: Colors.white)),
                 const SizedBox(height: 4),
-                Text(subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                        fontSize: 13, color: Colors.white70)),
+                // Sottotitolo che SCORRE fra le voci della giornata.
+                AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 400),
+                  transitionBuilder: (child, anim) => SlideTransition(
+                    position: Tween<Offset>(
+                            begin: const Offset(0, 0.5), end: Offset.zero)
+                        .animate(anim),
+                    child: FadeTransition(opacity: anim, child: child),
+                  ),
+                  child: Text(line,
+                      key: ValueKey(line),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                          fontSize: 13, color: Colors.white70)),
+                ),
               ],
             ),
           ),

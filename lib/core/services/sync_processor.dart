@@ -14,6 +14,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../domain/entities/entities.dart';
+import '../error/invio_sap.dart';
 import '../../domain/repositories/sync_repository.dart';
 import '../../data/datasources/local/local_data_source.dart';
 import '../../data/datasources/remote/remote_data_source.dart';
@@ -52,12 +53,17 @@ class SyncProcessor {
             synced++;
           }
         } catch (e) {
+          // Già inviato a SAP dal pianificatore: il backend non accetterà mai
+          // questa operazione. Si toglie dalla coda (niente tentativi infiniti)
+          // e l'OdL diventa in sola lettura sul tablet.
+          if (eInviatoSap(e)) {
+            await _chiudiPerInvioSap(op);
+            continue;
+          }
           final n = op.retryCount + 1;
           final backoff = SyncOperation
               .backoff[n.clamp(0, SyncOperation.backoff.length - 1)];
-          // Errore di rete = non è un vero fallimento: resta "in attesa"
-          // (ambra) e verrà reinviato. Solo gli errori del server diventano
-          // "failed" (rosso, richiede attenzione).
+          // Errore di rete = resta "in attesa"
           final isNetwork = _isNetwork(e);
           await sync.update(op.copyWith(
             status: isNetwork ? SyncStatus.pending : SyncStatus.failed,
@@ -71,6 +77,10 @@ class SyncProcessor {
           }
         }
       }
+      // Foto e firme rimaste sul tablet (offline, o su un OdL creato sul campo
+      // non ancora inviato): si rimandano dopo la coda, perché il backend li
+      // accetta solo per un ordine già assegnato.
+      synced += await _uploadPendingAttachments();
     } finally {
       _running = false;
     }
@@ -119,6 +129,40 @@ class SyncProcessor {
         // Tipi non ancora gestiti dal processore: lasciati in coda.
         return false;
     }
+  }
+
+  Future<void> _chiudiPerInvioSap(SyncOperation op) async {
+    await sync.cancel(op.id);
+    final o = local.cachedWorkOrder(op.entityId);
+    if (o != null) await local.upsertWorkOrder(o.copyWith(inviatoSap: true));
+    if (op.type == SyncOperationType.submitEsito) {
+      final e = local.esitoDraft(op.entityId);
+      if (e != null) {
+        await local.saveEsitoDraft(e.copyWith(localStatus: LocalSyncStatus.error));
+      }
+    }
+    if (kDebugMode) {
+      // ignore: avoid_print
+      print('[sync] ${op.type.name} ${op.entityId} → già inviato a SAP, scartato');
+    }
+  }
+
+  /// Rimanda al backend gli allegati ancora solo locali. Un errore (rete,
+  /// ordine non ancora inviato → 404) lascia l'allegato locale: si riprova al
+  /// prossimo giro. Restituisce quanti ne sono partiti.
+  Future<int> _uploadPendingAttachments() async {
+    var sent = 0;
+    for (final a in local.pendingAttachments()) {
+      try {
+        final uploaded = await remote.uploadAttachment(a);
+        await local.removeAttachment(a.id);
+        await local.addAttachment(uploaded);
+        sent++;
+      } catch (_) {
+        continue;
+      }
+    }
+    return sent;
   }
 
   /// Vero se l'errore è dovuto all'assenza di rete (non a un errore del server).

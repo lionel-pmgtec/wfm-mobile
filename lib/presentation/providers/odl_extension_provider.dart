@@ -2,16 +2,22 @@
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/services/stock_impegnato_store.dart';
 import '../../domain/entities/entities.dart';
 import 'core_providers.dart';
 
 class OdlExtensionNotifier extends StateNotifier<OdlExtension> {
   OdlExtensionNotifier(this._ref, String odlCode)
       : super(OdlExtension.empty(odlCode)) {
-    _load(odlCode);
+    _pronto = _load(odlCode);
   }
 
   final Ref _ref;
+
+  /// Termina quando i dati salvati sono stati letti. Chi modifica l'elenco dei
+  /// materiali lo aspetta, altrimenti partirebbe da un elenco vuoto e
+  /// cancellerebbe quanto già salvato.
+  late final Future<void> _pronto;
 
   Future<void> _load(String code) async {
     final repo = _ref.read(odlExtensionRepositoryProvider);
@@ -37,19 +43,73 @@ class OdlExtensionNotifier extends StateNotifier<OdlExtension> {
       ));
 
   // ── Materiali impegnati sul campo ───────────────────────────────────────
-  Future<void> addMateriali(List<MaterialUsage> nuovi) =>
-      _persist(state.copyWith(materiali: [...state.materiali, ...nuovi]));
+  /// Aggiunge i materiali. Lo stesso materiale preso dallo stesso magazzino
+  /// NON apre una seconda riga: se c'è già, se ne aumenta la quantità.
+  Future<void> addMateriali(List<MaterialUsage> nuovi) async {
+    await _pronto;
+    final righe = [...state.materiali];
+    for (final n in nuovi) {
+      final i = righe.indexWhere((m) =>
+          m.materialCode == n.materialCode &&
+          m.warehouseCode == n.warehouseCode);
+      if (i < 0) {
+        righe.add(n);
+      } else {
+        final m = righe[i];
+        righe[i] = MaterialUsage(
+          materialCode: m.materialCode,
+          description: m.description,
+          plannedQuantity: m.plannedQuantity + n.plannedQuantity,
+          usedQuantity: m.usedQuantity + n.usedQuantity,
+          unitOfMeasure: m.unitOfMeasure,
+          warehouseCode: m.warehouseCode,
+        );
+      }
+    }
+    await _persist(state.copyWith(materiali: righe));
+  }
 
-  Future<void> removeMateriale(String materialCode) => _persist(
-        state.copyWith(
-          materiali:
-              state.materiali.where((m) => m.materialCode != materialCode).toList(),
-        ),
-      );
+  /// Toglie dall'OdL la riga di un materiale (con quel magazzino): la
+  /// quantità torna al magazzino da cui era stata prelevata.
+  Future<void> removeRiga(String materialCode, String warehouseCode) async {
+    await _pronto;
+    final tolte = state.materiali.where((m) =>
+        m.materialCode == materialCode && m.warehouseCode == warehouseCode);
+    for (final m in tolte) {
+      await StockImpegnatoStore.rilascia(
+          m.materialCode, m.warehouseCode, m.usedQuantity);
+    }
+    await _persist(state.copyWith(
+      materiali: state.materiali
+          .where((m) => !(m.materialCode == materialCode &&
+              m.warehouseCode == warehouseCode))
+          .toList(),
+    ));
+  }
+
+  Future<void> removeMateriale(String materialCode) async {
+    // Il materiale tolto torna nel magazzino da cui era stato prelevato.
+    for (final m in state.materiali.where((m) => m.materialCode == materialCode)) {
+      await StockImpegnatoStore.rilascia(
+          m.materialCode, m.warehouseCode, m.usedQuantity);
+    }
+    await _persist(state.copyWith(
+      materiali:
+          state.materiali.where((m) => m.materialCode != materialCode).toList(),
+    ));
+  }
 
   // ── Ore lavorate (scheda Operazioni) ────────────────────────────────────
   Future<void> setOre(List<OdlOreLavorate> ore) =>
       _persist(state.copyWith(ore: ore));
+
+  /// Registra l'ora di "Avvia" (inizio reale sul campo), solo la prima volta:
+  /// un "Riprendi" dopo una sospensione non deve azzerare l'inizio. Serve a
+  /// precompilare l'orario di inizio nell'esito con l'ora effettiva.
+  Future<void> segnaAvvio() {
+    if (state.avviatoIl != null) return Future.value();
+    return _persist(state.copyWith(avviatoIl: DateTime.now()));
+  }
 
   // ── Appuntamenti ────────────────────────────────────────────────────────
   Future<void> addAppuntamento(OdlAppuntamento a) =>

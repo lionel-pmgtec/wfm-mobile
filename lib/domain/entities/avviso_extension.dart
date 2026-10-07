@@ -221,6 +221,10 @@ class AvvisoExtension {
   final List<Suspension> sospensioni;
   final List<AvvisoNota> note;
   final AvvisoElaborazione? elaborazione;
+  /// Codice dell'OdL generato dall'avviso (SAP: da avviso a ordine di lavoro).
+  /// Il backend non espone ancora la generazione (POST .../generate-work-order
+  /// = 501), quindi il legame viene tracciato qui, in locale e persistente.
+  final String? ordineGenerato;
   final DateTime updatedAt;
 
   const AvvisoExtension({
@@ -233,6 +237,7 @@ class AvvisoExtension {
     this.sospensioni = const [],
     this.note = const [],
     this.elaborazione,
+    this.ordineGenerato,
     required this.updatedAt,
   });
 
@@ -257,6 +262,7 @@ class AvvisoExtension {
     List<AvvisoNota>? note,
     AvvisoElaborazione? elaborazione,
     bool clearElaborazione = false,
+    String? ordineGenerato,
   }) =>
       AvvisoExtension(
         avvisoNumero: avvisoNumero,
@@ -269,6 +275,7 @@ class AvvisoExtension {
         note: note ?? this.note,
         elaborazione:
             clearElaborazione ? null : (elaborazione ?? this.elaborazione),
+        ordineGenerato: ordineGenerato ?? this.ordineGenerato,
         updatedAt: DateTime.now(),
       );
 
@@ -282,6 +289,7 @@ class AvvisoExtension {
         'sospensioni': sospensioni.map(_suspensionToJson).toList(),
         'note': note.map((n) => n.toJson()).toList(),
         'elaborazione': elaborazione?.toJson(),
+        'ordineGenerato': ordineGenerato,
         'updatedAt': updatedAt.toIso8601String(),
       };
 
@@ -311,6 +319,7 @@ class AvvisoExtension {
         elaborazione: json['elaborazione'] != null
             ? AvvisoElaborazione.fromJson(json['elaborazione'] as Map)
             : null,
+        ordineGenerato: json['ordineGenerato'] as String?,
         updatedAt: DateTime.tryParse(json['updatedAt'] as String? ?? '') ??
             DateTime.now(),
       );

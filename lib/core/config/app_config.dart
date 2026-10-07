@@ -45,31 +45,39 @@ class AppConfig {
     this.backgroundSyncInterval = const Duration(minutes: 15),
   });
 
+  AppConfig withMiddlewareBaseUrl(String value) => AppConfig(
+        flavor: flavor,
+        middlewareBaseUrl: value,
+        sapClient: sapClient,
+        sessionDuration: sessionDuration,
+        connectTimeout: connectTimeout,
+        receiveTimeout: receiveTimeout,
+        backgroundSyncInterval: backgroundSyncInterval,
+      );
+
   // Host per target di esecuzione:
   //   • Web / Desktop (stesso PC) -> localhost
   //   • Emulatore Android (AVD)   -> 10.0.2.2
-  //   • Tablet fisico Wi-Fi       -> IP del PC (DHCP: cambia! `ipconfig`, porta 4000 nel firewall)
+  //   • Tablet fisico Wi-Fi       -> IP del PC
   static const AppConfig dev = AppConfig(
     flavor: AppFlavor.dev,
     middlewareBaseUrl: String.fromEnvironment(
       'WFM_BASE_URL',
-      // IP LAN del PC (Wi-Fi). ATTENZIONE: è DHCP, può cambiare → verifica con
-      // `ipconfig` e passa --dart-define=WFM_BASE_URL=http://192.168.1.53:4000/api/v1.
-      // Backend del collega (dev): 192.168.1.53:4000  ·  wifi casa: 192.168.1.8
-      defaultValue: 'http://192.168.1.53:4000/api/v1',
+      // IP LAN del PC (Wi-Fi).
+      defaultValue: 'http://10.34.121.215:4000/api/v1',
     ),
   );
 
 //http://192.168.1.53:4000
-   static const AppConfig qa = AppConfig(
-     flavor: AppFlavor.qa,
-     middlewareBaseUrl: 'https://wfm-cruscotto.qa.local',
-   );
+  static const AppConfig qa = AppConfig(
+    flavor: AppFlavor.qa,
+    middlewareBaseUrl: 'https://wfm-cruscotto.qa.local',
+  );
 
-   static const AppConfig prod = AppConfig(
-     flavor: AppFlavor.prod,
-     middlewareBaseUrl: 'https://wfm-cruscotto.client.com',
-   );
+  static const AppConfig prod = AppConfig(
+    flavor: AppFlavor.prod,
+    middlewareBaseUrl: 'https://wfm-cruscotto.client.com',
+  );
 
   bool get isProd => flavor == AppFlavor.prod;
 }

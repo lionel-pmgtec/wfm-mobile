@@ -38,7 +38,6 @@ class Capabilities {
   final CapabilityMode mode;
 
   /// Nome della sorgente, per i messaggi mostrati al tecnico
-  /// (es. `ZWFMT_SERVIZIO_PM`).
   final String source;
 
   final Map<String, bool> _fields;
@@ -49,11 +48,7 @@ class Capabilities {
     required Map<String, bool> fields,
   }) : _fields = fields;
 
-  /// Fallback: tutto disponibile.
-  ///
-  /// È lo stato usato finché la risposta del middleware non arriva, e quello a
-  /// cui si ricade se `/capabilities` non risponde. Continua così a funzionare come prima invece
-  /// di far sparire mezza interfaccia.
+
   static const Capabilities allEnabled = Capabilities(
     mode: CapabilityMode.excel,
     source: 'middleware',
@@ -61,8 +56,7 @@ class Capabilities {
   );
 
   /// Una capability sconosciuta vale `true`: se il middleware non si esprime su
-  /// una sezione, la si mostra. Meglio un campo vuoto che una sezione sparita
-  /// per un refuso nella chiave.
+  /// una sezione, la si mostra. Meglio un campo vuoto che una sezione sparita per un refuso nella chiave.
   bool has(String key) => _fields[key] ?? true;
 
   bool get isSapMode => mode == CapabilityMode.sap;

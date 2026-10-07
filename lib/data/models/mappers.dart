@@ -3,10 +3,26 @@
 
 import '../../domain/entities/entities.dart';
 
-DateTime? _date(dynamic v) => v == null ? null : DateTime.tryParse(v.toString());
+/// Data dal JSON; una data SAP "vuota" (0000-00-00, 00000000) non è una data:
+/// diventerebbe l'anno 0001 e comparirebbe come "30/11/0001". Sotto il 1900 si
+/// scarta.
+DateTime? _date(dynamic v) {
+  if (v == null) return null;
+  final d = DateTime.tryParse(v.toString());
+  return d == null || d.year < 1900 ? null : d;
+}
 String? _s(dynamic v) => v == null ? null : v.toString();
 num? _n(dynamic v) => v as num?;
 bool? _b(dynamic v) => v as bool?;
+
+/// Valore annidato (`testata.date.fineSchedulato`); null se un livello manca.
+dynamic _dentro(dynamic v, List<String> percorso) {
+  for (final chiave in percorso) {
+    if (v is! Map) return null;
+    v = v[chiave];
+  }
+  return v;
+}
 
 // ─── ADDRESS ───────────────────────────────────────────────────────────────
 
@@ -155,11 +171,103 @@ Map<String, dynamic> materialUsageToJson(MaterialUsage m) => {
 
 // ─── WORK ORDER ───────────────────────────────────────────────────────────
 
+/// Appuntamento FISSATO CON IL CLIENTE di un ordine: data, ora e ora limite.
+///
+/// Il backend (toMobile.ts) calcola `appointmentDate` a cascata: prima il
+/// giorno in cui il cruscotto ha pianificato il lavoro (che, se non indicato,
+/// diventa OGGI), poi l'appuntamento SAP. Quindi `appointmentDate` non dice se
+/// il cliente ha un appuntamento: un ordine senza appuntamento arriva lo stesso
+/// con una data, e un ordine con appuntamento il 7 ottobre arriva col giorno
+/// della pianificazione. L'appuntamento vero sta in `datiSap.APPUNTAMENTO`
+/// (assente se il cliente non ne ha uno): è quello che si mostra.
+///
+/// Senza `datiSap` (copia salvata sul tablet) i valori sono già quelli veri.
+({DateTime? data, String ora, String oraLimite}) _appuntamentoCliente(
+    Map<String, dynamic> j) {
+  final sap = j['datiSap'];
+  if (sap is! Map) {
+    return (
+      data: _date(j['appointmentDate']),
+      ora: '${j['appointmentStartTime'] ?? ''}',
+      oraLimite: '${j['appointmentEndTime'] ?? ''}',
+    );
+  }
+  final a = sap['APPUNTAMENTO'];
+  if (a is! Map) return (data: null, ora: '', oraLimite: '');
+  return (
+    data: _dataSap(a['FISSATO_DATA']),
+    ora: _oraSap(a['FISSATO_ORA']),
+    oraLimite: _oraSap(a['FISSATO_ORA_LIMITE']),
+  );
+}
+
+/// "2026-10-07" oppure "20261007" (formati SAP) -> data; vuoto -> null.
+DateTime? _dataSap(dynamic v) {
+  final s = '${v ?? ''}'.trim();
+  if (s.isEmpty) return null;
+  final cifre = s.replaceAll(RegExp(r'\D'), '');
+  if (cifre.length >= 8) {
+    final d = DateTime.tryParse(
+        '${cifre.substring(0, 4)}-${cifre.substring(4, 6)}-${cifre.substring(6, 8)}');
+    return d == null || d.year < 1900 ? null : d; // 00000000 = vuota
+  }
+  return _date(s);
+}
+
+/// "10:30:00" oppure "103000" -> "10:30"; vuoto -> "".
+String _oraSap(dynamic v) {
+  final s = '${v ?? ''}'.trim();
+  if (s.isEmpty) return '';
+  final cifre = s.replaceAll(RegExp(r'\D'), '');
+  if (cifre.length < 4 || RegExp(r'^0+$').hasMatch(cifre)) return ''; // 000000 = vuota
+  return '${cifre.substring(0, 2)}:${cifre.substring(2, 4)}';
+}
+
+List<Operation> _operazioniOStandard(List<Operation>? dalBackend) =>
+    dalBackend == null || dalBackend.isEmpty ? kOperazioniStandard : dalBackend;
+
+/// Cliente e nome dell'indirizzo di un ordine.
+///
+/// Il backend (toMobile.ts) mette in `customer.nome/cognome` il CLIENTE di SAP
+/// e, se manca, il nome dell'indirizzo (ADRC-NAME1/NAME2): così un condominio
+/// compare come "cliente" e come "referente". Il record SAP è in `datiSap`:
+/// da lì si separano le due cose. Il cliente ha nome solo se SAP manda
+/// CLIENTE.NOME/COGNOME; il nome dell'indirizzo (di lavoro, altrimenti
+/// dell'oggetto) è il nome del battimento.
+///
+/// Senza `datiSap` (copia salvata sul tablet) i valori sono già separati.
+({Customer cliente, String? nomeIndirizzo}) _clienteENomeIndirizzo(
+    Map<String, dynamic> j) {
+  final base = customerFromJson(j['customer'] as Map<String, dynamic>?);
+  final sap = j['datiSap'];
+  if (sap is! Map) return (cliente: base, nomeIndirizzo: _s(j['nomeIndirizzo']));
+
+  String t(dynamic v) => '${v ?? ''}'.trim();
+  String? vuoto(String s) => s.isEmpty ? null : s;
+  final c = sap['CLIENTE'];
+  final cliente = base.conNome(
+    vuoto(t(c is Map ? c['NOME'] : null)),
+    vuoto(t(c is Map ? c['COGNOME'] : null)),
+  );
+  final ind = sap['INDIRIZZO_LAVORO'] is Map
+      ? sap['INDIRIZZO_LAVORO'] as Map
+      : (sap['INDIRIZZO'] is Map ? sap['INDIRIZZO'] as Map : null);
+  final nome = [t(ind?['NOME']), t(ind?['NOME2'])]
+      .where((e) => e.isNotEmpty)
+      .join(' ');
+  return (cliente: cliente, nomeIndirizzo: vuoto(nome));
+}
+
 WorkOrder workOrderFromJson(Map<String, dynamic> j) {
+  final appuntamento = _appuntamentoCliente(j);
+  final cn = _clienteENomeIndirizzo(j);
   return WorkOrder(
     externalCode: j['externalCode']?.toString() ?? '',
     notificationNumberSap: _s(j['notificationNumberSAP']),
     avvisoOrigine: _s(j['avvisoOrigine']),
+    // Ordine d'origine: consumato se il backend lo fornisce, altrimenti null.
+    // Il backend usa `ordinePrecedente` (retro-compat: legge anche il vecchio nome).
+    ordineOrigine: _s(j['ordinePrecedente']) ?? _s(j['ordineOrigine']),
     woType: j['woType'] ?? '',
     woTypeDescription: j['woTypeDescription'] ?? '',
     tam: j['tam'] ?? '',
@@ -168,14 +276,20 @@ WorkOrder workOrderFromJson(Map<String, dynamic> j) {
     tipoAttivitaNome: _s(j['tipoAttivitaNome']),
     status: WorkOrderStatus.fromSap(j['status']?.toString()),
     statoSap: _s(j['statoSap']),
-    priorita: j['priorita'] ?? '',
+    // `prioritaDesc` = descrizione salvata nell'outbox locale (dove `priorita`
+    // porta il codice inviato al backend); dal backend arriva solo `priorita`
+    // (già descrizione).
+    priorita: j['prioritaDesc'] ?? j['priorita'] ?? '',
+    prioritaCodice: _s(j['prioritaCodice']),
+    gruppoCicli: _s(j['gruppoCicli']),
+    inviatoSap: j['inviatoSap'] == true,
     creatoDa: _s(j['creatoDa']),
     createdAt: _date(j['createdAt']),
     centroPianificazione: j['centroPianificazione'] ?? '',
     centroLavoro: j['centroLavoro'] ?? '',
-    appointmentDate: _date(j['appointmentDate']),
-    appointmentStartTime: j['appointmentStartTime'] ?? '',
-    appointmentEndTime: j['appointmentEndTime'] ?? '',
+    appointmentDate: appuntamento.data,
+    appointmentStartTime: appuntamento.ora,
+    appointmentEndTime: appuntamento.oraLimite,
     address: addressFromJson(j['address'] as Map<String, dynamic>?),
     indirizzoOggetto: j['indirizzoOggetto'] == null
         ? null
@@ -183,9 +297,14 @@ WorkOrder workOrderFromJson(Map<String, dynamic> j) {
     indirizzoIntervento: j['indirizzoIntervento'] == null
         ? null
         : addressFromJson(j['indirizzoIntervento'] as Map<String, dynamic>),
-    customer: customerFromJson(j['customer'] as Map<String, dynamic>?),
+    customer: cn.cliente,
     codiceCliente: _s(j['codiceCliente']),
-    referente: _s(j['referente']),
+    // Il referente del backend è lo stesso nome del cliente o dell'indirizzo:
+    // senza una persona diversa non c'è un referente.
+    referente: referenteDistinto(
+        referenteDistinto(_s(j['referente']), cn.nomeIndirizzo ?? ''),
+        cn.cliente.fullName),
+    nomeIndirizzo: cn.nomeIndirizzo,
     telefonoCliente: _s(j['telefonoCliente']),
     sedeTecnica: j['sedeTecnica'] ?? '',
     equipment: j['equipment'] ?? '',
@@ -194,15 +313,15 @@ WorkOrder workOrderFromJson(Map<String, dynamic> j) {
     aggUbicazione: j['aggUbicazione'] ?? '',
     impianto: j['impianto'] ?? '',
     meter: meterFromJson(j['meter'] as Map<String, dynamic>?),
-    operations: (j['operations'] as List?)
+    operations: _operazioniOStandard((j['operations'] as List?)
             ?.map((e) => operationFromJson(e as Map<String, dynamic>))
-            .toList() ??
-        const [],
+            .toList()),
     plannedMaterials: (j['plannedMaterials'] as List?)
             ?.map((e) => materialUsageFromJson(e as Map<String, dynamic>))
             .toList() ??
         const [],
     cidAssegnato: _s(j['technicianCID']),
+    assegnaA: _s(j['assegnaA']),
     squadra: j['squadra'] ?? '',
     responsabile: _s(j['responsabile']),
     fornitoreEsterno: _s(j['fornitoreEsterno']),
@@ -211,8 +330,15 @@ WorkOrder workOrderFromJson(Map<String, dynamic> j) {
     impiantoDis: _s(j['impiantoDis']),
     ultimoCicloManutenzione: _s(j['ultimoCicloManutenzione']),
     postManut: _s(j['postManut']),
+    // Il backend manda il DATA_FINE di SAP (AFKO-GLTRP) come `dataEsec`. La
+    // "fine prevista" vera è la fine schedulata (AFKO-GLTRS), che sta nella
+    // testata: `null` finché il web service SAP non la manda.
     dataEsec: _date(j['dataEsec']),
-    dataFine: _date(j['dataFine']),
+    dataFine: _date(_dentro(j['testata'], ['date', 'fineSchedulato'])),
+    // Inizio cardine: dal backend sta nella testata; nella copia salvata sul
+    // tablet (senza testata) è `dataInizio`.
+    dataInizio: _date(_dentro(j['testata'], ['date', 'inizioCardine'])) ??
+        _date(j['dataInizio']),
     accountingSector: j['accountingSector'] ?? '',
     notes: j['notes'] ?? '',
     // Note SAP (sola lettura) e note aggiunte sul campo, separate dal backend.
@@ -225,6 +351,8 @@ Map<String, dynamic> workOrderToJson(WorkOrder o) => {
       'externalCode': o.externalCode,
       'notificationNumberSAP': o.notificationNumberSap,
       'avvisoOrigine': o.avvisoOrigine,
+      // Tracciabilità "creato da OdL #…": chiave attesa dal backend.
+      'ordinePrecedente': o.ordineOrigine,
       'woType': o.woType,
       'woTypeDescription': o.woTypeDescription,
       'tam': o.tam,
@@ -233,7 +361,12 @@ Map<String, dynamic> workOrderToJson(WorkOrder o) => {
       'tipoAttivitaNome': o.tipoAttivitaNome,
       'status': o.status.sapCode,
       'statoSap': o.statoSap,
-      'priorita': o.priorita,
+      // Al backend va il CODICE ("1"); se non c'è (OdL nato altrove) resta la
+      // descrizione, che il backend riconosce comunque.
+      'priorita': (o.prioritaCodice ?? '').isNotEmpty ? o.prioritaCodice : o.priorita,
+      'prioritaDesc': o.priorita,
+      'prioritaCodice': o.prioritaCodice,
+      'gruppoCicli': o.gruppoCicli,
       'creatoDa': o.creatoDa,
       'createdAt': o.createdAt?.toIso8601String(),
       'centroPianificazione': o.centroPianificazione,
@@ -250,6 +383,7 @@ Map<String, dynamic> workOrderToJson(WorkOrder o) => {
       'customer': customerToJson(o.customer),
       'codiceCliente': o.codiceCliente,
       'referente': o.referente,
+      'nomeIndirizzo': o.nomeIndirizzo,
       'telefonoCliente': o.telefonoCliente,
       'sedeTecnica': o.sedeTecnica,
       'equipment': o.equipment,
@@ -260,6 +394,10 @@ Map<String, dynamic> workOrderToJson(WorkOrder o) => {
       'operations': o.operations.map(operationToJson).toList(),
       'plannedMaterials': o.plannedMaterials.map(materialUsageToJson).toList(),
       'technicianCID': o.cidAssegnato,
+      // Solo per la copia locale (outbox): il backend non lo legge, assegna
+      // sempre a chi crea. Il passaggio al collega lo fa l'app dopo, con
+      // POST /work-orders/:id/reassign.
+      if (o.assegnaA != null) 'assegnaA': o.assegnaA,
       'squadra': o.squadra,
       'responsabile': o.responsabile,
       'fornitoreEsterno': o.fornitoreEsterno,
@@ -269,9 +407,13 @@ Map<String, dynamic> workOrderToJson(WorkOrder o) => {
       'ultimoCicloManutenzione': o.ultimoCicloManutenzione,
       'postManut': o.postManut,
       'dataEsec': o.dataEsec?.toIso8601String(),
-      'dataFine': o.dataFine?.toIso8601String(),
+      'dataInizio': o.dataInizio?.toIso8601String(),
       'accountingSector': o.accountingSector,
       'notes': o.notes,
+      // Note SAP (sola lettura) e note aggiunte sul campo: servono a conservare
+      // la nota quando l'OdL locale viene riletto dall'outbox (round-trip Hive).
+      'noteSap': o.noteSap,
+      'noteAggiunte': o.noteAggiunte,
     };
 
 // ─── AVVISO ──────────────────────────────────────────────────────────────
@@ -330,6 +472,9 @@ NotificationAvviso avvisoFromJson(Map<String, dynamic> j) => NotificationAvviso(
       dataPianificata: _date(j['dataPianificata']),
       dataInterventoRichiesta: _date(j['dataInterventoRichiesta']),
       dataInizioGuasto: _date(j['dataInizioGuasto']),
+      oraInterventoRichiesta: _s(j['oraInterventoRichiesta']),
+      oraInizioGuasto: _s(j['oraInizioGuasto']),
+      oraFineGuasto: _s(j['oraFineGuasto']),
       dataFineGuasto: _date(j['dataFineGuasto']),
       dataChiusura: _date(j['dataChiusura']),
       fasciaOraria: _fasciaOraria(j['fasciaOraria']),
@@ -551,7 +696,10 @@ Map<String, dynamic> esitoToJson(Esito e) => {
           'customerPresent': e.appointment!.clientePresente == null
               ? null
               : (e.appointment!.clientePresente! ? 'SI' : 'NO'),
-          'visitDate': e.appointment!.sopralluogoData?.toIso8601String(),
+          // Solo la data (yyyy-MM-dd), come nel contratto del backend.
+          'visitDate': e.appointment!.sopralluogoData
+              ?.toIso8601String()
+              .substring(0, 10),
           'visitTime': e.appointment!.sopralluogoOra,
           'pickup': e.appointment!.ritiro,
           'delayCauseCode': e.appointment!.causaRitardo,
@@ -568,14 +716,37 @@ Map<String, dynamic> esitoToJson(Esito e) => {
                 'hours': h.hours,
               })
           .toList(),
-      // Spostamento contatore (nodo `contatore` di POST /esiti). Inviato solo
-      // se l'operatore ha indicato una nuova ubicazione.
+      // NUOVO contatore posato (SOST): nodo `newMeter`. Inviato solo se c'è un
+      // numero di serie del nuovo contatore.
+      if ((e.newMeterSerial ?? '').trim().isNotEmpty)
+        'newMeter': {
+          'serialNumber': e.newMeterSerial,
+          if ((e.newMeterManufacturer ?? '').trim().isNotEmpty)
+            'manufacturer': e.newMeterManufacturer,
+          'installReading': e.newMeterInstallReading ?? 0,
+          if (e.newMeterInstallDate != null)
+            'installDate': e.newMeterInstallDate!.toIso8601String(),
+        },
+      // Spostamento contatore (nodo `contatore`). Inviato solo se il nuovo va in
+      // un posto diverso dal vecchio (ubicazione o posizione in batteria).
       if ((e.newMeterLocation ?? '').trim().isNotEmpty ||
-          (e.newMeterLocationAdditional ?? '').trim().isNotEmpty)
+          (e.newMeterLocationAdditional ?? '').trim().isNotEmpty ||
+          (e.newMeterPosition ?? '').trim().isNotEmpty)
         'contatore': {
           'newLocation': e.newMeterLocation,
           'newLocationAdditional': e.newMeterLocationAdditional,
+          if ((e.newMeterPosition ?? '').trim().isNotEmpty)
+            'newPosition': e.newMeterPosition,
         },
+      // Oggetti del lavoro (mezzi e apparecchiature impegnati): per un automezzo
+      // `equipment` è la targa. Il backend li mostra nella tabella Oggetti.
+      if (e.objects.isNotEmpty)
+        'objects': e.objects
+            .map((o) => {
+                  'equipment': o.equipment,
+                  if (o.description.trim().isNotEmpty) 'description': o.description,
+                })
+            .toList(),
       'geolocation': e.geolocation == null
           ? null
           : {
@@ -594,7 +765,28 @@ MaterialItem materialItemFromJson(Map<String, dynamic> j) => MaterialItem(
       barcode: _s(j['barcode']),
       defaultWarehouseCode: j['defaultWarehouseCode'] ?? 'W01',
       stockDisponibile: _n(j['stockDisponibile']) ?? 0,
+      stockPerMagazzino: _stockPerMagazzino(j['stockPerMagazzino']),
     );
+
+/// Giacenza per magazzino: lista `[{warehouseCode, quantity}]` oppure mappa
+/// `{W01: 30}`. Assente o illeggibile -> vuota (si usa lo stock unico).
+Map<String, num> _stockPerMagazzino(dynamic v) {
+  final out = <String, num>{};
+  if (v is Map) {
+    v.forEach((k, q) {
+      final n = _n(q);
+      if (n != null) out['$k'] = n;
+    });
+  } else if (v is List) {
+    for (final e in v) {
+      if (e is! Map) continue;
+      final code = '${e['warehouseCode'] ?? e['code'] ?? ''}'.trim();
+      final n = _n(e['quantity'] ?? e['quantita'] ?? e['stock']);
+      if (code.isNotEmpty && n != null) out[code] = n;
+    }
+  }
+  return out;
+}
 
 Warehouse warehouseFromJson(Map<String, dynamic> j) =>
     Warehouse(code: j['code']?.toString() ?? '', name: j['name'] ?? '');
@@ -611,6 +803,21 @@ WorkOrderTypeOption workOrderTypeOptionFromJson(Map<String, dynamic> j) =>
       category: _s(j['category'] ?? j['categoria']),
     );
 
+WorkOrderActivityTemplate workOrderActivityTemplateFromJson(Map<String, dynamic> j) {
+  final raw = j['daConfermare'];
+  return WorkOrderActivityTemplate(
+    woType: (j['woType'] ?? '').toString(),
+    tipoAttivita: (j['tipoAttivita'] ?? '').toString(),
+    tipoAttivitaDesc: (j['tipoAttivitaDesc'] ?? '').toString(),
+    gruppoCicli: (j['gruppoCicli'] ?? '').toString(),
+    settoreContabile: (j['settoreContabile'] ?? '').toString(),
+    settoreContabileDesc: (j['settoreContabileDesc'] ?? '').toString(),
+    daConfermare:
+        raw is List ? raw.map((e) => e.toString()).toList() : const [],
+    predefinita: j['predefinita'] == true,
+  );
+}
+
 DynFieldSpec dynFieldSpecFromJson(Map<String, dynamic> j) {
   final rawOptions = j['options'] ?? j['opzioni'];
   return DynFieldSpec(
@@ -626,17 +833,33 @@ DynFieldSpec dynFieldSpecFromJson(Map<String, dynamic> j) {
 
 // ─── EQUIPMENT ───────────────────────────────────────────────────────────────
 
-Equipment equipmentFromJson(Map<String, dynamic> j) => Equipment(
-      matricola: j['matricola']?.toString() ?? '',
-      barcode: j['barcode']?.toString() ?? '',
-      produttore: j['produttore'] ?? '',
-      modello: j['modello'] ?? '',
-      localita: j['localita'] ?? '',
-      comune: j['comune'] ?? '',
-      sedeTecnica: j['sedeTecnica'] ?? '',
-      dataInstallazione: _date(j['dataInstallazione']),
-      stato: j['stato'] ?? '',
-    );
+Equipment equipmentFromJson(Map<String, dynamic> j) {
+  final fonte = j['fonte'];
+  return Equipment(
+    matricola: j['matricola']?.toString() ?? '',
+    barcode: j['barcode']?.toString() ?? '',
+    produttore: j['produttore'] ?? '',
+    modello: j['modello'] ?? '',
+    localita: j['localita'] ?? '',
+    comune: j['comune'] ?? '',
+    sedeTecnica: j['sedeTecnica'] ?? '',
+    dataInstallazione: _date(j['dataInstallazione']),
+    stato: j['stato'] ?? '',
+    // Dati ricchi della casetta (precompilazione SOST).
+    equipment: j['equipment']?.toString() ?? '',
+    oggettoAllacciamento: j['oggettoAllacciamento']?.toString() ?? '',
+    accountingSector: j['accountingSector']?.toString() ?? '',
+    fonteExternalCode:
+        fonte is Map ? (fonte['externalCode']?.toString() ?? '') : '',
+    meter: meterFromJson(j['meter'] as Map<String, dynamic>?),
+    address: j['address'] == null
+        ? null
+        : addressFromJson(j['address'] as Map<String, dynamic>),
+    customer: j['customer'] == null
+        ? null
+        : customerFromJson(j['customer'] as Map<String, dynamic>),
+  );
+}
 
 // ─── TECNICO (AppUser) ───────────────────────────────────────────────────────
 

@@ -1,5 +1,6 @@
 // Schermata Esito intervento : tecnico + economico + validazione finale.
 
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -18,7 +19,6 @@ import '../../providers/auth_provider.dart';
 import '../../providers/esito_provider.dart';
 import '../../providers/odl_extension_provider.dart';
 import '../../providers/work_orders_provider.dart';
-import '../../widgets/signature_pad.dart';
 
 class EsitoScreen extends ConsumerStatefulWidget {
   final String code;
@@ -37,6 +37,9 @@ class _EsitoScreenState extends ConsumerState<EsitoScreen> {
   String? _causeCode;
   String? _solutionCode;
   final _notesCtrl = TextEditingController();
+  /// Oggetti del lavoro (mezzi/apparecchiature impegnati): partono con l'esito
+  /// nel nodo `objects`. Per un automezzo l'equipment è la targa.
+  final List<EsitoObject> _objects = [];
   final _finalReadingCtrl = TextEditingController();
   /// Lettura precedente: modificabile.
   /// 
@@ -54,17 +57,16 @@ class _EsitoScreenState extends ConsumerState<EsitoScreen> {
   /// Inizio/Fine modificabili dall'operatore (override dei valori di default).
   DateTime? _startOverride;
   DateTime? _endOverride;
-  /// Firma tracciata dal cliente in fondo alla pagina.
-  final _firmaCliente = SignaturePadController();
   bool _submitting = false;
 
-  /// Inizio intervento: dato reale dell'OdL (esecuzione/appuntamento/creazione
-  /// da SAP), non un valore inventato. La fine è il momento della chiusura.
+  /// Inizio intervento: l'ora in cui l'operatore ha premuto "Avvia" (registrata
+  /// in locale), altrimenti adesso. NON si ricava dalla data/ora
+  /// dell'appuntamento: quello è il rendez-vous preso col cliente, non
+  /// l'esecuzione. Né dalle date dell'OdL (inizio cardine, data esecuzione):
+  /// sono date di pianificazione. La fine è il momento della chiusura.
   DateTime _startOf(WorkOrder? o) =>
       _startOverride ??
-      o?.dataEsec ??
-      o?.appointmentDate ??
-      o?.createdAt ??
+      ref.read(odlExtensionProvider(widget.code)).avviatoIl ??
       DateTime.now();
 
   DateTime _endOf() => _endOverride ?? DateTime.now();
@@ -102,7 +104,6 @@ class _EsitoScreenState extends ConsumerState<EsitoScreen> {
     _matricolaCtrl.dispose();
     _newUbicazioneCtrl.dispose();
     _newUbicazioneAggCtrl.dispose();
-    _firmaCliente.dispose();
     super.dispose();
   }
 
@@ -186,6 +187,44 @@ class _EsitoScreenState extends ConsumerState<EsitoScreen> {
       ));
     }
 
+    // SOSTITUZIONE (SOST): la scheda "Sostituzione" del contatore produce una
+    // bozza con contatore rimosso + nuovo + posizione. Alla chiusura si
+    // trasmette: lettura al deposito del rimosso, lettura iniziale del nuovo
+    // (entrambe in `letture`), e la posizione nel nodo `contatore`.
+    final sub = ref.read(meterSubstitutionDraftProvider(widget.code));
+    String? subNewLocation;
+    String? subNewLocationAdd;
+    // Dati del NUOVO contatore (nodo `newMeter` del backend).
+    String? subNewSerial;
+    String? subNewManufacturer;
+    num? subNewInstallReading;
+    DateTime? subNewInstallDate;
+    if (sub != null) {
+      // `meterReadings` = SOLO la lettura FINALE del vecchio contatore rimosso.
+      if (_finalReadingCtrl.text.trim().isEmpty &&
+          sub.depositReading != null &&
+          (order?.meter?.matricola ?? '').trim().isNotEmpty) {
+        readings.add(MeterReading(
+          matricola: order!.meter!.matricola,
+          readingValue: sub.depositReading!,
+          readingDateTime: _endOf(),
+        ));
+      }
+      // Il NUOVO contatore va nel nodo `newMeter` (non in meterReadings): così
+      // arriva anche il produttore, che le letture non trasportano.
+      if (sub.newMatricola.trim().isNotEmpty) {
+        subNewSerial = sub.newMatricola.trim();
+        subNewManufacturer =
+            sub.newProduttore.trim().isEmpty ? null : sub.newProduttore.trim();
+        subNewInstallReading = sub.initialReading ?? 0;
+        subNewInstallDate = sub.posaDate;
+      }
+      if (sub.position.trim().isNotEmpty) subNewLocation = sub.position.trim();
+      if (sub.positionAdd.trim().isNotEmpty) {
+        subNewLocationAdd = sub.positionAdd.trim();
+      }
+    }
+
     // Materiali impegnati sul campo (locali): partono col submit dell'esito.
     final materiali = ref.read(odlExtensionProvider(widget.code)).materiali;
 
@@ -236,13 +275,20 @@ class _EsitoScreenState extends ConsumerState<EsitoScreen> {
       materials: materiali,
       appointment: appointment,
       hoursWorked: ore,
-      newMeterLocation: _newUbicazioneCtrl.text.trim().isEmpty
-          ? null
-          : _newUbicazioneCtrl.text.trim(),
-      newMeterLocationAdditional: _newUbicazioneAggCtrl.text.trim().isEmpty
-          ? null
-          : _newUbicazioneAggCtrl.text.trim(),
-      customerSigned: _firmaCliente.hasSignature,
+      objects: List.of(_objects),
+      // Posizione contatore: dal campo "Spostamento contatore" dell'esito
+      // oppure, per una SOST, dalla scheda Sostituzione.
+      newMeterLocation: _newUbicazioneCtrl.text.trim().isNotEmpty
+          ? _newUbicazioneCtrl.text.trim()
+          : subNewLocation,
+      newMeterLocationAdditional: _newUbicazioneAggCtrl.text.trim().isNotEmpty
+          ? _newUbicazioneAggCtrl.text.trim()
+          : subNewLocationAdd,
+      // Nuovo contatore posato (SOST) → nodo `newMeter`.
+      newMeterSerial: subNewSerial,
+      newMeterManufacturer: subNewManufacturer,
+      newMeterInstallReading: subNewInstallReading,
+      newMeterInstallDate: subNewInstallDate,
     );
     final res = await ref.read(esitoControllerProvider).submit(esito);
     if (!mounted) return;
@@ -255,6 +301,16 @@ class _EsitoScreenState extends ConsumerState<EsitoScreen> {
       },
       failure: (f) => showSapToast(context, f.message, isError: true),
     );
+  }
+
+  /// Aggiunge un oggetto del lavoro (targa/equipment + descrizione).
+  Future<void> _addObject() async {
+    final oggetto = await showDialog<EsitoObject>(
+      context: context,
+      builder: (_) => const OggettoLavoroDialog(),
+    );
+    if (oggetto == null || !mounted) return;
+    setState(() => _objects.add(oggetto));
   }
 
   @override
@@ -415,7 +471,8 @@ class _EsitoScreenState extends ConsumerState<EsitoScreen> {
                     .map((c) => DropdownMenuItem(
                         value: c.code, child: Text(c.label, overflow: TextOverflow.ellipsis)))
                     .toList(),
-                validator: (v) => v == null ? 'Selezionare un motivo' : null,
+                // Facoltativo: il backend non lo richiede e non per tutti i tipi
+                // di OdL ha senso (es. ZA02).
                 onChanged: (v) => setState(() => _causeCode = v),
               ),
             ),
@@ -473,6 +530,49 @@ class _EsitoScreenState extends ConsumerState<EsitoScreen> {
                     context.push(AppRoutes.addComponentePath(widget.code)),
                 icon: const Icon(Icons.add, size: 18),
                 label: const Text('Aggiungi materiale'),
+              ),
+            ),
+            // ── OGGETTI (mezzi / apparecchiature impegnati, nodo `objects`) ──
+            const SectionHeader(title: 'OGGETTI (MEZZI / APPARECCHIATURE)'),
+            if (_objects.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 4),
+                child: Text('Nessun oggetto registrato',
+                    style: AppTextStyles.bodySmall),
+              )
+            else
+              for (var i = 0; i < _objects.length; i++)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Row(children: [
+                    const Icon(Icons.local_shipping_outlined,
+                        size: 16, color: AppColors.primary),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        [_objects[i].equipment, _objects[i].description]
+                            .where((t) => t.isNotEmpty)
+                            .join(' · '),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.bodyMedium,
+                      ),
+                    ),
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      tooltip: 'Rimuovi',
+                      icon: const Icon(Icons.close, size: 18),
+                      onPressed: () => setState(() => _objects.removeAt(i)),
+                    ),
+                  ]),
+                ),
+            const SizedBox(height: 6),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: OutlinedButton.icon(
+                onPressed: _addObject,
+                icon: const Icon(Icons.add, size: 18),
+                label: const Text('Aggiungi oggetto'),
               ),
             ),
             // ── ESITO APPUNTAMENTO (compilato altrove, inviato con l'esito) ─
@@ -537,18 +637,10 @@ class _EsitoScreenState extends ConsumerState<EsitoScreen> {
               ),
             ],
             const SectionHeader(title: 'COMMENTI'),
-            TextFormField(
+            VoiceTextField(
               controller: _notesCtrl,
+              label: 'Commenti liberi',
               maxLines: 4,
-              decoration: const InputDecoration(
-                  labelText: 'Commenti liberi', alignLabelWithHint: true),
-            ),
-            const SectionHeader(title: 'FIRMA'),
-            // La firma si raccoglie qui, alla chiusura: prima era un semplice
-            // interruttore e nessuna firma veniva mai tracciata.
-            SignaturePad(
-              controller: _firmaCliente,
-              label: 'Firma cliente',
             ),
             const SizedBox(height: 24),
             SizedBox(
@@ -581,6 +673,183 @@ class _EsitoScreenState extends ConsumerState<EsitoScreen> {
         ],
       ),
       body: form,
+    );
+  }
+}
+
+// ─── Oggetto del lavoro ──────────────────────────────────────────────────────
+
+/// Dialogo per aggiungere un oggetto del lavoro (mezzo o apparecchiatura).
+/// Restituisce l'[EsitoObject], oppure null se annullato. La targa è
+/// obbligatoria e si può leggere col barcode; la descrizione si può dettare.
+class OggettoLavoroDialog extends StatefulWidget {
+  const OggettoLavoroDialog({super.key});
+
+  @override
+  State<OggettoLavoroDialog> createState() => _OggettoLavoroDialogState();
+}
+
+class _OggettoLavoroDialogState extends State<OggettoLavoroDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _eqCtrl = TextEditingController();
+  final _descCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _eqCtrl.dispose();
+    _descCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _scansiona() async {
+    final code = await context.push<String>(AppRoutes.scanner);
+    if (code != null && code.trim().isNotEmpty && mounted) {
+      setState(() => _eqCtrl.text = code.trim().toUpperCase());
+    }
+  }
+
+  void _conferma() {
+    if (!_formKey.currentState!.validate()) return;
+    Navigator.pop(
+        context,
+        EsitoObject(
+            equipment: _eqCtrl.text.trim().toUpperCase(),
+            description: _descCtrl.text.trim()));
+  }
+
+  InputDecoration _decoration(String label,
+          {String? hint, Widget? suffixIcon}) =>
+      InputDecoration(
+        labelText: label,
+        hintText: hint,
+        suffixIcon: suffixIcon,
+        filled: true,
+        fillColor: AppColors.backgroundPage,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: AppColors.border),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: AppColors.border),
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520),
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(24, 22, 24, 18),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: const BoxDecoration(
+                        color: AppColors.primarySurface,
+                        shape: BoxShape.circle),
+                    child: const Icon(Icons.local_shipping_outlined,
+                        size: 22, color: AppColors.primary),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text('Oggetto del lavoro',
+                        style: AppTextStyles.headingMedium),
+                  ),
+                ]),
+                const SizedBox(height: 6),
+                const Text(
+                  'Il mezzo o l\'apparecchiatura impegnata in questo intervento.',
+                  style: TextStyle(
+                      fontSize: 13, color: AppColors.textSecondary),
+                ),
+                const SizedBox(height: 18),
+                TextFormField(
+                  controller: _eqCtrl,
+                  autofocus: true,
+                  textCapitalization: TextCapitalization.characters,
+                  textInputAction: TextInputAction.next,
+                  decoration: _decoration(
+                    'Targa / Equipment *',
+                    hint: 'Es. CR812EP',
+                    suffixIcon: IconButton(
+                      tooltip: 'Scansiona codice',
+                      icon: const Icon(Icons.qr_code_scanner,
+                          color: AppColors.primary),
+                      onPressed: _scansiona,
+                    ),
+                  ),
+                  validator: (v) => (v ?? '').trim().isEmpty
+                      ? 'Indica la targa o l\'equipment'
+                      : null,
+                ),
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(4, 6, 4, 0),
+                  child: Text('Per un automezzo, la targa.',
+                      style: TextStyle(
+                          fontSize: 12, color: AppColors.textHint)),
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _descCtrl,
+                  minLines: 2,
+                  maxLines: 3,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: _decoration(
+                    'Descrizione',
+                    hint: 'Es. 159 - Fiat Doblò',
+                    suffixIcon: VoiceSuffixIcons(controller: _descCtrl),
+                  ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(4, 6, 4, 0),
+                  child: Text(
+                      'Per un automezzo, comincia col numero del mezzo.',
+                      style: TextStyle(
+                          fontSize: 12, color: AppColors.textHint)),
+                ),
+                const SizedBox(height: 22),
+                Row(children: [
+                  Expanded(
+                    child: OutlinedButton(
+                      onPressed: () => Navigator.pop(context),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(48),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                      ),
+                      child: const Text('Annulla'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 2,
+                    child: ElevatedButton.icon(
+                      onPressed: _conferma,
+                      icon: const Icon(Icons.add_rounded, size: 20),
+                      label: const Text('Aggiungi'),
+                      style: ElevatedButton.styleFrom(
+                        minimumSize: const Size.fromHeight(48),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12)),
+                      ),
+                    ),
+                  ),
+                ]),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

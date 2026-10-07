@@ -12,17 +12,28 @@ import '../../../../core/widgets/widgets.dart';
 import '../../../../domain/entities/entities.dart';
 import '../../../providers/anagrafica_provider.dart';
 import '../../../providers/auth_provider.dart';
+import '../../../providers/avviso_extension_provider.dart';
 import '../../../providers/avvisi_provider.dart';
 import '../../../providers/creation_provider.dart';
+import '../../../widgets/assegnatario_field.dart';
 import '../../../widgets/sync_widgets.dart';
+
+/// Tipo d'ordine che nasce da un tipo d'avviso: regola del backend
+/// (`ORDINE_DA_AVVISO` in `tipiOrdine.ts`: dall'avviso ZI la manutenzione ZA02,
+/// tipo attività DST, ciclo CONRCO1). Qui serve solo a proporre il tipo.
+const kOrdineDaAvviso = {'ZI': 'ZA02'};
+
+/// Tipi che si creano col modulo di creazione completo (precompilato
+/// dall'avviso) invece del percorso a 3 passi: hanno campi propri (matricola,
+/// tipo attività/ciclo dalla tabella di correlazione del backend).
+const _tipiConModuloCompleto = {'SOST', 'ZA02'};
 
 class GeneraOrdineScreen extends ConsumerStatefulWidget {
   final String numero;
   const GeneraOrdineScreen({super.key, required this.numero});
 
   @override
-  ConsumerState<GeneraOrdineScreen> createState() =>
-      _GeneraOrdineScreenState();
+  ConsumerState<GeneraOrdineScreen> createState() => _GeneraOrdineScreenState();
 }
 
 class _GeneraOrdineScreenState extends ConsumerState<GeneraOrdineScreen> {
@@ -36,8 +47,32 @@ class _GeneraOrdineScreenState extends ConsumerState<GeneraOrdineScreen> {
   final _descCtrl = TextEditingController();
   final _altroBpCtrl = TextEditingController();
   final _noteCtrl = TextEditingController();
+  String? _assegnaA; // collega a cui passare l'OdL; null = resta a chi crea
 
   // Nessun catalogo hardcoded: tipi OdL / attività PM / cicli dal cruscotto.
+  @override
+  void initState() {
+    super.initState();
+    _proponiTipoDaAvviso();
+  }
+
+  /// Avviso ZI -> propone ZA02 già selezionato (resta modificabile), solo se
+  /// il backend lo offre davvero fra i tipi creabili.
+  Future<void> _proponiTipoDaAvviso() async {
+    try {
+      final a = await ref.read(avvisoDetailProvider(widget.numero).future);
+      final proposto = kOrdineDaAvviso[a.tipo.trim().toUpperCase()];
+      if (proposto == null) return;
+      final types = await ref.read(workOrderTypesProvider.future);
+      if (!mounted || _woType != null) return;
+      if (types.any((t) => t.code == proposto)) {
+        setState(() => _woType = proposto);
+      }
+    } catch (_) {
+      // Avviso o tipi non leggibili: si sceglie a mano, come prima.
+    }
+  }
+
   @override
   void dispose() {
     _descCtrl.dispose();
@@ -57,8 +92,7 @@ class _GeneraOrdineScreenState extends ConsumerState<GeneraOrdineScreen> {
           child: LinearProgressIndicator(
             value: (_step + 1) / 3,
             backgroundColor: Colors.white24,
-            valueColor:
-                const AlwaysStoppedAnimation<Color>(Colors.white),
+            valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
           ),
         ),
       ),
@@ -111,8 +145,8 @@ class _GeneraOrdineScreenState extends ConsumerState<GeneraOrdineScreen> {
                 padding: EdgeInsets.symmetric(vertical: 24),
                 child: Center(child: CircularProgressIndicator()),
               ),
-              error: (_, __) =>
-                  _catalogInfo('Impossibile caricare i tipi OdL dal cruscotto.'),
+              error: (_, __) => _catalogInfo(
+                  'Impossibile caricare i tipi OdL dal cruscotto.'),
               data: (types) {
                 if (types.isEmpty) {
                   return _catalogInfo(
@@ -121,45 +155,63 @@ class _GeneraOrdineScreenState extends ConsumerState<GeneraOrdineScreen> {
                 return Column(
                   children: types.map((t) {
                     final selected = _woType == t.code;
+                    // Solo SOST e ZA02 si possono scegliere: gli altri tipi
+                    // restano visibili ma grigi.
+                    final abilitato = kTipiOdlAbilitati.contains(t.code);
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 8),
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(10),
-                        onTap: () => setState(() => _woType = t.code),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 14, vertical: 14),
-                          decoration: BoxDecoration(
-                            color: selected
-                                ? AppColors.primary.withValues(alpha: 0.08)
-                                : AppColors.surface,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                                color: selected
-                                    ? AppColors.primary
-                                    : AppColors.border,
-                                width: selected ? 1.5 : 1),
-                          ),
-                          child: Row(children: [
-                            Icon(_typeIcon(t), color: AppColors.primary, size: 24),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(t.code,
-                                      style: AppTextStyles.headingSmall
-                                          .copyWith(color: AppColors.primary)),
-                                  const SizedBox(height: 2),
-                                  Text(t.label,
-                                      style: AppTextStyles.bodyMedium),
-                                ],
-                              ),
+                      child: Opacity(
+                        opacity: abilitato ? 1 : 0.45,
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(10),
+                          onTap: abilitato
+                              ? () => setState(() => _woType = t.code)
+                              : null,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 14),
+                            decoration: BoxDecoration(
+                              color: selected
+                                  ? AppColors.primary.withValues(alpha: 0.08)
+                                  : AppColors.surface,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(
+                                  color: selected
+                                      ? AppColors.primary
+                                      : AppColors.border,
+                                  width: selected ? 1.5 : 1),
                             ),
-                            if (selected)
-                              const Icon(Icons.check_circle,
-                                  color: AppColors.primary),
-                          ]),
+                            child: Row(children: [
+                              Icon(_typeIcon(t),
+                                  color: abilitato
+                                      ? AppColors.primary
+                                      : AppColors.textSecondary,
+                                  size: 24),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(t.code,
+                                        style: AppTextStyles.headingSmall
+                                            .copyWith(
+                                                color: abilitato
+                                                    ? AppColors.primary
+                                                    : AppColors.textSecondary)),
+                                    const SizedBox(height: 2),
+                                    Text(t.label,
+                                        style: AppTextStyles.bodyMedium),
+                                  ],
+                                ),
+                              ),
+                              if (selected)
+                                const Icon(Icons.check_circle,
+                                    color: AppColors.primary)
+                              else if (!abilitato)
+                                const Icon(Icons.lock_outline,
+                                    size: 18, color: AppColors.textSecondary),
+                            ]),
+                          ),
                         ),
                       ),
                     );
@@ -273,7 +325,9 @@ class _GeneraOrdineScreenState extends ConsumerState<GeneraOrdineScreen> {
         TextField(
           controller: _descCtrl,
           maxLines: 2,
-          decoration: const InputDecoration(labelText: 'Descrizione *'),
+          decoration: InputDecoration(
+              labelText: 'Descrizione *',
+              suffixIcon: VoiceSuffixIcons(controller: _descCtrl)),
         ),
         const SectionHeader(title: 'PARTI'),
         TextField(
@@ -284,8 +338,15 @@ class _GeneraOrdineScreenState extends ConsumerState<GeneraOrdineScreen> {
         TextField(
           controller: _noteCtrl,
           maxLines: 3,
-          decoration: const InputDecoration(
-              labelText: 'Note', alignLabelWithHint: true),
+          decoration: InputDecoration(
+              labelText: 'Note',
+              alignLabelWithHint: true,
+              suffixIcon: VoiceSuffixIcons(controller: _noteCtrl)),
+        ),
+        const SectionHeader(title: 'ASSEGNAZIONE'),
+        AssegnatarioField(
+          value: _assegnaA,
+          onChanged: (cid) => setState(() => _assegnaA = cid),
         ),
       ],
     );
@@ -306,7 +367,8 @@ class _GeneraOrdineScreenState extends ConsumerState<GeneraOrdineScreen> {
         FieldRow(label: 'Descrizione', value: _descCtrl.text, fullWidth: true),
         const SectionHeader(title: 'DATI PRE-COMPILATI'),
         FormGrid(children: [
-          FieldRow(label: 'Cliente', value: a.customer.fullName, hideIfEmpty: true),
+          FieldRow(
+              label: 'Cliente', value: a.customer.fullName, hideIfEmpty: true),
           FieldRow(label: 'Indirizzo', value: a.address.full, fullWidth: true),
           FieldRow(label: 'Notifica precedente', value: a.numeroAvviso),
         ]),
@@ -315,6 +377,8 @@ class _GeneraOrdineScreenState extends ConsumerState<GeneraOrdineScreen> {
           FieldRow(label: 'Altro BP', value: _altroBpCtrl.text),
         if (_noteCtrl.text.isNotEmpty)
           FieldRow(label: 'Note', value: _noteCtrl.text, fullWidth: true),
+        if (_assegnaA != null)
+          FieldRow(label: 'Da passare a (all\'invio)', value: _assegnaA!),
         const SizedBox(height: 16),
         Container(
           padding: const EdgeInsets.all(12),
@@ -356,11 +420,8 @@ class _GeneraOrdineScreenState extends ConsumerState<GeneraOrdineScreen> {
             flex: 2,
             child: ElevatedButton.icon(
               onPressed: _canProceed() ? () => _next(a) : null,
-              icon: Icon(_step == 2
-                  ? Icons.send_rounded
-                  : Icons.arrow_forward),
-              label:
-                  Text(_step == 2 ? 'Crea OdL' : 'Avanti'),
+              icon: Icon(_step == 2 ? Icons.send_rounded : Icons.arrow_forward),
+              label: Text(_step == 2 ? 'Crea OdL' : 'Avanti'),
             ),
           ),
         ]),
@@ -377,6 +438,15 @@ class _GeneraOrdineScreenState extends ConsumerState<GeneraOrdineScreen> {
   }
 
   Future<void> _next(dynamic a) async {
+    // SOST (matricola obbligatoria) e ZA02 (tipo attività DST con ciclo
+    // CONRCO1 o CONRID1): i loro campi stanno nel modulo di creazione
+    // standard, ci si va precompilato con i dati dell'avviso. Gli altri tipi
+    // restano sul percorso a 3 passi di sempre.
+    if (_step == 0 && _tipiConModuloCompleto.contains(_woType)) {
+      context.pushReplacement(
+          AppRoutes.createOrderDaAvvisoPath(widget.numero, _woType!));
+      return;
+    }
     if (_step < 2) {
       setState(() => _step++);
       return;
@@ -402,10 +472,10 @@ class _GeneraOrdineScreenState extends ConsumerState<GeneraOrdineScreen> {
       woTypeDescription: _descCtrl.text.trim(),
       tam: _woType!,
       status: WorkOrderStatus.ricevuto,
+      operations: kOperazioniStandard,
       priorita: 'Media',
       creatoDa: creatore,
-      appointmentDate: now,
-      appointmentStartTime: '08:00',
+      // Nessun appuntamento inventato: lo si fissa dopo, in Appuntamenti.
       address: a.address as Address,
       customer: a.customer as Customer,
       referente: (a.referente as String?) ?? (a.customer as Customer).fullName,
@@ -414,10 +484,17 @@ class _GeneraOrdineScreenState extends ConsumerState<GeneraOrdineScreen> {
       sedeTecnica: (a.sedeTecnica as String?) ?? '',
       notes: note,
       cidAssegnato: cid,
+      assegnaA: _assegnaA,
       createdAt: now,
       localStatus: LocalSyncStatus.pendingUpload,
     );
     await ref.read(creationControllerProvider).addWorkOrder(order);
+    // Traccia il legame avviso -> OdL in locale (persistente): il backend non
+    // espone ancora la generazione, così la casella "ODL Generato" si spunta e
+    // l'avviso non ricompare più tra i Pronto Intervento da prendere in carico.
+    await ref
+        .read(avvisoExtensionProvider(widget.numero).notifier)
+        .setOrdineGenerato(code);
     if (!mounted) return;
 
     // Conferma con invio proposto subito, senza tornare alla Home.

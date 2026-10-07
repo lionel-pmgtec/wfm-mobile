@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../core/services/giacenze_magazzini_service.dart';
 import '../../domain/entities/entities.dart';
 import 'core_providers.dart';
 
@@ -12,10 +13,27 @@ final solutionCodesProvider = FutureProvider<List<CodeLabel>>((ref) async {
   return res.valueOrNull ?? const [];
 });
 
-/// Priorità per la creazione OdL (schema WO). Endpoint reale del backend
+/// Priorità per la creazione OdL. Endpoint reale del backend
 /// (/anagrafica/priorities): niente più priorità codificata in modo fisso.
-final orderPrioritiesProvider = FutureProvider<List<CodeLabel>>((ref) async {
-  final res = await ref.watch(anagraficaRepositoryProvider).getPriorities();
+/// L'argomento è il tipo OdL (`''` = schema ordini di default): il backend
+/// sceglie lo schema giusto (es. SOST → ZS).
+final orderPrioritiesProvider =
+    FutureProvider.family<List<CodeLabel>, String>((ref, woType) async {
+  final res = await ref
+      .watch(anagraficaRepositoryProvider)
+      .getPriorities(type: woType.isEmpty ? null : woType);
+  return res.valueOrNull ?? const [];
+});
+
+/// Correlazione tipo ordine → tipo attività / ciclo / settore
+/// (/anagrafica/wo-templates?type=). Usata per proporre il tipo attività in
+/// creazione e mostrare il ciclo/settore dedotti.
+final workOrderTemplatesProvider =
+    FutureProvider.family<List<WorkOrderActivityTemplate>, String>((ref, woType) async {
+  if (woType.isEmpty) return const <WorkOrderActivityTemplate>[];
+  final res = await ref
+      .watch(anagraficaRepositoryProvider)
+      .getWorkOrderActivityTemplates(type: woType);
   return res.valueOrNull ?? const [];
 });
 
@@ -89,8 +107,17 @@ final materialSearchProvider =
   final res = await ref
       .watch(anagraficaRepositoryProvider)
       .getMaterials(query: query.isEmpty ? null : query);
-  return res.valueOrNull ?? const [];
+  final materiali = res.valueOrNull ?? const <MaterialItem>[];
+  // Giacenze per magazzino: quelle del backend; dove mancano, il file generato
+  // da anagrafiche.json (così un materiale si trova in più magazzini).
+  final file = await ref.watch(giacenzeMagazziniProvider.future);
+  return GiacenzeMagazziniService.completa(materiali, file);
 });
+
+/// Giacenze per magazzino di supporto (assets/anagrafica).
+final giacenzeMagazziniProvider =
+    FutureProvider<Map<String, Map<String, num>>>(
+        (ref) => GiacenzeMagazziniService().carica());
 
 /// Elenco/ricerca tecnici (Cambio CID, riassegnazione OdL).
 /// Con query vuota restituisce l'elenco completo.

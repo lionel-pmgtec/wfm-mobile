@@ -275,15 +275,18 @@ class _AddSuspensionSheetState extends State<_AddSuspensionSheet> {
             const SizedBox(height: 10),
             TextField(
               controller: _causaCtrl,
-              decoration:
-                  const InputDecoration(labelText: 'Causa (testo libero)'),
+              decoration: InputDecoration(
+                  labelText: 'Causa (testo libero)',
+                  suffixIcon: VoiceSuffixIcons(controller: _causaCtrl)),
             ),
             const SizedBox(height: 10),
             TextField(
               controller: _noteCtrl,
               maxLines: 3,
-              decoration: const InputDecoration(
-                  labelText: 'Note', alignLabelWithHint: true),
+              decoration: InputDecoration(
+                  labelText: 'Note',
+                  alignLabelWithHint: true,
+                  suffixIcon: VoiceSuffixIcons(controller: _noteCtrl)),
             ),
             const SizedBox(height: 10),
             InkWell(

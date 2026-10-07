@@ -30,17 +30,20 @@ final realtimeProvider = Provider<SseService>((ref) {
         // tecnico (sia ordini che avvisi possono comparire/sparire).
         ricaricaOrdini();
         ref.invalidate(avvisiProvider);
+        ref.invalidate(prontoInterventoAvvisiProvider);
         break;
       case 'ordini':
         ricaricaOrdini();
         break;
       case 'avvisi':
         ref.invalidate(avvisiProvider);
+        ref.invalidate(prontoInterventoAvvisiProvider);
         break;
       case 'snapshot':
       case 'reset':
         ricaricaOrdini();
         ref.invalidate(avvisiProvider);
+        ref.invalidate(prontoInterventoAvvisiProvider);
         break;
     }
   });
@@ -61,6 +64,7 @@ final refreshFromSapProvider = Provider<Future<void> Function()>((ref) {
     ref.invalidate(workOrdersProvider);
     ref.invalidate(dashboardStatsProvider);
     ref.invalidate(avvisiProvider);
+    ref.invalidate(prontoInterventoAvvisiProvider);
     // Attende il completamento della ri-lettura ordini, così il pull-to-refresh
     // mostra lo spinner finché i dati non sono pronti.
     await ref.read(workOrdersProvider.future);

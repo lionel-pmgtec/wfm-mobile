@@ -25,6 +25,11 @@ abstract interface class WfmRemoteDataSource {
   Future<WorkOrder> createWorkOrder(WorkOrder order);
   Future<void> deleteWorkOrder(String externalCode);
 
+  /// Passa l'OdL a un collega (`POST /work-orders/:id/reassign`). Dopo il 200
+  /// il lavoro non torna più in `GET /work-orders` di chi l'ha ceduto.
+  Future<void> reassignWorkOrder(String code, String technicianCid,
+      {String? note});
+
   // Avvisi (M9)
   Future<List<NotificationAvviso>> getAvvisi({String? query});
   Future<NotificationAvviso> getAvvisoDetail(String numero);
@@ -47,11 +52,12 @@ abstract interface class WfmRemoteDataSource {
   Future<List<String>> getTamCodes();
   Future<List<CodeLabel>> getCauseCodes();
   Future<List<CodeLabel>> getSolutionCodes();
-  Future<List<CodeLabel>> getPriorities({String? schema});
+  Future<List<CodeLabel>> getPriorities({String? schema, String? type});
 
   /// Cataloghi selezionabili serviti dal cruscotto (niente hardcoded lato app).
   Future<List<WorkOrderTypeOption>> getWorkOrderTypes();
   Future<List<DynFieldSpec>> getWorkOrderFields(String woType);
+  Future<List<WorkOrderActivityTemplate>> getWorkOrderActivityTemplates({String? type});
 
   /// Lookup generico per `kind` (suspension-reasons, avviso-user-statuses,
   /// avviso-priorities, avviso-verification-results, …).

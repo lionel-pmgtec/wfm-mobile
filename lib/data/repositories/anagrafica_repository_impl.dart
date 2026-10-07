@@ -41,8 +41,8 @@ class AnagraficaRepositoryImpl implements AnagraficaRepository {
       _guard(() => remote.getSolutionCodes());
 
   @override
-  Future<Result<List<CodeLabel>>> getPriorities({String? schema}) =>
-      _guard(() => remote.getPriorities(schema: schema));
+  Future<Result<List<CodeLabel>>> getPriorities({String? schema, String? type}) =>
+      _guard(() => remote.getPriorities(schema: schema, type: type));
 
   @override
   Future<Result<List<WorkOrderTypeOption>>> getWorkOrderTypes() =>
@@ -51,6 +51,10 @@ class AnagraficaRepositoryImpl implements AnagraficaRepository {
   @override
   Future<Result<List<DynFieldSpec>>> getWorkOrderFields(String woType) =>
       _guard(() => remote.getWorkOrderFields(woType));
+
+  @override
+  Future<Result<List<WorkOrderActivityTemplate>>> getWorkOrderActivityTemplates({String? type}) =>
+      _guard(() => remote.getWorkOrderActivityTemplates(type: type));
 
   @override
   Future<Result<List<CodeLabel>>> getLookup(String kind) =>

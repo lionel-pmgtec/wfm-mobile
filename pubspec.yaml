@@ -34,12 +34,21 @@ dependencies:
   # Barcode scanner
   mobile_scanner: ^5.0.0
 
+  # Lettura contatori via chip NFC (in alternativa al QR/barcode)
+  nfc_manager: ^3.5.0
+
+  # Dettatura vocale (note/descrizione) e lettura a voce alta (descrizione OdL/avviso)
+  speech_to_text: ^7.0.0
+  flutter_tts: ^4.0.2
+
   # File upload
   image_picker: ^1.0.7
   file_picker: ^8.0.0
 
   # Map
   flutter_map: ^7.0.2
+  # Raggruppa i segnaposto vicini (compatibile con flutter_map 7)
+  flutter_map_marker_cluster: ^1.4.0
   latlong2: ^0.9.1
 
   # Excel import/export
@@ -93,3 +102,8 @@ flutter:
   assets:
     - assets/images/
     - assets/icons/
+    - assets/backend_servers.json
+    # Rete Viva Servizi della mappa (tools/rete_viva/genera_rete_viva.py)
+    - assets/rete_viva/
+    # Giacenze dei materiali per magazzino (tools/anagrafica/genera_giacenze.py)
+    - assets/anagrafica/

@@ -1,9 +1,13 @@
-// Gestione contatori: dati completi, lettura, sostituzione.
+// Gestione contatori: dati completi e lettura.
 //
 // Se l'OdL ha un contatore associato (order.meter, da DATI_APPARECCHIATURA
-// SAP) ne mostra TUTTI i dati + le schede Lettura/Sostituzione. Se non ne ha,
+// SAP) ne mostra TUTTI i dati + la scheda Lettura. Per una SOST la scheda
+// Lettura contiene anche la sostituzione, in ordine di lavoro: ultima lettura
+// SAP -> lettura del contatore rimosso -> nuovo contatore -> posizione. Se non ne ha,
 // permette di cercarne uno per matricola/barcode sull'anagrafica del backend
 // (GET /anagrafica/equipment).
+
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -57,6 +61,9 @@ class _MeterBody extends ConsumerStatefulWidget {
 
 class _MeterBodyState extends ConsumerState<_MeterBody>
     with SingleTickerProviderStateMixin {
+  static const _lookupDebounce = Duration(milliseconds: 600);
+  Timer? _lookupTimer;
+  String? _lastLookupMatricola;
   late final TabController _tab;
   final _formKey = GlobalKey<FormState>();
   final _readingCtrl = TextEditingController();
@@ -64,32 +71,99 @@ class _MeterBodyState extends ConsumerState<_MeterBody>
   final _newMatricolaCtrl = TextEditingController();
   final _initialReadingCtrl = TextEditingController(text: '0');
   final _sealCtrl = TextEditingController();
+  // Sostituzione (SOST): contatore rimosso + posizione nuovo contatore.
+  final _depositReadingCtrl = TextEditingController();
+  final _newProduttoreCtrl = TextEditingController();
+  final _positionCtrl = TextEditingController();
+  final _positionAddCtrl = TextEditingController();
+  // Ubicazione del contatore ESISTENTE (quello da sostituire/già installato):
+  // SAP non sempre la manda; l'operatore deve poterla correggere o inserirla a
+  // mano. Condivisa fra la scheda Dati e la scheda Lettura (stesso contatore).
+  final _oldUbicazioneCtrl = TextEditingController();
+  DateTime _posaDate = DateTime.now();
+  /// Dati del nuovo contatore restituiti da SAP (GET /anagrafica/equipment).
+  Equipment? _newMeterInfo;
+  bool _lookingUp = false;
   bool _readingPhoto = false;
 
-  /// La scheda "Sostituzione" ha senso SOLO per gli OdL di sostituzione (SOST):
-  /// su attivazione/disattivazione/lettura il contatore non si sostituisce.
+  /// Per gli OdL di sostituzione (SOST) la scheda Lettura include la
+  /// sostituzione; su attivazione/disattivazione/lettura il contatore non si
+  /// sostituisce e resta la lettura semplice.
   bool get _showSostituzione => widget.order.hasSostituzione;
 
   @override
   void initState() {
     super.initState();
-    _tab = TabController(length: _showSostituzione ? 3 : 2, vsync: this);
+    _tab = TabController(length: 2, vsync: this);
     // Ricarica un'eventuale lettura già salvata per questo OdL.
     final draft = ref.read(meterReadingDraftProvider(widget.order.externalCode));
     if (draft != null) {
       _readingCtrl.text = '${draft.reading}';
       _notaCtrl.text = draft.nota;
     }
+    // Ricarica un'eventuale sostituzione già impostata per questo OdL.
+    final sub =
+        ref.read(meterSubstitutionDraftProvider(widget.order.externalCode));
+    // Per la SOST la lettura del contatore rimosso e una sola: se c'e una
+    // lettura salvata col vecchio flusso e nessuna della sostituzione, si riusa.
+    if (_showSostituzione && sub?.depositReading == null && draft != null) {
+      _depositReadingCtrl.text = '${draft.reading}';
+    }
+    if (sub != null) {
+      if (sub.depositReading != null) {
+        _depositReadingCtrl.text = '${sub.depositReading}';
+      }
+      _newMatricolaCtrl.text = sub.newMatricola;
+      if (sub.initialReading != null) {
+        _initialReadingCtrl.text = '${sub.initialReading}';
+      }
+      if (sub.posaDate != null) _posaDate = sub.posaDate!;
+      _newProduttoreCtrl.text = sub.newProduttore;
+      _sealCtrl.text = sub.sealNumber;
+      _positionCtrl.text = sub.position;
+      _positionAddCtrl.text = sub.positionAdd;
+    }
+    // Precompilazione dalla casetta: il nuovo contatore va, di norma, nella
+    // STESSA ubicazione del contatore rimosso. È un dato reale del backend
+    // (meter.ubicazione), non inventato; il tecnico può correggerlo. Il numero
+    // di sigillo NON si precompila: il backend non lo espone e il sigillo del
+    // nuovo contatore si applica sul posto.
+    if (_positionCtrl.text.trim().isEmpty &&
+        widget.meter.ubicazione.isNotEmpty) {
+      _positionCtrl.text = widget.meter.ubicazione;
+    }
+    if (_positionAddCtrl.text.trim().isEmpty &&
+        widget.meter.ubicazioneDesc.isNotEmpty) {
+      _positionAddCtrl.text = widget.meter.ubicazioneDesc;
+    }
+    // Ubicazione del contatore esistente: la correzione salvata (se c'è)
+    // vince su quella di SAP, altrimenti si parte dal dato SAP.
+    _oldUbicazioneCtrl.text = (sub?.oldUbicazione ?? '').isNotEmpty
+        ? sub!.oldUbicazione
+        : (widget.meter.ubicazione.isNotEmpty
+            ? widget.meter.ubicazione
+            : widget.meter.location);
+    if (_newMatricolaCtrl.text.trim().isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _lookupNewMeter();
+      });
+    }
   }
 
   @override
   void dispose() {
+    _lookupTimer?.cancel();
     _tab.dispose();
     _readingCtrl.dispose();
     _notaCtrl.dispose();
     _newMatricolaCtrl.dispose();
     _initialReadingCtrl.dispose();
     _sealCtrl.dispose();
+    _depositReadingCtrl.dispose();
+    _newProduttoreCtrl.dispose();
+    _positionCtrl.dispose();
+    _positionAddCtrl.dispose();
+    _oldUbicazioneCtrl.dispose();
     super.dispose();
   }
 
@@ -109,10 +183,9 @@ class _MeterBodyState extends ConsumerState<_MeterBody>
               fontSize: 14, fontWeight: FontWeight.w700),
           unselectedLabelStyle: const TextStyle(
               fontSize: 14, fontWeight: FontWeight.w500),
-          tabs: [
-            const Tab(text: 'Dati'),
-            const Tab(text: 'Lettura'),
-            if (_showSostituzione) const Tab(text: 'Sostituzione'),
+          tabs: const [
+            Tab(text: 'Dati'),
+            Tab(text: 'Lettura'),
           ],
         ),
         Expanded(
@@ -122,8 +195,7 @@ class _MeterBodyState extends ConsumerState<_MeterBody>
               controller: _tab,
               children: [
                 _dataTab(m),
-                _readingTab(m),
-                if (_showSostituzione) _replacementTab(m),
+                _showSostituzione ? _sostituzioneTab(m) : _readingTab(m),
               ],
             ),
           ),
@@ -148,10 +220,17 @@ class _MeterBodyState extends ConsumerState<_MeterBody>
             label: 'Numero sigillo', value: Fmt.orDash(m.sealNumber ?? '')),
       ]),
       const SectionHeader(title: 'UBICAZIONE'),
-      FieldRow(
-          label: 'Ubicazione',
-          value: Fmt.orDash(m.ubicazione.isNotEmpty ? m.ubicazione : m.location),
-          fullWidth: true),
+      // Numero ubicazione: SAP non sempre lo manda. Campo editabile (non sola
+      // lettura) così l'operatore può correggerlo o inserirlo per il
+      // contatore esistente; precompilato col dato SAP quando c'è.
+      TextFormField(
+        controller: _oldUbicazioneCtrl,
+        decoration: const InputDecoration(
+          labelText: 'Ubicazione',
+          helperText: 'Codice ubicazione del contatore esistente',
+        ),
+        onChanged: (_) => setState(() {}),
+      ),
       const SizedBox(height: 8),
       FormGrid(children: [
         FieldRow(
@@ -172,7 +251,7 @@ class _MeterBodyState extends ConsumerState<_MeterBody>
       const SectionHeader(title: 'ULTIMA LETTURA'),
       FormGrid(children: [
         FieldRow(
-            label: 'Lettura precedente',
+            label: 'Ultima lettura',
             value: m.lastReading?.toString() ?? '—'),
         FieldRow(
             label: 'Data lettura',
@@ -180,6 +259,40 @@ class _MeterBodyState extends ConsumerState<_MeterBody>
                 ? Fmt.date(m.lastReadingDate)
                 : '—'),
       ]),
+      // Lettura PRECEDENTE dallo storico del contatore (SAP PREC_VALORE/
+      // PREC_DATA…): un dato diverso dall'ultima lettura sull'ordine qui sopra.
+      if (m.previousReading != null || (m.previousReadingDate != null)) ...[
+        const SectionHeader(title: 'LETTURA PRECEDENTE (STORICO)'),
+        FormGrid(children: [
+          FieldRow(
+              label: 'Lettura precedente',
+              value: m.previousReading?.toString() ?? '—'),
+          FieldRow(
+              label: 'Data lettura precedente',
+              value: m.previousReadingDate != null
+                  ? Fmt.date(m.previousReadingDate)
+                  : '—'),
+          if ((m.previousReadingTime ?? '').isNotEmpty)
+            FieldRow(label: 'Ora', value: m.previousReadingTime!),
+          if ((m.previousReadingStatus ?? '').isNotEmpty)
+            FieldRow(label: 'Stato', value: m.previousReadingStatus!),
+        ]),
+      ],
+      // Scenario 2: da un OdL NON di sostituzione (es. lettura), il tecnico
+      // constata un contatore da sostituire e crea un nuovo OdL SOST collegato
+      // a questo contatore e all'OdL d'origine (tracciabilità).
+      if (!widget.order.hasSostituzione) ...[
+        const SizedBox(height: 24),
+        SizedBox(
+          height: 48,
+          child: OutlinedButton.icon(
+            onPressed: () => context.push(AppRoutes.createOrderSostPath(
+                widget.order.externalCode, m.matricola)),
+            icon: const Icon(Icons.add_box_outlined, size: 18),
+            label: const Text('Crea OdL Sostituzione'),
+          ),
+        ),
+      ],
     ]);
   }
 
@@ -228,8 +341,10 @@ class _MeterBodyState extends ConsumerState<_MeterBody>
       TextFormField(
         controller: _notaCtrl,
         maxLines: 2,
-        decoration: const InputDecoration(
-            labelText: 'Nota', alignLabelWithHint: true),
+        decoration: InputDecoration(
+            labelText: 'Nota',
+            alignLabelWithHint: true,
+            suffixIcon: VoiceSuffixIcons(controller: _notaCtrl)),
       ),
       const SizedBox(height: 16),
       OutlinedButton.icon(
@@ -250,50 +365,298 @@ class _MeterBodyState extends ConsumerState<_MeterBody>
     ]);
   }
 
-  Widget _replacementTab(Meter m) {
-    return ListView(padding: kPagePadding, children: [
-      const SectionHeader(title: 'CONTATORE RIMOSSO'),
-      FieldRow(label: 'Matricola', value: m.matricola),
-      const SizedBox(height: 12),
+  /// Scheda Lettura di una SOST: tutto il lavoro sul contatore, in ordine.
+  ///   1. contatore da sostituire (dati SAP)
+  ///   2. ultima lettura registrata su SAP (dato SAP, sola lettura)
+  ///   3. lettura del contatore rimosso (la rileva l'operatore)
+  ///   4. lettura del nuovo contatore (posa: parte da 0)
+  ///   5. posizione del nuovo contatore
+  Widget _sostituzioneTab(Meter m) {
+    // Ultima lettura SAP: lo storico del contatore (PREC_*) e, in mancanza,
+    // quella registrata sull'ordine (LETTURA). Entrambe arrivano dal backend.
+    final sapValue = m.previousReading ?? m.lastReading;
+    final sapDate =
+        m.previousReading != null ? m.previousReadingDate : m.lastReadingDate;
+    final removed = num.tryParse(_depositReadingCtrl.text.replaceAll(',', '.'));
+    final diff = (removed != null && sapValue != null) ? removed - sapValue : null;
+    final now = DateTime.now();
+    final ora = '${now.hour.toString().padLeft(2, '0')}:'
+        '${now.minute.toString().padLeft(2, '0')}';
+
+    return ListView(padding: const EdgeInsets.fromLTRB(16, 16, 16, 32), children: [
+      // 1) Contatore da sostituire: dati SAP.
+      const SectionHeader(title: '1 · CONTATORE DA SOSTITUIRE'),
+      FormGrid(children: [
+        FieldRow(label: 'Matricola', value: Fmt.orDash(m.matricola)),
+        FieldRow(label: 'Produttore', value: Fmt.orDash(m.brand)),
+        // Ubicazione editabile: stesso campo/controller della scheda Dati (SAP
+        // non sempre la manda, l'operatore la corregge/inserisce qui).
+        TextFormField(
+          controller: _oldUbicazioneCtrl,
+          decoration: const InputDecoration(labelText: 'Ubicazione'),
+        ),
+        FieldRow(
+            label: 'Aggiunta ubicazione', value: Fmt.orDash(m.ubicazioneDesc)),
+        if ((m.sealNumber ?? '').isNotEmpty)
+          FieldRow(label: 'Numero sigillo', value: m.sealNumber!),
+      ]),
+
+      // 2) Ultima lettura registrata su SAP: sola lettura.
+      const SectionHeader(title: '2 · ULTIMA LETTURA REGISTRATA SU SAP'),
+      if (sapValue == null)
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 4),
+          child: Text('Nessuna lettura disponibile su SAP per questo contatore.',
+              style: AppTextStyles.bodySmall),
+        )
+      else ...[
+        FormGrid(children: [
+          FieldRow(label: 'Lettura', value: sapValue.toString()),
+          FieldRow(
+              label: 'Data',
+              value: sapDate != null ? Fmt.date(sapDate) : '—'),
+          if (m.previousReading != null) ...[
+            FieldRow(
+                label: 'Ora', value: Fmt.orDash(m.previousReadingTime ?? '')),
+            FieldRow(
+                label: 'Stato',
+                value: Fmt.orDash(m.previousReadingStatus ?? '')),
+          ],
+        ]),
+        // Se l'ordine porta anche una propria lettura, distinta dallo storico.
+        if (m.previousReading != null && m.lastReading != null) ...[
+          const SizedBox(height: 8),
+          FormGrid(children: [
+            FieldRow(
+                label: "Lettura sull'ordine", value: m.lastReading.toString()),
+            FieldRow(
+                label: "Data lettura sull'ordine",
+                value: m.lastReadingDate != null
+                    ? Fmt.date(m.lastReadingDate)
+                    : '—'),
+          ]),
+        ],
+      ],
+
+      // 3) Lettura del contatore rimosso: la rileva l'operatore. Va in
+      //    `meterReadings` dell'esito, con la matricola del contatore rimosso.
+      const SectionHeader(title: '3 · LETTURA DEL CONTATORE RIMOSSO'),
       TextFormField(
+        controller: _depositReadingCtrl,
         keyboardType: const TextInputType.numberWithOptions(decimal: true),
-        decoration: const InputDecoration(labelText: 'Lettura al deposito'),
+        decoration: const InputDecoration(
+          labelText: 'Lettura finale',
+          helperText: 'Indice del vecchio contatore al momento della rimozione',
+        ),
+        // Facoltativa (contatore fermo/illeggibile), ma se c'e deve essere
+        // numerica e non inferiore all'ultima lettura SAP.
+        validator: (v) => (v == null || v.trim().isEmpty)
+            ? null
+            : Validators.meterReading(v, previous: sapValue),
+        onChanged: (_) => setState(() {}),
       ),
-      const SectionHeader(title: 'NUOVO CONTATORE'),
+      const SizedBox(height: 8),
+      FormGrid(children: [
+        FieldRow(label: 'Data', value: Fmt.date(now)),
+        FieldRow(label: 'Ora', value: ora),
+        FieldRow(
+            label: "Differenza rispetto all'ultima lettura SAP",
+            value: diff?.toString() ?? '—'),
+      ]),
+      const SizedBox(height: 8),
+      TextFormField(
+        controller: _notaCtrl,
+        maxLines: 2,
+        decoration: InputDecoration(
+            labelText: 'Nota sulla lettura',
+            alignLabelWithHint: true,
+            suffixIcon: VoiceSuffixIcons(controller: _notaCtrl)),
+      ),
+
+      // 4) Nuovo contatore: lettura di posa (parte da 0) e dati.
+      const SectionHeader(title: '4 · LETTURA DEL NUOVO CONTATORE'),
       TextFormField(
         controller: _newMatricolaCtrl,
         decoration: InputDecoration(
-          labelText: 'Matricola nuovo contatore',
-          suffixIcon: IconButton(
-            icon: const Icon(Icons.qr_code_scanner),
-            tooltip: 'Scansiona matricola',
-            onPressed: () async {
-              final code = await context.push<String>(AppRoutes.scanner);
-              if (code != null && code.isNotEmpty) {
-                setState(() => _newMatricolaCtrl.text = code);
-              }
-            },
+          labelText: 'Numero di serie *',
+          suffixIcon: Row(mainAxisSize: MainAxisSize.min, children: [
+            IconButton(
+              icon: const Icon(Icons.qr_code_scanner),
+              tooltip: 'Scansiona matricola',
+              onPressed: () async {
+                final code = await context.push<String>(AppRoutes.scanner);
+                if (code != null && code.isNotEmpty) {
+                  setState(() => _newMatricolaCtrl.text = code);
+                  _lookupNewMeter();
+                }
+              },
+            ),
+          ]),
+        ),
+        onFieldSubmitted: (_) => _lookupNewMeter(),
+        onChanged: (_) => _scheduleNewMeterLookup(),
+      ),
+      if (_lookingUp)
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 8),
+          child: LinearProgressIndicator(),
+        ),
+      if (_newMeterInfo != null) _newMeterRecap(_newMeterInfo!),
+      const SizedBox(height: 12),
+      TextFormField(
+        controller: _newProduttoreCtrl,
+        decoration: const InputDecoration(labelText: 'Produttore'),
+      ),
+      const SizedBox(height: 12),
+      FormGrid(children: [
+        TextFormField(
+          controller: _initialReadingCtrl,
+          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(
+            labelText: 'Lettura di posa',
+            helperText: 'Un contatore nuovo parte da 0',
           ),
         ),
+        // Data di posa: tap -> date picker.
+        InkWell(
+          onTap: () async {
+            final d = await showDatePicker(
+              context: context,
+              initialDate: _posaDate,
+              firstDate: DateTime(2015),
+              lastDate: DateTime(2035),
+            );
+            if (d != null) setState(() => _posaDate = d);
+          },
+          child: InputDecorator(
+            decoration: const InputDecoration(
+              labelText: 'Data di posa',
+              suffixIcon: Icon(Icons.event_outlined, size: 18),
+            ),
+            child: Text(Fmt.date(_posaDate), style: AppTextStyles.fieldValue),
+          ),
+        ),
+      ]),
+      const SizedBox(height: 12),
+      // Champ Numero sigillo masqué : cette information n'est plus nécessaire.
+      // TextFormField(
+      //   controller: _sealCtrl,
+      //   decoration: const InputDecoration(labelText: 'Numero sigillo'),
+      // ),
+
+      // 5) Posizione del nuovo contatore (nodo `contatore` di POST /esiti).
+      //    Precompilata con quella del rimosso (dato SAP), correggibile.
+      const SectionHeader(title: '5 · POSIZIONE DEL NUOVO CONTATORE'),
+      TextFormField(
+        controller: _positionCtrl,
+        decoration: const InputDecoration(labelText: 'Ubicazione'),
       ),
       const SizedBox(height: 12),
       TextFormField(
-        controller: _initialReadingCtrl,
-        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-        decoration: const InputDecoration(labelText: 'Lettura iniziale'),
+        controller: _positionAddCtrl,
+        decoration: const InputDecoration(labelText: 'Aggiunta ubicazione'),
       ),
+
       const SizedBox(height: 12),
-      TextFormField(
-        controller: _sealCtrl,
-        decoration: const InputDecoration(labelText: 'Numero sigillo'),
-      ),
-      const SizedBox(height: 24),
-      ElevatedButton.icon(
-        onPressed: _saveReplacement,
-        icon: const Icon(Icons.swap_horiz_rounded),
-        label: const Text('Registra sostituzione'),
+      // Pulsante principale, sempre in fondo e a piena larghezza.
+      SizedBox(
+        height: 52,
+        child: ElevatedButton.icon(
+          onPressed: _saveReplacement,
+          icon: const Icon(Icons.swap_horiz_rounded),
+          label: const Text('Registra sostituzione'),
+        ),
       ),
     ]);
+  }
+
+  /// Riepilogo del nuovo contatore restituito da SAP.
+  Widget _newMeterRecap(Equipment e) {
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.statusReceivedBg,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Row(children: [
+          const Icon(Icons.verified_outlined,
+              size: 16, color: AppColors.primary),
+          const SizedBox(width: 6),
+          Text('Dati SAP nuovo contatore',
+              style: AppTextStyles.bodyMedium
+                  .copyWith(fontWeight: FontWeight.w700)),
+        ]),
+        const SizedBox(height: 8),
+        FormGrid(children: [
+          FieldRow(label: 'Produttore', value: Fmt.orDash(e.produttore)),
+          FieldRow(label: 'Modello', value: Fmt.orDash(e.modello)),
+          FieldRow(label: 'Stato', value: Fmt.orDash(e.stato)),
+          FieldRow(label: 'Località', value: Fmt.orDash(e.localita)),
+        ]),
+      ]),
+    );
+  }
+
+  /// Interroga SAP col numero di serie del nuovo contatore . 
+  /// Oggi può tornare null (anagrafica vuota): in
+  /// quel caso l'operatore compila a mano, nessun dato inventato.
+  void _scheduleNewMeterLookup() {
+    _lookupTimer?.cancel();
+    final matricola = _newMatricolaCtrl.text.trim();
+    if (matricola.isEmpty) {
+      _lastLookupMatricola = null;
+      setState(() {
+        _newMeterInfo = null;
+        _lookingUp = false;
+      });
+      return;
+    }
+    if (_lastLookupMatricola != matricola) {
+      setState(() => _newMeterInfo = null);
+    }
+    _lookupTimer = Timer(_lookupDebounce, () {
+      if (mounted) _lookupNewMeter();
+    });
+  }
+
+  Future<void> _lookupNewMeter() async {
+    final matricola = _newMatricolaCtrl.text.trim();
+    if (matricola.isEmpty || matricola == _lastLookupMatricola) return;
+    _lookupTimer?.cancel();
+    _lastLookupMatricola = matricola;
+    setState(() => _lookingUp = true);
+    final res = await ref
+        .read(anagraficaRepositoryProvider)
+        .getEquipment(matricola: matricola);
+    if (!mounted) return;
+    if (_newMatricolaCtrl.text.trim() != matricola) {
+      setState(() => _lookingUp = false);
+      return;
+    }
+    setState(() => _lookingUp = false);
+    res.when(
+      success: (eq) {
+        setState(() {
+          _newMeterInfo = eq;
+          // Prefill del produttore dai dati SAP (se l'operatore non l'ha già
+          // scritto). Modificabile: resta la sua ultima parola.
+          if (eq != null &&
+              eq.produttore.isNotEmpty &&
+              _newProduttoreCtrl.text.trim().isEmpty) {
+            _newProduttoreCtrl.text = eq.produttore;
+          }
+        });
+        showSapToast(
+            context,
+            eq == null
+                ? 'Nessun dato SAP per $matricola — compila a mano'
+                : 'Dati nuovo contatore trovati su SAP');
+      },
+      failure: (f) => showSapToast(context, f.message, isError: true),
+    );
+    if (res.isFailure) _lastLookupMatricola = null;
   }
 
   void _saveReading(Meter m) {
@@ -316,12 +679,45 @@ class _MeterBodyState extends ConsumerState<_MeterBody>
   }
 
   void _saveReplacement() {
-    if (_newMatricolaCtrl.text.isEmpty) {
+    if (!_formKey.currentState!.validate()) return;
+    if (_newMatricolaCtrl.text.trim().isEmpty) {
       showSapToast(context, 'Inserire la matricola del nuovo contatore',
           isError: true);
       return;
     }
-    showSapToast(context, 'Sostituzione registrata (flusso P69)');
+    // Salvataggio REALE in locale: la sostituzione viaggia con l'esito alla
+    // chiusura (le due letture in `letture`, la posizione in `contatore`).
+    ref
+        .read(meterSubstitutionDraftProvider(widget.order.externalCode).notifier)
+        .save(MeterSubstitutionDraft(
+          depositReading:
+              num.tryParse(_depositReadingCtrl.text.replaceAll(',', '.')),
+          newMatricola: _newMatricolaCtrl.text.trim(),
+          initialReading:
+              num.tryParse(_initialReadingCtrl.text.replaceAll(',', '.')),
+          posaDate: _posaDate,
+          newProduttore: _newProduttoreCtrl.text.trim(),
+          sealNumber: _sealCtrl.text.trim(),
+          position: _positionCtrl.text.trim(),
+          positionAdd: _positionAddCtrl.text.trim(),
+          oldUbicazione: _oldUbicazioneCtrl.text.trim(),
+          dateTime: DateTime.now(),
+        ));
+    // La lettura del rimosso e anche la lettura dell'OdL: l'esito la propone
+    // gia compilata (una sola lettura, nessun doppione).
+    final removed =
+        num.tryParse(_depositReadingCtrl.text.replaceAll(',', '.'));
+    if (removed != null) {
+      ref
+          .read(meterReadingDraftProvider(widget.order.externalCode).notifier)
+          .save(MeterReadingDraft(
+            reading: removed,
+            nota: _notaCtrl.text.trim(),
+            dateTime: DateTime.now(),
+          ));
+    }
+    showSapToast(context,
+        'Sostituzione salvata — verrà inviata alla chiusura');
   }
 }
 
@@ -353,6 +749,13 @@ class _EquipmentLookupState extends ConsumerState<_EquipmentLookup> {
     final code = await context.push<String>(AppRoutes.scanner);
     if (code != null && code.isNotEmpty) {
       setState(() => _barcodeCtrl.text = code);
+    }
+  }
+
+  Future<void> _scanMatricola() async {
+    final code = await context.push<String>(AppRoutes.scanner);
+    if (code != null && code.isNotEmpty) {
+      setState(() => _matricolaCtrl.text = code);
     }
   }
 
@@ -402,9 +805,16 @@ class _EquipmentLookupState extends ConsumerState<_EquipmentLookup> {
         const SectionHeader(title: 'RICERCA CONTATORE'),
         TextField(
           controller: _matricolaCtrl,
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             labelText: 'Matricola',
-            prefixIcon: Icon(Icons.numbers_outlined),
+            prefixIcon: const Icon(Icons.numbers_outlined),
+            // La matricola è il numero di serie stampato sul contatore: si
+            // legge col QR/barcode (o col NFC, dalla stessa schermata).
+            suffixIcon: IconButton(
+              icon: const Icon(Icons.qr_code_scanner),
+              tooltip: 'Scansiona matricola',
+              onPressed: _scanMatricola,
+            ),
           ),
           onSubmitted: (_) => _search(),
         ),

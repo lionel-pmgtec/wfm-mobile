@@ -7,9 +7,12 @@
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/services/arrival_store.dart';
 import '../../data/local/local_creation_store.dart';
 import '../../domain/entities/entities.dart';
 import 'core_providers.dart';
+import 'sync_provider.dart';
+import 'work_orders_provider.dart';
 
 /// Store persistente degli oggetti creati sul tablet.
 final localCreationStoreProvider =
@@ -51,27 +54,19 @@ class CreationSyncResult {
   final int ok;
   final int failed;
   final String? firstError;
+
+  /// OdL inviati ma NON passati al collega scelto (restano a chi li ha
+  /// creati: si riassegnano dal dettaglio).
+  final int nonPassati;
+  final String? primoNonPassato;
   const CreationSyncResult(
-      {required this.ok, required this.failed, this.firstError});
+      {required this.ok,
+      required this.failed,
+      this.firstError,
+      this.nonPassati = 0,
+      this.primoNonPassato});
 
   bool get nothingToDo => ok == 0 && failed == 0;
-}
-
-/// Dove inviare un oggetto creato sul campo.
-///
-/// - [cruscotto]: percorso normale, l'oggetto passa dal cruscotto che poi lo
-///   propaga a SAP.
-/// - [sap]: invio diretto, riservato agli avvisi che non devono passare dal
-///   cruscotto. Il canale non è ancora configurato lato backend: l'app lo
-///   espone ma non simula l'invio.
-enum SyncDestination {
-  cruscotto,
-  sap;
-
-  String get label => switch (this) {
-        SyncDestination.cruscotto => 'Cruscotto',
-        SyncDestination.sap => 'SAP',
-      };
 }
 
 /// Esito dell'invio di un singolo oggetto.
@@ -93,11 +88,18 @@ class CreationController {
 
   Future<void> addWorkOrder(WorkOrder order) async {
     await _store.saveWorkOrder(order);
+    // Salvare di nuovo (es. una nota) non deve far "ringiovanire" l'OdL.
+    if (ArrivalStore.of('odl', order.externalCode) == null) {
+      await ArrivalStore.arrivedNow('odl', order.externalCode);
+    }
     ref.invalidate(createdWorkOrdersProvider);
   }
 
   Future<void> addAvviso(NotificationAvviso avviso) async {
     await _store.saveAvviso(avviso);
+    if (ArrivalStore.of('avv', avviso.numeroAvviso) == null) {
+      await ArrivalStore.arrivedNow('avv', avviso.numeroAvviso);
+    }
     ref.invalidate(createdAvvisiProvider);
   }
 
@@ -111,37 +113,57 @@ class CreationController {
     ref.invalidate(createdAvvisiProvider);
   }
 
-  /// Messaggio unico per il canale diretto verso SAP, non ancora attivo.
-  static const _sapNonConfigurato =
-      'Invio diretto a SAP non ancora configurato sul backend. '
-      'Per ora usa l\'invio al cruscotto.';
-
-  /// Invia un singolo ordine alla destinazione scelta.
+  /// Invia un singolo ordine al Cruscotto, che lo inoltra a SAP.
   /// Se l'invio riesce, l'ordine esce dall'elenco locale.
-  Future<SendResult> sendWorkOrder(
-    WorkOrder order, {
-    required SyncDestination destination,
-  }) async {
-    if (destination == SyncDestination.sap) {
-      return const SendResult(false, _sapNonConfigurato);
-    }
+  Future<SendResult> sendWorkOrder(WorkOrder order) async {
     final res = await ref.read(workOrderRepositoryProvider).createWorkOrder(order);
     if (res.isSuccess) {
       await _store.removeWorkOrder(order.externalCode);
       ref.invalidate(createdWorkOrdersProvider);
-      return const SendResult(true, 'Ordine inviato al cruscotto');
+      final collega = order.assegnaA;
+      if (collega == null) {
+        _rimandaAllegati();
+        return const SendResult(true, 'Ordine inviato al cruscotto');
+      }
+      final errore = await _passaAlCollega(res.valueOrNull ?? order, collega);
+      return SendResult(
+          true,
+          errore == null
+              ? 'Ordine inviato al cruscotto e passato a $collega'
+              : _nonPassato(collega, errore));
     }
     return SendResult(false, _motivo(res.failureOrNull?.message));
   }
 
-  /// Invia un singolo avviso alla destinazione scelta.
-  Future<SendResult> sendAvviso(
-    NotificationAvviso avviso, {
-    required SyncDestination destination,
-  }) async {
-    if (destination == SyncDestination.sap) {
-      return const SendResult(false, _sapNonConfigurato);
+  /// L'OdL appena accettato dal backend è assegnato a chi l'ha creato (regola
+  /// del backend). Se in creazione è stato scelto un collega, glielo si passa
+  /// con la stessa riassegnazione di "Riassegna OdL". Prima però partono le
+  /// foto/firme prese su questo tablet: il backend le accetta solo per un
+  /// ordine assegnato a chi le manda. Ritorna null se è andato bene,
+  /// altrimenti il motivo (l'OdL resta a chi l'ha creato).
+  Future<String?> _passaAlCollega(WorkOrder creato, String collega) async {
+    await ref
+        .read(syncProcessorProvider)
+        .process(force: true)
+        .catchError((_) => 0);
+    final res = await ref
+        .read(workOrderRepositoryProvider)
+        .reassign(creato.externalCode, collega);
+    if (res.isSuccess) {
+      ref.invalidate(workOrdersProvider);
+      ref.invalidate(dashboardStatsProvider);
+      ref.invalidate(prontoInterventoWorkOrdersProvider);
+      return null;
     }
+    return res.failureOrNull?.message ?? 'errore sconosciuto';
+  }
+
+  String _nonPassato(String collega, String errore) =>
+      'Ordine inviato al cruscotto, ma non passato a $collega: $errore '
+      'Resta assegnato a te: puoi riassegnarlo dal dettaglio dell\'OdL.';
+
+  /// Invia un singolo avviso al Cruscotto, che lo inoltra a SAP.
+  Future<SendResult> sendAvviso(NotificationAvviso avviso) async {
     final res =
         await ref.read(notificationRepositoryProvider).createAvviso(avviso);
     if (res.isSuccess) {
@@ -152,12 +174,23 @@ class CreationController {
     return SendResult(false, _motivo(res.failureOrNull?.message));
   }
 
+  /// Ora che l'OdL esiste sul backend, le foto/firme prese quando era ancora
+  /// solo sul tablet possono partire. Non blocca il flusso e non fallisce.
+  void _rimandaAllegati() {
+    ref.read(syncProcessorProvider).process(force: true).catchError((_) => 0);
+  }
+
   /// Traduce l'errore tecnico in un messaggio comprensibile all'operatore.
   String _motivo(String? errore) {
-    final e = errore ?? '';
+    final e = (errore ?? '').trim();
     if (e.contains('501')) {
       return 'Il cruscotto non accetta ancora la creazione dal campo. '
           'L\'elemento resta salvato sul tablet.';
+    }
+    // Messaggio chiaro dal backend (es. "Per un ordine SOST serve la
+    // matricola…"): mostrarlo, così l'operatore sa cosa correggere.
+    if (e.isNotEmpty && !e.startsWith('DioException') && !e.contains('Exception')) {
+      return '$e L\'elemento resta salvato sul tablet.';
     }
     return 'Invio non riuscito. L\'elemento resta salvato sul tablet.';
   }
@@ -171,12 +204,23 @@ class CreationController {
     var ok = 0;
     var failed = 0;
     String? firstError;
+    var nonPassati = 0;
+    String? primoNonPassato;
 
     for (final order in await _store.workOrders()) {
       final res = await woRepo.createWorkOrder(order);
       if (res.isSuccess) {
         await _store.removeWorkOrder(order.externalCode);
         ok++;
+        final collega = order.assegnaA;
+        if (collega != null) {
+          final errore =
+              await _passaAlCollega(res.valueOrNull ?? order, collega);
+          if (errore != null) {
+            nonPassati++;
+            primoNonPassato ??= _nonPassato(collega, errore);
+          }
+        }
       } else {
         failed++;
         firstError ??= res.failureOrNull?.message;
@@ -196,7 +240,13 @@ class CreationController {
 
     ref.invalidate(createdWorkOrdersProvider);
     ref.invalidate(createdAvvisiProvider);
-    return CreationSyncResult(ok: ok, failed: failed, firstError: firstError);
+    if (ok > 0) _rimandaAllegati();
+    return CreationSyncResult(
+        ok: ok,
+        failed: failed,
+        firstError: firstError,
+        nonPassati: nonPassati,
+        primoNonPassato: primoNonPassato);
   }
 }
 

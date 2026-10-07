@@ -4,14 +4,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../core/constants/app_constants.dart';
 import '../../../core/router/app_routes.dart';
 import '../../../core/theme/app_theme.dart';
+import '../../../core/utils/note_ordine.dart';
 import '../../../core/utils/validators.dart';
 import '../../../core/widgets/widgets.dart';
 import '../../../domain/entities/entities.dart';
 import '../../providers/anagrafica_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/avviso_extension_provider.dart';
+import '../../providers/avvisi_provider.dart';
+import '../../providers/core_providers.dart';
 import '../../providers/creation_provider.dart';
+import '../../widgets/assegnatario_field.dart';
 import '../../widgets/sync_widgets.dart';
 
 // ─── Presentazione tipo OdL ──────────────────────────────────────────────────
@@ -39,7 +45,39 @@ import '../../widgets/sync_widgets.dart';
 // ─── Screen principale ───────────────────────────────────────────────────────
 
 class CreateOrderScreen extends ConsumerStatefulWidget {
-  const CreateOrderScreen({super.key});
+  /// Precompilazioni (scenario 2: "crea OdL SOST da un altro OdL").
+  /// Vuoti = creazione libera (comportamento invariato).
+  final String? initialWoType;
+  final String? meterMatricola;
+  final String? originOrdine;
+
+  /// Numero dell'avviso da cui nasce l'OdL ("Genera OdL" → SOST): indirizzo,
+  /// cliente e sede si precompilano dall'avviso.
+  final String? originAvviso;
+
+  /// Posizione del punto di rete (mappa ArcGIS) da cui nasce l'OdL: va
+  /// sull'indirizzo, così la mappa lo posiziona esattamente lì.
+  final double? latitudine;
+  final double? longitudine;
+
+  /// Ciclo di lavoro da proporre fra le righe di /wo-templates (es. CONRID1
+  /// per un OdL ZA02 nato da un riduttore di pressione).
+  final String? initialGruppoCicli;
+
+  /// Indirizzo del punto scelto sulla mappa (geocodifica inversa Esri).
+  final IndirizzoMappa? indirizzo;
+
+  const CreateOrderScreen({
+    super.key,
+    this.initialWoType,
+    this.meterMatricola,
+    this.originOrdine,
+    this.originAvviso,
+    this.latitudine,
+    this.longitudine,
+    this.initialGruppoCicli,
+    this.indirizzo,
+  });
 
   @override
   ConsumerState<CreateOrderScreen> createState() => _CreateOrderScreenState();
@@ -49,21 +87,159 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
   final _formKey = GlobalKey<FormState>();
 
   String? _woType;
-  String? _priorita; // etichetta priorità scelta (catalogo backend /priorities)
+  // Tipo attività PM scelto dalla tabella di correlazione (/wo-templates):
+  // decide le operazioni vere del ciclo SAP (SOS vs S01…). Vuoto = riga
+  // predefinita del tipo (il backend usa comunque quella di default).
+  WorkOrderActivityTemplate? _template;
+
+  @override
+  void initState() {
+    super.initState();
+    // Coordinate della posizione selezionata sulla mappa.
+    _latitudeCtrl.text = _coordinateText(widget.latitudine);
+    _longitudeCtrl.text = _coordinateText(widget.longitudine);
+    // Prefill quando si crea un OdL a partire da un altro (tracciabilità).
+    if ((widget.initialWoType ?? '').isNotEmpty) {
+      _woType = widget.initialWoType!.trim().toUpperCase();
+    }
+    final origine = (widget.originOrdine ?? '').trim();
+    final matricola = (widget.meterMatricola ?? '').trim();
+    // Tracciabilità in campi STRUTTURATI (come l'app precedente):
+    // "Ordine Precedente" pronto per il backend, il contatore nelle note
+    // (nessun campo matricola nel modulo di creazione).
+    if (origine.isNotEmpty) _ordinePrecedenteCtrl.text = origine;
+    final ind = widget.indirizzo;
+    if (ind != null) {
+      _streetCtrl.text = ind.via;
+      _numberCtrl.text = ind.civico;
+      _cityCtrl.text = ind.comune;
+      _capCtrl.text = ind.cap;
+    }
+    final avviso = (widget.originAvviso ?? '').trim();
+    if (avviso.isNotEmpty) {
+      _notificaPrecedenteCtrl.text = avviso;
+      _prefillDaAvviso(avviso);
+    }
+    if (matricola.isNotEmpty) {
+      _noteCtrl.text = 'Contatore $matricola';
+      // La "casetta": il backend restituisce contatore/indirizzo/cliente/sede
+      // dell'apparecchiatura → precompiliamo la SOST invece di far ridigitare.
+      _prefillDaCasetta(matricola);
+    }
+  }
+
+  bool _prefilling = false;
+
+  /// Precompila dai dati dell'avviso d'origine (indirizzo, cliente, sede,
+  /// descrizione e, se l'avviso la porta, la matricola). Non sovrascrive ciò che
+  /// l'operatore ha già scritto; se l'avviso non si legge si compila a mano.
+  Future<void> _prefillDaAvviso(String numero) async {
+    setState(() => _prefilling = true);
+    try {
+      final a = await ref.read(avvisoDetailProvider(numero).future);
+      if (!mounted) return;
+      void fill(TextEditingController c, String? v) {
+        if (c.text.trim().isEmpty && (v ?? '').trim().isNotEmpty) {
+          c.text = v!.trim();
+        }
+      }
+
+      fill(_descCtrl, a.descrizione);
+      final ad = a.address;
+      fill(_cityCtrl, ad.city.isNotEmpty ? ad.city : ad.localita);
+      fill(_streetCtrl, ad.street);
+      fill(_numberCtrl, ad.streetNumber);
+      fill(_additionalCtrl, ad.additionalInfo);
+      fill(_provinciaCtrl, ad.provincia);
+      fill(_capCtrl, ad.cap);
+      final cu = a.customer;
+      fill(_nomeCtrl, cu.nome);
+      fill(_cognomeCtrl, cu.cognome);
+      fill(_telefonoCtrl, cu.telefono ?? a.cellulare);
+      fill(_codBpCtrl, cu.codBp);
+      fill(_sedeCtrl, a.sedeTecnica);
+      fill(_dynCtrl('matricola'), a.matricola);
+    } catch (_) {
+      // Avviso non leggibile: il tecnico compila a mano, nessun errore.
+    } finally {
+      if (mounted) setState(() => _prefilling = false);
+    }
+  }
+
+  /// Cerca l'equipment (GET /anagrafica/equipment?matricola=) e precompila
+  /// indirizzo, cliente, sede e i campi contatore. `null` = matricola ignota:
+  /// il tecnico compila a mano, nessun errore.
+  Future<void> _prefillDaCasetta(String matricola) async {
+    setState(() => _prefilling = true);
+    final res = await ref
+        .read(anagraficaRepositoryProvider)
+        .getEquipment(matricola: matricola);
+    final e = res.valueOrNull;
+    if (!mounted) {
+      _prefilling = false;
+      return;
+    }
+    if (e == null) {
+      setState(() => _prefilling = false);
+      return;
+    }
+    void fill(TextEditingController c, String v) {
+      if (c.text.trim().isEmpty && v.trim().isNotEmpty) c.text = v.trim();
+    }
+
+    final a = e.address;
+    if (a != null) {
+      fill(_cityCtrl, a.city.isNotEmpty ? a.city : (a.localita));
+      fill(_streetCtrl, a.street);
+      fill(_numberCtrl, a.streetNumber);
+      fill(_additionalCtrl, a.additionalInfo);
+      fill(_provinciaCtrl, a.provincia);
+      fill(_capCtrl, a.cap);
+    } else {
+      fill(_cityCtrl, e.comune.isNotEmpty ? e.comune : e.localita);
+    }
+    final cust = e.customer;
+    if (cust != null) {
+      fill(_nomeCtrl, cust.nome ?? '');
+      fill(_cognomeCtrl, cust.cognome ?? '');
+      fill(_telefonoCtrl, cust.telefono ?? '');
+      fill(_codBpCtrl, cust.codBp ?? '');
+    }
+    fill(_sedeCtrl, e.sedeTecnica);
+    // Contatore da sostituire: matricola (obbligatoria SOST) + dati noti.
+    fill(_dynCtrl('matricola'),
+        e.matricola.isNotEmpty ? e.matricola : matricola);
+    fill(_dynCtrl('marca'), e.meter?.brand ?? e.produttore);
+    fill(_dynCtrl('calibro'), e.meter?.caliber ?? '');
+    final lettura = e.meter?.lastReading;
+    if (lettura != null) fill(_dynCtrl('lettura'), lettura.toString());
+    setState(() => _prefilling = false);
+  }
+
+  String? _priorita; // CODICE priorità scelto (catalogo backend /priorities)
+  String? _assegnaA; // collega a cui passare l'OdL; null = resta a chi crea
   final _descCtrl = TextEditingController();
   final _cityCtrl = TextEditingController();
   final _streetCtrl = TextEditingController();
   final _numberCtrl = TextEditingController();
   final _additionalCtrl = TextEditingController();
+  final _provinciaCtrl = TextEditingController();
+  final _capCtrl = TextEditingController();
+  final _latitudeCtrl = TextEditingController();
+  final _longitudeCtrl = TextEditingController();
   final _sedeCtrl = TextEditingController();
   final _nomeCtrl = TextEditingController();
   final _cognomeCtrl = TextEditingController();
   final _telefonoCtrl = TextEditingController();
   final _codBpCtrl = TextEditingController();
   final _noteCtrl = TextEditingController();
+  // Tracciabilità (app precedente): Ordine/Notifica Precedente.
+  final _ordinePrecedenteCtrl = TextEditingController();
+  final _notificaPrecedenteCtrl = TextEditingController();
 
   DateTime? _appointmentDate;
-  String _startTime = '08:00';
+  // Ora dell'appuntamento: vuota finché il tecnico non la sceglie.
+  String _startTime = '';
   bool _saving = false;
 
   // Campi dinamici per tipo OdL: id → controller di testo / valore dropdown.
@@ -76,9 +252,23 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
   @override
   void dispose() {
     for (final c in [
-      _descCtrl, _cityCtrl, _streetCtrl, _numberCtrl,
-      _additionalCtrl, _sedeCtrl, _nomeCtrl, _cognomeCtrl,
-      _telefonoCtrl, _codBpCtrl, _noteCtrl,
+      _descCtrl,
+      _cityCtrl,
+      _streetCtrl,
+      _numberCtrl,
+      _additionalCtrl,
+      _provinciaCtrl,
+      _capCtrl,
+      _latitudeCtrl,
+      _longitudeCtrl,
+      _sedeCtrl,
+      _nomeCtrl,
+      _cognomeCtrl,
+      _telefonoCtrl,
+      _codBpCtrl,
+      _noteCtrl,
+      _ordinePrecedenteCtrl,
+      _notificaPrecedenteCtrl,
     ]) {
       c.dispose();
     }
@@ -86,6 +276,33 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
       c.dispose();
     }
     super.dispose();
+  }
+
+  /// Vero solo se l'OdL nasce da un'origine (altro OdL o avviso): allora i
+  /// riferimenti sono precompilati e vanno mostrati. Creazione libera → niente.
+  bool get _hasTracciabilita =>
+      _ordinePrecedenteCtrl.text.trim().isNotEmpty ||
+      _notificaPrecedenteCtrl.text.trim().isNotEmpty;
+
+  /// La riga da usare quando il tecnico non sceglie: quella marcata come
+  /// predefinita, altrimenti la prima. `null` se la tabella è vuota.
+  WorkOrderActivityTemplate? _defaultTemplate(
+      List<WorkOrderActivityTemplate> rows) {
+    if (rows.isEmpty) return null;
+    return _rigaDelCiclo(rows) ??
+        rows.firstWhere((t) => t.predefinita, orElse: () => rows.first);
+  }
+
+  /// La riga col ciclo richiesto dall'origine (es. CONRID1), se il backend
+  /// la offre per il tipo scelto.
+  WorkOrderActivityTemplate? _rigaDelCiclo(
+      List<WorkOrderActivityTemplate> rows) {
+    final ciclo = (widget.initialGruppoCicli ?? '').trim().toUpperCase();
+    if (ciclo.isEmpty) return null;
+    for (final r in rows) {
+      if (r.gruppoCicli.toUpperCase() == ciclo) return r;
+    }
+    return null;
   }
 
   Future<void> _submit() async {
@@ -99,63 +316,40 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
     final cid = utente?.cid ?? '';
     // "Creato da": il nome del tecnico che ha compilato il modulo, non un
     // identificativo tecnico dell'app.
-    final creatore = utente == null
-        ? 'wfm.mobile'
-        : '${utente.fullName} ($cid)';
-    // Template operazioni standard (il tecnico le compila/edita poi).
+    final creatore =
+        utente == null ? 'wfm.mobile' : '${utente.fullName} ($cid)';
+    // Operazioni: le tre standard di ogni OdL (kOperazioniStandard: 0010
+    // Trasferimento, 0040 Lavori Idraulici, 0200 Automezzi, quelle del
+    // backend). Quando l'ordine è sincronizzato valgono quelle che il backend
+    // manda. Le tre fittizie di una volta (0010 "Sopralluogo iniziale", 0020,
+    // 0030) NON esistono in SAP e sono rimosse.
     final now = DateTime.now();
-    final defaultOps = <Operation>[
-      Operation(
-        id: 'OP-${now.millisecondsSinceEpoch}-1',
-        number: '0010',
-        codice: 'SOPR-001',
-        testoBreve: 'Sopralluogo iniziale',
-        cid: cid,
-        description: 'Valutazione tecnica del punto di intervento.',
-        dataInizioPrevista: _appointmentDate ?? now,
-        plannedHours: 0.5,
-      ),
-      Operation(
-        id: 'OP-${now.millisecondsSinceEpoch}-2',
-        number: '0020',
-        codice: 'EXEC-001',
-        testoBreve: 'Esecuzione intervento',
-        cid: cid,
-        description: 'Esecuzione delle lavorazioni previste.',
-        dataInizioPrevista: _appointmentDate ?? now,
-        plannedHours: 2,
-      ),
-      Operation(
-        id: 'OP-${now.millisecondsSinceEpoch}-3',
-        number: '0030',
-        codice: 'VRF-001',
-        testoBreve: 'Verifica e chiusura',
-        cid: cid,
-        description: 'Verifica e chiusura intervento.',
-        dataInizioPrevista: _appointmentDate ?? now,
-        plannedHours: 0.5,
-      ),
-    ];
     // Campi dinamici (per tipo OdL, dal cruscotto) → Meter + note strutturate.
     final dynFields = _woType == null
         ? const <DynFieldSpec>[]
         : (ref.read(workOrderFieldsProvider(_woType!)).valueOrNull ??
             const <DynFieldSpec>[]);
-    String dynVal(String id, {bool option = false}) => option
-        ? (_dynSel[id] ?? '')
-        : (_dynCtrls[id]?.text.trim() ?? '');
-    final dynLines = <String>[];
+    String dynVal(String id, {bool option = false}) =>
+        option ? (_dynSel[id] ?? '') : (_dynCtrls[id]?.text.trim() ?? '');
+    // Valori dei campi specifici che NON hanno un campo proprio: finiscono nelle
+    // note senza intestazione. La matricola viaggia nel suo campo: non si ripete.
+    final dynExtra = <({String label, String value})>[];
     for (final f in dynFields) {
+      if (kCampiConCampoProprio.contains(f.key)) continue;
       final v = dynVal(f.key, option: f.type == DynFieldType.select);
-      if (v.isNotEmpty) dynLines.add('${f.label}: $v');
+      if (v.isNotEmpty) dynExtra.add((label: f.label, value: v));
     }
     Meter? meter;
+    // Matricola del contatore: DEVE finire anche nel campo top-level dell'OdL,
+    // perché è quello che il serializzatore invia (`workOrderToJson` non emette
+    // il nodo `meter`) e che il backend legge (`body.matricola`). Senza, una
+    // SOST viene rifiutata con 422 anche se il tecnico l'ha digitata.
+    String matricolaOdl = dynVal('matricola');
     if (_woType == 'ATTI' || _woType == 'SOST' || _woType == 'DISA') {
-      final matricola = dynVal('matricola');
-      if (matricola.isNotEmpty) {
+      if (matricolaOdl.isNotEmpty) {
         final sigillo = dynVal('sigillo');
         meter = Meter(
-          matricola: matricola,
+          matricola: matricolaOdl,
           caliber: dynVal('calibro'),
           brand: dynVal('marca'),
           sealNumber: sigillo.isEmpty ? null : sigillo,
@@ -163,11 +357,27 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
         );
       }
     }
-    final baseNotes = _noteCtrl.text.trim();
-    final notes = [
-      if (dynLines.isNotEmpty) 'Dati specifici:\n${dynLines.join('\n')}',
-      if (baseNotes.isNotEmpty) baseNotes,
-    ].join('\n\n');
+    final notes = componiNoteCreazione(extra: dynExtra, base: _noteCtrl.text);
+
+    // Tipo attività scelto (o predefinito del tipo): il backend deriva
+    // ciclo/settore, ma se il tecnico ha scelto una riga la mandiamo così il
+    // cruscotto sa quale attività PM e quale ciclo sono (es. ZA02: CONRCO1 o
+    // CONRID1, che il backend non può indovinare).
+    final tmplRows =
+        ref.read(workOrderTemplatesProvider(_woType!)).valueOrNull ??
+            const <WorkOrderActivityTemplate>[];
+    final tmpl = _template ?? _defaultTemplate(tmplRows);
+    // Settore contabile: il CODICE che il backend deriva dal tipo (POT, FOG…).
+    // Niente valore di ripiego inventato: se il tipo non ne ha (ZMAV), resta
+    // vuoto e lo decide il backend.
+    final settore = tmpl?.settoreContabile ?? '';
+    // Priorità: al backend va il codice; la descrizione serve solo a mostrarla.
+    final prioList = ref.read(orderPrioritiesProvider(_woType!)).valueOrNull ??
+        const <CodeLabel>[];
+    final prioDesc = prioList
+        .where((c) => c.code == _priorita)
+        .map((c) => c.label)
+        .firstOrNull;
 
     final code = ref.read(creationControllerProvider).newWorkOrderId();
     final order = WorkOrder(
@@ -175,16 +385,39 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
       woType: _woType!,
       woTypeDescription: _descCtrl.text.trim(),
       tam: _woType!,
+      tipoAttivitaCodice: tmpl?.tipoAttivita,
+      tipoAttivitaNome: tmpl?.tipoAttivitaDesc,
       status: WorkOrderStatus.ricevuto,
-      priorita: _priorita ?? '',
+      operations: kOperazioniStandard,
+      priorita: prioDesc ?? '',
+      prioritaCodice: _priorita,
+      gruppoCicli: (tmpl?.gruppoCicli ?? '').isEmpty ? null : tmpl!.gruppoCicli,
       creatoDa: creatore,
-      appointmentDate: _appointmentDate ?? DateTime.now(),
-      appointmentStartTime: _startTime,
+      // Tracciabilità: Notifica Precedente (avviso, letta dal backend) e
+      // Ordine Precedente (pronto per il backend).
+      notificationNumberSap: _notificaPrecedenteCtrl.text.trim().isEmpty
+          ? null
+          : _notificaPrecedenteCtrl.text.trim(),
+      avvisoOrigine: _notificaPrecedenteCtrl.text.trim().isEmpty
+          ? null
+          : _notificaPrecedenteCtrl.text.trim(),
+      ordineOrigine: _ordinePrecedenteCtrl.text.trim().isEmpty
+          ? null
+          : _ordinePrecedenteCtrl.text.trim(),
+      // Nessun appuntamento inventato: la data e l'ora si mandano solo se il
+      // tecnico le ha scelte (il backend non ne mette: senza data niente
+      // appuntamento).
+      appointmentDate: _appointmentDate,
+      appointmentStartTime: _appointmentDate == null ? '' : _startTime,
       address: Address(
         city: _cityCtrl.text.trim(),
         street: _streetCtrl.text.trim(),
         streetNumber: _numberCtrl.text.trim(),
         additionalInfo: _additionalCtrl.text.trim(),
+        provincia: _provinciaCtrl.text.trim(),
+        cap: _capCtrl.text.trim(),
+        latitude: _parseCoordinate(_latitudeCtrl.text),
+        longitude: _parseCoordinate(_longitudeCtrl.text),
       ),
       customer: Customer(
         nome: _nomeCtrl.text.trim(),
@@ -194,17 +427,27 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
       ),
       referente: '${_nomeCtrl.text.trim()} ${_cognomeCtrl.text.trim()}'.trim(),
       telefonoCliente: _telefonoCtrl.text.trim(),
-      operations: defaultOps,
       sedeTecnica: _sedeCtrl.text.trim(),
+      // Campo top-level letto dal backend (body.matricola): senza, SOST → 422.
+      matricola: matricolaOdl.isEmpty ? null : matricolaOdl,
       meter: meter,
       notes: notes,
-      accountingSector: 'POT - Servizio acqua potabile',
+      accountingSector: settore,
       cidAssegnato: cid,
+      assegnaA: _assegnaA,
       createdAt: now,
       localStatus: LocalSyncStatus.pendingUpload,
     );
     // Local-first: l'OdL resta sul tablet finché l'operatore non sincronizza.
     await ref.read(creationControllerProvider).addWorkOrder(order);
+    // Da avviso: l'avviso risulta "OdL generato" e non ricompare tra i Pronto
+    // Intervento da prendere in carico (stesso comportamento di "Genera OdL").
+    final daAvviso = _notificaPrecedenteCtrl.text.trim();
+    if (daAvviso.isNotEmpty && (widget.originAvviso ?? '').trim() == daAvviso) {
+      await ref
+          .read(avvisoExtensionProvider(daAvviso).notifier)
+          .setOrdineGenerato(code);
+    }
     if (!mounted) return;
     setState(() => _saving = false);
 
@@ -214,13 +457,18 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
       context,
       ref,
       title: 'Ordine creato',
-      message: 'L\'ordine di lavoro è salvato sul tablet. '
-          'Vuoi inviarlo subito al cruscotto?',
+      message: _assegnaA == null
+          ? 'L\'ordine di lavoro è salvato sul tablet. '
+              'Vuoi inviarlo subito al cruscotto?'
+          : 'L\'ordine di lavoro è salvato sul tablet: passerà a $_assegnaA '
+              'appena inviato al cruscotto. Vuoi inviarlo subito?',
     );
     if (!mounted) return;
-    // Sostituisce il wizard col dettaglio dell'OdL creato mantenendo lo
-    // stack sottostante: il tasto Indietro torna correttamente alla Home.
-    context.pushReplacement(AppRoutes.workOrderDetailPath(code));
+    // Dopo la creazione si torna alla LISTA degli OdL (non al dettaglio): il
+    // nuovo OdL è lì, in attesa di sincronizzazione, e il tasto Indietro non
+    // riporta più negli step del wizard. Per modificarlo si apre l'OdL dalla
+    // lista. `go` azzera lo stack del wizard.
+    context.go(AppRoutes.workOrders);
   }
 
   @override
@@ -237,8 +485,10 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
             const Padding(
               padding: EdgeInsets.all(16),
               child: SizedBox(
-                width: 20, height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                    strokeWidth: 2, color: Colors.white),
               ),
             )
           else
@@ -250,6 +500,22 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
+            if (_prefilling)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: const Row(
+                  children: const [
+                    SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2)),
+                    SizedBox(width: 10),
+                    Text('Recupero dati dalla casetta…',
+                        style: TextStyle(
+                            fontSize: 12.5, color: AppColors.textSecondary)),
+                  ],
+                ),
+              ),
             // ── 1. Tipo OdL ──────────────────────────────────────────────────
             _SectionCard(
               title: 'Tipo OdL',
@@ -270,68 +536,53 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
                                 'Nessun tipo OdL ricevuto dal cruscotto.\n'
                                 'Il catalogo è servito da SAP tramite il cruscotto.');
                           }
-                          return GridView.count(
-                            crossAxisCount: 3,
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            mainAxisSpacing: 8,
-                            crossAxisSpacing: 8,
-                            childAspectRatio: 1.05,
-                            children: types.map((t) {
-                              final vis = _woTypeVisual(t);
-                              final sel = _woType == t.code;
-                              return GestureDetector(
-                                onTap: () => setState(() {
-                                  _woType = t.code;
-                                  if (_descCtrl.text.isEmpty) {
-                                    _descCtrl.text = t.label;
-                                  }
-                                }),
-                                child: AnimatedContainer(
-                                  duration: const Duration(milliseconds: 180),
-                                  decoration: BoxDecoration(
-                                    color: sel
-                                        ? vis.color.withValues(alpha: 0.1)
-                                        : AppColors.backgroundPage,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: sel ? vis.color : AppColors.border,
-                                      width: sel ? 2 : 1,
-                                    ),
-                                  ),
-                                  child: Column(
-                                    mainAxisAlignment: MainAxisAlignment.center,
-                                    children: [
-                                      Icon(vis.icon,
-                                          color: sel
-                                              ? vis.color
-                                              : AppColors.textHint,
-                                          size: 24),
-                                      const SizedBox(height: 4),
-                                      Text(t.code,
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w700,
-                                            color: sel
-                                                ? vis.color
-                                                : AppColors.textSecondary,
-                                          )),
-                                      Padding(
-                                        padding: const EdgeInsets.symmetric(
-                                            horizontal: 4),
-                                        child: Text(t.label,
-                                            style: const TextStyle(
-                                                fontSize: 9,
-                                                color: AppColors.textHint),
-                                            textAlign: TextAlign.center,
-                                            maxLines: 2,
-                                            overflow: TextOverflow.ellipsis),
-                                      ),
-                                    ],
-                                  ),
+                          // Match code: tocca il campo per aprire l'elenco dei
+                          // tipi OdL selezionabili (valori/etichette dal cruscotto).
+                          // ZF01 e SOST sono i tipi più usati sul campo: in testa
+                          // alla lista, gli altri a seguire nell'ordine ricevuto.
+                          final tipiOrdinati = [...types]..sort((a, b) {
+                              const priorita = ['ZF01', 'SOST'];
+                              final ia = priorita.indexOf(a.code);
+                              final ib = priorita.indexOf(b.code);
+                              if (ia == -1 && ib == -1) return 0;
+                              if (ia == -1) return 1;
+                              if (ib == -1) return -1;
+                              return ia.compareTo(ib);
+                            });
+                          // Demo del 2026-09-28 (OdL da riduttore di pressione,
+                          // ZA02): cliccabili solo SOST e ZA02, gli altri tipi
+                          // restano visibili ma grigi per non sceglierli per
+                          // sbaglio. Tutti i tipi, ZA02 compreso, arrivano dal
+                          // backend (`wo-types`): nessuna voce aggiunta qui.
+                          return MatchCodeField<String>(
+                            label: 'Tipo OdL',
+                            hint: 'Tocca per scegliere il tipo di ordine…',
+                            value: _woType,
+                            options: [
+                              for (final t in tipiOrdinati)
+                                MatchCodeOption(
+                                  value: t.code,
+                                  code: t.code,
+                                  label: t.label,
+                                  icon: _woTypeVisual(t).icon,
+                                  color: _woTypeVisual(t).color,
                                 ),
-                              );
-                            }).toList(),
+                            ],
+                            isOptionEnabled: (o) =>
+                                kTipiOdlAbilitati.contains(o.value),
+                            onChanged: (code) => setState(() {
+                              _woType = code;
+                              // Cambiando tipo, il tipo attività scelto non
+                              // vale più: si ricarica dalla tabella del tipo.
+                              _template = null;
+                              if (_descCtrl.text.isEmpty) {
+                                final trovati =
+                                    tipiOrdinati.where((x) => x.code == code);
+                                if (trovati.isNotEmpty) {
+                                  _descCtrl.text = trovati.first.label;
+                                }
+                              }
+                            }),
                           );
                         },
                       ),
@@ -339,7 +590,8 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
                     const Padding(
                       padding: EdgeInsets.only(top: 8),
                       child: Text('Seleziona un tipo per continuare',
-                          style: TextStyle(fontSize: 12, color: AppColors.textHint)),
+                          style: TextStyle(
+                              fontSize: 12, color: AppColors.textHint)),
                     ),
                   const SizedBox(height: 14),
                   _field(
@@ -348,11 +600,93 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
                     hint: 'Es. Sostituzione contatore DN15',
                     validator: Validators.required,
                     maxLines: 2,
+                    suffixIcon: VoiceSuffixIcons(controller: _descCtrl),
                   ),
+                  // Tracciabilità: compare SOLO se l'OdL nasce da un altro OdL
+                  // o da un avviso (valori precompilati dall'origine). In una
+                  // creazione libera non ha senso e resta nascosta. Sola
+                  // lettura: sono un riferimento, non si digitano a mano.
+                  if (_hasTracciabilita) ...[
+                    const SizedBox(height: 14),
+                    Row(children: [
+                      if (_ordinePrecedenteCtrl.text.trim().isNotEmpty)
+                        Expanded(
+                          child: _field(
+                            controller: _ordinePrecedenteCtrl,
+                            label: 'Ordine Precedente',
+                            readOnly: true,
+                          ),
+                        ),
+                      if (_ordinePrecedenteCtrl.text.trim().isNotEmpty &&
+                          _notificaPrecedenteCtrl.text.trim().isNotEmpty)
+                        const SizedBox(width: 12),
+                      if (_notificaPrecedenteCtrl.text.trim().isNotEmpty)
+                        Expanded(
+                          child: _field(
+                            controller: _notificaPrecedenteCtrl,
+                            label: 'Notifica Precedente',
+                            readOnly: true,
+                          ),
+                        ),
+                    ]),
+                  ],
+                  // Tipo attività (dalla tabella di correlazione del cruscotto
+                  // /anagrafica/wo-templates): sceglie il ciclo SAP e quindi le
+                  // operazioni vere. Compare solo se il tipo offre più di una
+                  // scelta; con una sola riga il backend usa la predefinita.
+                  if (_woType != null)
+                    ref.watch(workOrderTemplatesProvider(_woType!)).maybeWhen(
+                          data: (rows) {
+                            if (rows.length < 2) return const SizedBox.shrink();
+                            return Padding(
+                              padding: const EdgeInsets.only(top: 14),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  DropdownButtonFormField<
+                                      WorkOrderActivityTemplate>(
+                                    // Nuovo tipo OdL = nuove righe: la tendina
+                                    // riparte da zero, senza la scelta del tipo
+                                    // precedente.
+                                    key: ValueKey('tipo-attivita-$_woType'),
+                                    initialValue:
+                                        _template ?? _rigaDelCiclo(rows),
+                                    isExpanded: true,
+                                    decoration: const InputDecoration(
+                                        labelText: 'Tipo attività'),
+                                    items: rows
+                                        .map((t) => DropdownMenuItem(
+                                            value: t,
+                                            child: Text(t.labelIn(rows),
+                                                overflow:
+                                                    TextOverflow.ellipsis)))
+                                        .toList(),
+                                    onChanged: (v) =>
+                                        setState(() => _template = v),
+                                  ),
+                                  if ((_template ?? _defaultTemplate(rows))
+                                          ?.cicloSettore
+                                          .isNotEmpty ??
+                                      false)
+                                    Padding(
+                                      padding: const EdgeInsets.only(top: 6),
+                                      child: Text(
+                                        'Ciclo/settore: ${(_template ?? _defaultTemplate(rows))!.cicloSettore}',
+                                        style: const TextStyle(
+                                            fontSize: 12,
+                                            color: AppColors.textHint),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            );
+                          },
+                          orElse: () => const SizedBox.shrink(),
+                        ),
                   const SizedBox(height: 14),
-                  // Priorità dal catalogo reale del backend (/anagrafica/priorities,
-                  // schema WO) — non più codificata in modo fisso.
-                  ref.watch(orderPrioritiesProvider).when(
+                  // Priorità dal catalogo reale del backend (/anagrafica/priorities):
+                  // lo schema giusto per il tipo (SOST → ZS) lo sceglie il backend.
+                  ref.watch(orderPrioritiesProvider(_woType ?? '')).when(
                         loading: () => const LinearProgressIndicator(),
                         error: (e, _) => Text('Priorità non disponibili: $e',
                             style: const TextStyle(
@@ -364,7 +698,7 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
                               const InputDecoration(labelText: 'Priorità'),
                           items: list
                               .map((c) => DropdownMenuItem(
-                                  value: c.label,
+                                  value: c.code,
                                   child: Text(c.label,
                                       overflow: TextOverflow.ellipsis)))
                               .toList(),
@@ -433,7 +767,8 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
                 Expanded(
                   child: GestureDetector(
                     onTap: () async {
-                      final parts = _startTime.split(':');
+                      final parts = (_startTime.isEmpty ? '08:00' : _startTime)
+                          .split(':');
                       final t = await showTimePicker(
                         context: context,
                         initialTime: TimeOfDay(
@@ -447,8 +782,8 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
                     },
                     child: _pickerBox(
                       icon: Icons.access_time_rounded,
-                      text: _startTime,
-                      empty: false,
+                      text: _startTime.isEmpty ? 'Seleziona ora' : _startTime,
+                      empty: _startTime.isEmpty,
                     ),
                   ),
                 ),
@@ -478,10 +813,8 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
                   ),
                   const SizedBox(width: 10),
                   Expanded(
-                    child: _field(
-                        controller: _numberCtrl,
-                        label: 'N°',
-                        hint: '1'),
+                    child:
+                        _field(controller: _numberCtrl, label: 'N°', hint: '1'),
                   ),
                 ]),
                 const SizedBox(height: 10),
@@ -489,6 +822,45 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
                     controller: _additionalCtrl,
                     label: 'Info aggiuntive',
                     hint: 'Scala, piano, interno…'),
+                const SizedBox(height: 10),
+                Row(children: [
+                  Expanded(
+                    child: _field(
+                        controller: _provinciaCtrl,
+                        label: 'Provincia',
+                        hint: 'Es. AN'),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _field(
+                        controller: _capCtrl,
+                        label: 'CAP',
+                        hint: 'Es. 60019',
+                        keyboardType: TextInputType.number),
+                  ),
+                ]),
+                const SizedBox(height: 10),
+                Row(children: [
+                  Expanded(
+                    child: _field(
+                      controller: _latitudeCtrl,
+                      label: 'Latitudine GPS',
+                      hint: 'Es. 43.615000',
+                      keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true, signed: true),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: _field(
+                      controller: _longitudeCtrl,
+                      label: 'Longitudine GPS',
+                      hint: 'Es. 13.519000',
+                      keyboardType: const TextInputType.numberWithOptions(
+                          decimal: true, signed: true),
+                    ),
+                  ),
+                ]),
                 const SizedBox(height: 10),
                 _field(
                     controller: _sedeCtrl,
@@ -506,9 +878,7 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
                 Row(children: [
                   Expanded(
                       child: _field(
-                          controller: _nomeCtrl,
-                          label: 'Nome',
-                          hint: 'Mario')),
+                          controller: _nomeCtrl, label: 'Nome', hint: 'Mario')),
                   const SizedBox(width: 10),
                   Expanded(
                       child: _field(
@@ -524,14 +894,41 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
                           label: 'Telefono',
                           hint: '3401234567',
                           keyboardType: TextInputType.phone)),
-                  const SizedBox(width: 10),
-                  Expanded(
-                      child: _field(
-                          controller: _codBpCtrl,
-                          label: 'Cod. BP SAP',
-                          hint: '90012345')),
+
+                  // const SizedBox(width: 10),
+                  // Expanded(
+                  //     child: _field(
+                  //         controller: _codBpCtrl,
+                  //         label: 'Cod. BP SAP',
+                  //         hint: '90012345')),
                 ]),
               ]),
+            ),
+            const SizedBox(height: 12),
+
+            // ── Assegnazione ─────────────────────────────────────────────────
+            _SectionCard(
+              title: 'Assegnazione',
+              icon: Icons.assignment_ind_outlined,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  AssegnatarioField(
+                    value: _assegnaA,
+                    onChanged: (cid) => setState(() => _assegnaA = cid),
+                  ),
+                  if (_assegnaA != null)
+                    const Padding(
+                      padding: EdgeInsets.only(top: 6),
+                      child: Text(
+                        'L\'OdL passa al collega appena viene inviato al '
+                        'cruscotto: da quel momento non sarà più su questo tablet.',
+                        style:
+                            TextStyle(fontSize: 12, color: AppColors.textHint),
+                      ),
+                    ),
+                ],
+              ),
             ),
             const SizedBox(height: 12),
 
@@ -544,6 +941,7 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
                 label: 'Note',
                 hint: 'Informazioni aggiuntive per il tecnico…',
                 maxLines: 3,
+                suffixIcon: VoiceSuffixIcons(controller: _noteCtrl),
               ),
             ),
             const SizedBox(height: 15),
@@ -553,11 +951,13 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
               onPressed: _saving ? null : _submit,
               icon: _saving
                   ? const SizedBox(
-                      width: 18, height: 18,
+                      width: 18,
+                      height: 18,
                       child: CircularProgressIndicator(
                           strokeWidth: 2, color: Colors.white))
                   : const Icon(Icons.add_circle_outline_rounded, size: 20),
-              label: Text(_saving ? 'Creazione in corso…' : 'Crea Ordine di Lavoro'),
+              label: Text(
+                  _saving ? 'Creazione in corso…' : 'Crea Ordine di Lavoro'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.primary,
                 foregroundColor: Colors.white,
@@ -576,12 +976,17 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
   }
 
   Widget _dynFieldWidget(DynFieldSpec f) {
+    // Il backend marca alcuni campi come obbligatori (es. matricola per la
+    // SOST): vanno validati QUI, altrimenti si crea un OdL che il backend
+    // rifiuterà sempre (422) e che non si sincronizza mai. L'etichetta porta
+    // il "*" quando serve.
+    final label = f.required ? '${f.label} *' : f.label;
     if (f.type == DynFieldType.select) {
       return DropdownButtonFormField<String>(
         initialValue: _dynSel[f.key],
         isExpanded: true,
         decoration: InputDecoration(
-          labelText: f.label,
+          labelText: label,
           filled: true,
           fillColor: AppColors.backgroundPage,
           border: OutlineInputBorder(
@@ -594,13 +999,34 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
         items: f.options
             .map((o) => DropdownMenuItem(value: o, child: Text(o)))
             .toList(),
+        validator: f.required
+            ? (v) => (v == null || v.isEmpty) ? 'Campo obbligatorio' : null
+            : null,
         onChanged: (v) => setState(() => _dynSel[f.key] = v ?? ''),
       );
     }
     return _field(
       controller: _dynCtrl(f.key),
-      label: f.label,
+      label: label,
+      validator: f.required ? Validators.required : null,
       maxLines: f.type == DynFieldType.multiline ? 3 : 1,
+      // La matricola del contatore è il suo numero di serie: leggibile col
+      // barcode/QR stampato sull'apparecchio, come già in Gestione contatore.
+      suffixIcon: f.key == 'matricola'
+          ? IconButton(
+              icon: const Icon(Icons.qr_code_scanner),
+              tooltip: 'Scansiona matricola',
+              onPressed: () async {
+                final code = await context.push<String>(AppRoutes.scanner);
+                if (code != null && code.isNotEmpty) {
+                  setState(() => _dynCtrl(f.key).text = code);
+                }
+              },
+            )
+          // I campi di testo libero (es. "Lavoro da eseguire") si possono dettare.
+          : (f.type == DynFieldType.multiline
+              ? VoiceSuffixIcons(controller: _dynCtrl(f.key))
+              : null),
       keyboardType: f.type == DynFieldType.number
           ? const TextInputType.numberWithOptions(decimal: true)
           : null,
@@ -643,15 +1069,19 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
     String? Function(String?)? validator,
     TextInputType? keyboardType,
     int maxLines = 1,
+    bool readOnly = false,
+    Widget? suffixIcon,
   }) {
     return TextFormField(
       controller: controller,
       validator: validator,
       keyboardType: keyboardType,
       maxLines: maxLines,
+      readOnly: readOnly,
       decoration: InputDecoration(
         labelText: label,
         hintText: hint,
+        suffixIcon: suffixIcon,
         filled: true,
         fillColor: AppColors.backgroundPage,
         border: OutlineInputBorder(
@@ -671,6 +1101,12 @@ class _CreateOrderScreenState extends ConsumerState<CreateOrderScreen> {
       ),
     );
   }
+
+  static String _coordinateText(double? value) =>
+      value == null ? '' : value.toStringAsFixed(6);
+
+  static double? _parseCoordinate(String value) =>
+      double.tryParse(value.trim().replaceAll(',', '.'));
 
   Widget _pickerBox(
       {required IconData icon, required String text, required bool empty}) {

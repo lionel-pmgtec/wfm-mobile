@@ -1,5 +1,8 @@
 // Equipment SAP PM/IS-U — (Dettaglio Equipment, Sostituzione Barcode).
 
+import 'meter.dart';
+import 'value_objects.dart';
+
 class Equipment {
   final String matricola; // numero di serie
   final String barcode;
@@ -10,6 +13,15 @@ class Equipment {
   final String sedeTecnica;
   final DateTime? dataInstallazione;
   final String stato; // ATTIVO, RIMOSSO, GUASTO...
+  // Dati ricchi della "casetta" (GET /anagrafica/equipment): servono a
+  // precompilare la creazione della SOST senza far ridigitare il tecnico.
+  final String equipment; // codice equipment SAP
+  final String oggettoAllacciamento; // punto di connessione
+  final String accountingSector; // settore contabile (POT…)
+  final String fonteExternalCode; // OdL da cui vengono questi dati
+  final Meter? meter; // contatore esistente (da sostituire)
+  final Address? address; // indirizzo del punto di fornitura
+  final Customer? customer; // intestatario
 
   const Equipment({
     required this.matricola,
@@ -21,6 +33,13 @@ class Equipment {
     this.sedeTecnica = '',
     this.dataInstallazione,
     this.stato = '',
+    this.equipment = '',
+    this.oggettoAllacciamento = '',
+    this.accountingSector = '',
+    this.fonteExternalCode = '',
+    this.meter,
+    this.address,
+    this.customer,
   });
 
   String get displayName =>

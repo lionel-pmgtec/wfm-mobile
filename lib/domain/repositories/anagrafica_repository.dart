@@ -16,12 +16,16 @@ abstract interface class AnagraficaRepository {
   Future<Result<List<CodeLabel>>> getCauseCodes();
   Future<Result<List<CodeLabel>>> getSolutionCodes();
 
-  /// Priorità SAP per schema (default WO = ordini di lavoro).
-  Future<Result<List<CodeLabel>>> getPriorities({String? schema});
+  /// Priorità SAP per schema (default WO = ordini di lavoro). `type` sceglie
+  /// lo schema del tipo (es. SOST → ZS).
+  Future<Result<List<CodeLabel>>> getPriorities({String? schema, String? type});
 
   /// Cataloghi selezionabili serviti dal cruscotto (niente hardcoded lato app).
   Future<Result<List<WorkOrderTypeOption>>> getWorkOrderTypes();
   Future<Result<List<DynFieldSpec>>> getWorkOrderFields(String woType);
+
+  /// Correlazione tipo ordine → tipo attività/ciclo/settore (precompilazione).
+  Future<Result<List<WorkOrderActivityTemplate>>> getWorkOrderActivityTemplates({String? type});
 
   /// Lookup generico (suspension-reasons, avviso-user-statuses, …).
   Future<Result<List<CodeLabel>>> getLookup(String kind);

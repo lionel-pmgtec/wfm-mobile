@@ -33,7 +33,17 @@ import '../../../providers/anagrafica_provider.dart';
 import '../../../providers/avviso_extension_provider.dart';
 import '../../../providers/avvisi_provider.dart';
 import '../../../providers/capabilities_provider.dart';
+import '../../../providers/map_provider.dart' show indirizzoInterventoAvviso;
+import '../../../widgets/naviga_button.dart';
 import '../widgets/avviso_widgets.dart';
+
+/// "gg/mm/aaaa hh:mm": la data con l'ora se il backend la manda (SAP la porta
+/// in un campo a parte), altrimenti solo la data.
+String _dataOra(DateTime? d, String? ora) {
+  final data = Fmt.date(d);
+  final o = (ora ?? '').trim();
+  return o.isEmpty || data.isEmpty || data == '—' ? data : '$data $o';
+}
 
 class AvvisoDatiTab extends ConsumerWidget {
   final NotificationAvviso avviso;
@@ -128,6 +138,13 @@ class AvvisoDatiTab extends ConsumerWidget {
 
         // ── INDIRIZZI (PI: 2 indirizzi separati ; RP: 3 indirizzi) ──
         // Nemmeno gli indirizzi sono esposti: servirebbero ILOA + ADRC.
+        // "Naviga" fuori dalle sezioni ripiegate: stesso indirizzo su cui la
+        // mappa posiziona l'avviso.
+        if (caps.has(Cap.avvisoIndirizzi))
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: NavigaButton(indirizzo: indirizzoInterventoAvviso(avviso)),
+          ),
         if (isPI) ...[
           WfmCollapsibleSection(
             title: 'INDIRIZZO AVVISO',
@@ -247,7 +264,8 @@ class _DatiAvvisoPI extends StatelessWidget {
           SapLockedField(
               label: 'Descrizione Estesa',
               value: avviso.descrizioneEstesa!,
-              fullWidth: true),
+              fullWidth: true,
+              enableTts: true),
         const SizedBox(height: 8),
         FormGrid(children: [
           SapLockedField(
@@ -293,7 +311,8 @@ class _DatiAvvisoPI extends StatelessWidget {
           SapLockedField(
               label: 'Note Operatore',
               value: avviso.noteOperatore!,
-              fullWidth: true),
+              fullWidth: true,
+              enableTts: true),
         ],
       ],
     );
@@ -328,7 +347,8 @@ class _DatiAvvisoRP extends StatelessWidget {
           SapLockedField(
               label: 'Descrizione Estesa',
               value: avviso.descrizioneEstesa!,
-              fullWidth: true),
+              fullWidth: true,
+              enableTts: true),
         const SizedBox(height: 8),
         FormGrid(children: [
           SapLockedField(
@@ -356,7 +376,8 @@ class _DatiAvvisoRP extends StatelessWidget {
           SapLockedField(
               label: 'Note Operatore',
               value: avviso.noteOperatore!,
-              fullWidth: true),
+              fullWidth: true,
+              enableTts: true),
         ],
       ],
     );
@@ -392,7 +413,12 @@ class _ClientePI extends StatelessWidget {
           SapLockedField(
               label: 'Codice Fiscale',
               value: c.codiceFiscale ?? avviso.codiceFiscaleCliente ?? ''),
-          SapLockedField(label: 'Referente', value: avviso.referente ?? ''),
+          // Il referente solo se è un'altra persona: il backend ripete il
+          // nominativo (ADRC-NAME1/NAME2) nel campo `referente`.
+          if (referenteDistinto(avviso.referente, c.fullName) != null)
+            SapLockedField(
+                label: 'Referente',
+                value: referenteDistinto(avviso.referente, c.fullName)!),
           SapLockedField(label: 'Telefono', value: c.telefono ?? ''),
           SapLockedField(label: 'Cellulare', value: avviso.cellulare ?? ''),
           SapLockedCheckbox(
@@ -587,7 +613,8 @@ class _IndirizzoOggettoPI extends StatelessWidget {
           SapLockedField(
               label: 'Note Accesso',
               value: avviso.noteAccesso!,
-              fullWidth: true),
+              fullWidth: true,
+              enableTts: true),
         ],
       ],
     );
@@ -783,15 +810,16 @@ class _GestioneIntervento extends StatelessWidget {
           SapLockedField(label: 'Squadra', value: avviso.squadra ?? ''),
           SapLockedField(
               label: 'Data Intervento',
-              value: Fmt.date(avviso.dataInterventoRichiesta)),
+              value: _dataOra(avviso.dataInterventoRichiesta,
+                  avviso.oraInterventoRichiesta)),
           SapLockedField(
               label: 'Fascia Oraria', value: avviso.fasciaOraria?.label ?? ''),
           SapLockedField(
               label: 'Data Inizio Guasto',
-              value: Fmt.date(avviso.dataInizioGuasto)),
+              value: _dataOra(avviso.dataInizioGuasto, avviso.oraInizioGuasto)),
           SapLockedField(
               label: 'Data Fine Guasto',
-              value: Fmt.date(avviso.dataFineGuasto)),
+              value: _dataOra(avviso.dataFineGuasto, avviso.oraFineGuasto)),
           SapLockedField(
               label: 'Presa in Carico',
               value: Fmt.dateTime(avviso.dataPresaInCarico)),
@@ -961,8 +989,18 @@ class _DatiPreventivoRPState extends ConsumerState<_DatiPreventivoRP> {
 
   @override
   Widget build(BuildContext context) {
+    // "ODL Generato": vero se il backend collega un OdL (hasOrdineCollegato),
+    // OPPURE se l'OdL è stato generato sul tablet e tracciato in locale
+    // (ordineGenerato) — il backend non espone ancora la generazione.
     final odlGen = widget.preventivo?.odlGenerato == true ||
-        widget.avviso.hasOrdineCollegato;
+        widget.avviso.hasOrdineCollegato ||
+        ref.watch(ordineCollegatoProvider(widget.avviso.numeroAvviso))
+                .valueOrNull !=
+            null ||
+        ref
+                .watch(avvisoExtensionProvider(widget.avviso.numeroAvviso))
+                .ordineGenerato !=
+            null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1104,15 +1142,16 @@ class _DatiPreventivoRPState extends ConsumerState<_DatiPreventivoRP> {
         TextField(
           controller: _descrCtrl,
           maxLines: 4,
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
             labelText: 'Descrizione Lavori Richiesti',
             alignLabelWithHint: true,
             hintText:
                 'Descrivi i lavori richiesti dal cliente per il preventivo…',
-            prefixIcon: Padding(
+            prefixIcon: const Padding(
               padding: EdgeInsets.only(bottom: 60),
               child: Icon(Icons.description_outlined),
             ),
+            suffixIcon: VoiceSuffixIcons(controller: _descrCtrl),
           ),
           onChanged: (v) => _persist(descrizioneLavoriRichiesti: v),
         ),
@@ -1395,8 +1434,10 @@ class _ElaborazioneSectionState extends ConsumerState<_ElaborazioneSection> {
         TextField(
           controller: _noteCtrl,
           maxLines: 4,
-          decoration: const InputDecoration(
-              labelText: 'Note', alignLabelWithHint: true),
+          decoration: InputDecoration(
+              labelText: 'Note',
+              alignLabelWithHint: true,
+              suffixIcon: VoiceSuffixIcons(controller: _noteCtrl)),
         ),
       ],
     );

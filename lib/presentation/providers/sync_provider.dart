@@ -31,6 +31,25 @@ final syncProcessorProvider = Provider<SyncProcessor>((ref) {
         ref.invalidate(workOrdersProvider);
         ref.invalidate(dashboardStatsProvider);
         ref.invalidate(avvisiProvider);
+        ref.invalidate(prontoInterventoAvvisiProvider);
+      }
+    }
+  });
+
+  // Al LOGIN (o alla ripresa della sessione salvata) si rigioca ciò che era
+  // rimasto in coda o sul tablet: esiti, cambi di stato, allegati. Il
+  // listener sulla rete sopra copre solo il passaggio offline → online, non
+  // un'app riaperta già online con lavoro ancora da inviare.
+  ref.listen<String?>(authTokenProvider, (prev, token) async {
+    if (token != null && token.isNotEmpty && (prev == null || prev.isEmpty)) {
+      if (ref.read(connectivityStatusProvider) != true) return;
+      final synced = await proc.process(force: true);
+      ref.invalidate(syncQueueProvider);
+      if (synced > 0) {
+        ref.invalidate(workOrdersProvider);
+        ref.invalidate(dashboardStatsProvider);
+        ref.invalidate(avvisiProvider);
+        ref.invalidate(prontoInterventoAvvisiProvider);
       }
     }
   });
@@ -50,6 +69,7 @@ class SyncActions {
       ref.invalidate(workOrdersProvider);
       ref.invalidate(dashboardStatsProvider);
       ref.invalidate(avvisiProvider);
+      ref.invalidate(prontoInterventoAvvisiProvider);
     }
     return synced;
   }

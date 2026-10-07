@@ -80,3 +80,34 @@ class Operation {
         tempoLavoroFase: tempoLavoroFase ?? this.tempoLavoroFase,
       );
 }
+
+/// Le tre operazioni standard di ogni OdL, qualunque sia il tipo: 0010
+/// Trasferimento, 0040 Lavori Idraulici, 0200 Automezzi.
+///
+/// Sono quelle del backend (`OPERAZIONI_SOST` in dominio/tipiOrdine.ts: "sempre
+/// queste, qualunque sia il tipo attività"), che a sua volta le ricava dagli
+/// ordini SAP; il backend le dà all'ordine solo se è una SOST creata dal
+/// tablet, quindi un ZA02 creato dal tablet arriva senza. Il tablet le propone
+/// SOLO quando l'ordine non ne ha: le operazioni mandate dal backend (cicli
+/// SAP) hanno sempre la precedenza. Forma identica a quella del backend
+/// (toOperation: id = numero, codice = chiave di controllo).
+const List<Operation> kOperazioniStandard = [
+  Operation(
+      id: '0010',
+      number: '0010',
+      codice: 'PM01',
+      testoBreve: 'Trasferimento',
+      description: 'Trasferimento'),
+  Operation(
+      id: '0040',
+      number: '0040',
+      codice: 'ZM01',
+      testoBreve: 'Lavori Idraulici',
+      description: 'Lavori Idraulici'),
+  Operation(
+      id: '0200',
+      number: '0200',
+      codice: 'PM01',
+      testoBreve: 'Automezzi',
+      description: 'Automezzi'),
+];

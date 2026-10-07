@@ -225,10 +225,32 @@ final goRouterProvider = Provider<GoRouter>((ref) {
       // ─── Route di servizio (schermo intero) ──────────────────────────────
       GoRoute(
           path: AppRoutes.createOrder,
-          builder: (_, __) => const CreateOrderScreen()),
+          builder: (_, state) {
+            // Prefill opzionale (scenario "crea SOST da un altro OdL").
+            final q = state.uri.queryParameters;
+            return CreateOrderScreen(
+              initialWoType: q['type'],
+              meterMatricola: q['meter'],
+              originOrdine: q['origin'],
+              originAvviso: q['avviso'],
+              latitudine: double.tryParse(q['lat'] ?? ''),
+              longitudine: double.tryParse(q['lng'] ?? ''),
+              initialGruppoCicli: q['ciclo'],
+              indirizzo: IndirizzoMappa.daQuery(q),
+            );
+          }),
       GoRoute(
           path: AppRoutes.createAvviso,
-          builder: (_, __) => const CreateAvvisoScreen()),
+          builder: (_, state) {
+            // Prefill opzionale: avviso aperto da un punto della rete (mappa).
+            final q = state.uri.queryParameters;
+            return CreateAvvisoScreen(
+              matricola: q['meter'],
+              latitudine: double.tryParse(q['lat'] ?? ''),
+              longitudine: double.tryParse(q['lng'] ?? ''),
+              indirizzo: IndirizzoMappa.daQuery(q),
+            );
+          }),
       GoRoute(
           path: AppRoutes.settings,
           builder: (_, __) => const SettingsScreen()),

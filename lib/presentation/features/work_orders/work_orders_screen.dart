@@ -14,6 +14,7 @@ import '../../providers/connectivity_provider.dart';
 import '../../providers/realtime_provider.dart';
 import '../../providers/work_orders_provider.dart';
 import '../../widgets/sync_widgets.dart';
+import 'widgets/elimina_odl.dart';
 import 'widgets/excel_import_sheet.dart';
 import 'widgets/work_order_card.dart';
 
@@ -60,19 +61,22 @@ class _WorkOrdersScreenState extends ConsumerState<WorkOrdersScreen> {
   /// Conferma + eliminazione di un OdL. Ritorna true se eliminato (l'item
   /// scompare); false se annullato o in errore (l'item resta).
   Future<bool> _confirmAndDeleteOdl(String code) async {
+    final azioni = ref.read(workOrderActionsProvider);
+    final avviso = await azioni.avvisoDaEliminare(code);
+    if (!mounted) return false;
     final ok = await showWfmConfirmDialog(
       context: context,
-      title: 'Eliminare l\'OdL?',
-      message: 'L\'ordine di lavoro $code sarà eliminato definitivamente.',
+      title: "Eliminare l'OdL?",
+      message: messaggioEliminazioneOdl(code, avviso),
       confirmLabel: 'Elimina',
       tone: WfmDialogTone.danger,
     );
     if (ok != true) return false;
-    final res = await ref.read(workOrderActionsProvider).delete(code);
+    final esito = await azioni.eliminaConAvviso(code);
     if (!mounted) return true;
-    return res.when(
+    return esito.odl.when(
       success: (_) {
-        showSapToast(context, 'OdL $code eliminato');
+        mostraEsitoEliminazioneOdl(context, code, esito);
         return true;
       },
       failure: (f) {
@@ -336,14 +340,16 @@ class _WorkOrdersScreenState extends ConsumerState<WorkOrdersScreen> {
       );
 
   Widget _statusFilterBar(WorkOrderFilter filter) {
+    // Niente filtro per Chiuso/Inviato SAP: un OdL che raggiunge uno di questi
+    // stati esce dal tablet (non serve più all'operatore, resta sul cruscotto)
+    // — vedi WorkOrderRepositoryImpl._isTerminalStatus. Il Sospeso invece
+    // resta sul tablet e si ritrova qui, per poterlo riprendere.
     final chips = <(String, WorkOrderStatus?)>[
       ('Tutti', null),
       ('Assegnato', WorkOrderStatus.ricevuto),
       ('In esecuzione', WorkOrderStatus.inEsecuzione),
       ('In pausa', WorkOrderStatus.inPausa),
       ('Sospeso', WorkOrderStatus.sospeso),
-      ('Chiuso', WorkOrderStatus.completato),
-      ('Inviato SAP', WorkOrderStatus.inviatoSAP),
     ];
     return SizedBox(
       height: 60,

@@ -30,11 +30,12 @@ class Attachment {
     this.uploadStatus = UploadStatus.local,
   });
 
-  Attachment copyWith({String? id, UploadStatus? uploadStatus}) => Attachment(
+  Attachment copyWith({String? id, UploadStatus? uploadStatus, String? filePath}) =>
+      Attachment(
         id: id ?? this.id,
         workOrderCode: workOrderCode,
         type: type,
-        filePath: filePath,
+        filePath: filePath ?? this.filePath,
         fileName: fileName,
         mimeType: mimeType,
         sizeBytes: sizeBytes,

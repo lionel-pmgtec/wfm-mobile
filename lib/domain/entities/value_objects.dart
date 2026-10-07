@@ -108,6 +108,21 @@ class Customer {
     this.familyNucleus,
   });
 
+  /// Lo stesso cliente con nome e cognome sostituiti (gli altri dati restano).
+  Customer conNome(String? nome, String? cognome) => Customer(
+        objectCode: objectCode,
+        nome: nome,
+        cognome: cognome,
+        ragioneSociale: ragioneSociale,
+        codiceFiscale: codiceFiscale,
+        partitaIva: partitaIva,
+        telefono: telefono,
+        email: email,
+        codBp: codBp,
+        codCli: codCli,
+        familyNucleus: familyNucleus,
+      );
+
   /// Nome completo: ragione sociale per business, nome+cognome per privati.
   String get fullName {
     if (ragioneSociale != null && ragioneSociale!.isNotEmpty) {
@@ -127,4 +142,25 @@ class Customer {
       (cognome == null || cognome!.isEmpty) &&
       (ragioneSociale == null || ragioneSociale!.isEmpty) &&
       (telefono == null || telefono!.isEmpty);
+}
+
+/// Vero se due indirizzi sono lo stesso (stessa riga leggibile, senza badare a
+/// maiuscole e spazi). Serve a non ripetere nella fiche lo stesso indirizzo
+/// quando il backend lo manda in più campi.
+bool stessoIndirizzo(Address a, Address b) {
+  String n(Address x) => x.full.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
+  return n(a) == n(b);
+}
+
+/// Il referente da mostrare, o null se non aggiunge nulla.
+///
+/// Il backend non ha un referente a parte: manda `referente` = nome + cognome
+/// del cliente, cioè lo stesso nominativo (ADRC-NAME1/NAME2 dell'indirizzo, o
+/// CLIENTE.NOME/COGNOME). Ripeterlo con un'altra etichetta è fuorviante: si
+/// mostra solo se è davvero un'altra persona.
+String? referenteDistinto(String? referente, String nominativo) {
+  String n(String s) => s.toLowerCase().replaceAll(RegExp(r'\s+'), ' ').trim();
+  final r = (referente ?? '').trim();
+  if (r.isEmpty || n(r) == n(nominativo)) return null;
+  return r;
 }

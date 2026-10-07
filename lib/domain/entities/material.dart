@@ -12,6 +12,10 @@ class MaterialItem {
   /// Disponibilità attuale (pezzi/m/kg in magazzino).
   final num stockDisponibile;
 
+  /// Giacenza PER MAGAZZINO (codice magazzino -> quantità), se il backend la
+  /// manda (`stockPerMagazzino`). Vuota = il backend dà un solo stock.
+  final Map<String, num> stockPerMagazzino;
+
   const MaterialItem({
     required this.materialCode,
     required this.description,
@@ -19,7 +23,26 @@ class MaterialItem {
     this.barcode,
     this.defaultWarehouseCode = 'W01',
     this.stockDisponibile = 0,
+    this.stockPerMagazzino = const {},
   });
+
+  MaterialItem copyWith({Map<String, num>? stockPerMagazzino}) => MaterialItem(
+        materialCode: materialCode,
+        description: description,
+        unitOfMeasure: unitOfMeasure,
+        barcode: barcode,
+        defaultWarehouseCode: defaultWarehouseCode,
+        stockDisponibile: stockDisponibile,
+        stockPerMagazzino: stockPerMagazzino ?? this.stockPerMagazzino,
+      );
+
+  /// Giacenza di ogni magazzino in cui il materiale c'è, come la dà il
+  /// backend. Se manda solo `stockDisponibile`, il materiale sta nel suo
+  /// magazzino predefinito (`defaultWarehouseCode`: "dove il materiale è
+  /// stoccato"): lì c'è quella quantità e negli altri nessuna.
+  Map<String, num> get giacenze => stockPerMagazzino.isNotEmpty
+      ? stockPerMagazzino
+      : {defaultWarehouseCode: stockDisponibile};
 }
 
 /// Materiale pianificato/utilizzato in un OdL.

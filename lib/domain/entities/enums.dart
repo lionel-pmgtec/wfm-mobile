@@ -106,12 +106,34 @@ enum AttachmentType {
         AttachmentType.documento => 'Documento',
       };
 
+  /// Codice inviato al backend (`type` di POST /esiti/attachments). Sono i
+  /// codici che il Cruscotto riconosce (il suo Dashboard cerca FOTO_DOPO):
+  /// FOTO_PRIMA, FOTO_DOPO, FIRMA, DOCUMENTO.
   String get sapCode => switch (this) {
-        AttachmentType.fotoPrima => 'BEFORE',
-        AttachmentType.fotoDopo => 'AFTER',
-        AttachmentType.firma => 'SIGNATURE',
-        AttachmentType.documento => 'DOCUMENT',
+        AttachmentType.fotoPrima => 'FOTO_PRIMA',
+        AttachmentType.fotoDopo => 'FOTO_DOPO',
+        AttachmentType.firma => 'FIRMA',
+        AttachmentType.documento => 'DOCUMENTO',
       };
+
+  /// Ricava il tipo dal codice restituito dal backend. Accetta anche i vecchi
+  /// codici (BEFORE/AFTER/SIGNATURE/DOCUMENT) di allegati caricati in passato;
+  /// un codice sconosciuto resta un semplice documento.
+  static AttachmentType fromCode(String? code) {
+    switch ((code ?? '').trim().toUpperCase()) {
+      case 'FOTO_PRIMA':
+      case 'BEFORE':
+        return AttachmentType.fotoPrima;
+      case 'FOTO_DOPO':
+      case 'AFTER':
+        return AttachmentType.fotoDopo;
+      case 'FIRMA':
+      case 'SIGNATURE':
+        return AttachmentType.firma;
+      default:
+        return AttachmentType.documento;
+    }
+  }
 }
 
 /// Stato di upload di un allegato.

@@ -18,6 +18,7 @@ import '../../../../core/router/app_routes.dart';
 import '../../../../core/widgets/widgets.dart';
 import '../../../../domain/entities/entities.dart';
 import '../../../providers/work_orders_provider.dart';
+import 'elimina_odl.dart';
 import 'reassign_sheet.dart';
 
 /// Schermata da cui viene aperto il menu: decide quali voci mostrare.
@@ -162,6 +163,14 @@ class OdlActionsMenu extends ConsumerWidget {
             Text('Riassegna OdL'),
           ]),
         ));
+      } else if (key == 'storico') {
+        // Funzione non ancora implementata: presente ma spenta, come il chip
+        // "Storico" nel dettaglio. Per riattivarla basta togliere questo ramo.
+        items.add(PopupMenuItem(
+          value: key,
+          enabled: false,
+          child: Text('$label (non ancora disponibile)'),
+        ));
       } else {
         items.add(PopupMenuItem(value: key, child: Text(label)));
       }
@@ -215,7 +224,19 @@ class OdlActionsMenu extends ConsumerWidget {
         context.go(AppRoutes.map);
         break;
       case 'reassign':
-        await showReassignSheet(context, ref, code);
+        final fatto = await showReassignSheet(context, ref, code);
+        if (fatto == null || !context.mounted) break;
+        switch (fatto.esito) {
+          case EsitoRiassegnazione.passato:
+            // Su questo tablet l'OdL non c'è più: si torna alla lista.
+            context.go(AppRoutes.workOrders);
+            showSapToast(context, 'OdL $code passato a ${fatto.collega}');
+          case EsitoRiassegnazione.allInvio:
+            showSapToast(context,
+                'OdL $code: passerà a ${fatto.collega} appena inviato al cruscotto');
+          case EsitoRiassegnazione.resta:
+            showSapToast(context, 'OdL $code: resta assegnato a te');
+        }
         break;
       case 'cancel':
         await _confirmCancel(context, ref);
@@ -228,21 +249,27 @@ class OdlActionsMenu extends ConsumerWidget {
 
   /// Elimina definitivamente l'OdL (diverso da "Annulla OdL", che cambia stato).
   Future<void> _confirmDelete(BuildContext context, WidgetRef ref) async {
+    final azioni = ref.read(workOrderActionsProvider);
+    final avviso = await azioni.avvisoDaEliminare(code);
+    if (!context.mounted) return;
     final ok = await showWfmConfirmDialog(
       context: context,
-      title: 'Eliminare l\'OdL?',
-      message: 'L\'ordine di lavoro $code sarà eliminato definitivamente.',
+      title: "Eliminare l'OdL?",
+      message: messaggioEliminazioneOdl(code, avviso),
       confirmLabel: 'Elimina',
       cancelLabel: 'Annulla',
       tone: WfmDialogTone.danger,
       icon: Icons.delete_outline,
     );
     if (ok == true && context.mounted) {
-      final res = await ref.read(workOrderActionsProvider).delete(code);
+      final esito = await azioni.eliminaConAvviso(code);
       if (context.mounted) {
-        res.isSuccess
-            ? context.pop()
-            : showSapToast(context, 'Errore eliminazione', isError: true);
+        if (esito.odl.isSuccess) {
+          mostraEsitoEliminazioneOdl(context, code, esito);
+          context.pop();
+        } else {
+          showSapToast(context, 'Errore eliminazione', isError: true);
+        }
       }
     }
   }
@@ -260,7 +287,9 @@ class OdlActionsMenu extends ConsumerWidget {
       icon: Icons.cancel_outlined,
       extraContent: TextField(
         controller: reasonCtrl,
-        decoration: const InputDecoration(labelText: 'Motivo annullamento'),
+        decoration: InputDecoration(
+            labelText: 'Motivo annullamento',
+            suffixIcon: VoiceSuffixIcons(controller: reasonCtrl)),
         maxLines: 2,
       ),
     );

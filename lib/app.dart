@@ -9,6 +9,7 @@ import 'core/services/new_items_poll_service.dart';
 import 'core/services/push_notification_service.dart';
 import 'core/theme/app_theme.dart';
 import 'presentation/providers/notifications_provider.dart';
+import 'presentation/providers/core_providers.dart';
 import 'presentation/providers/settings_provider.dart';
 import 'presentation/providers/sync_provider.dart';
 
@@ -28,7 +29,7 @@ class _WfmAppState extends ConsumerState<WfmApp> {
 
     // Inizializza il notifier per registrare onReceived sul servizio push.
     ref.read(notificationsProvider.notifier);
-    
+
     ref.read(newItemsPollServiceProvider);
 
     // Attiva il processore della coda offline: al ritorno della connettività
@@ -68,11 +69,44 @@ class _WfmAppState extends ConsumerState<WfmApp> {
           data: mq.copyWith(
             textScaler: TextScaler.linear(settings.textScale),
           ),
-          child: _PermissionRequestWrapper(child: child!),
+          child: _BackendStatusNotifier(
+            child: _PermissionRequestWrapper(child: child!),
+          ),
         );
       },
     );
   }
+}
+
+class _BackendStatusNotifier extends ConsumerStatefulWidget {
+  final Widget child;
+  const _BackendStatusNotifier({required this.child});
+
+  @override
+  ConsumerState<_BackendStatusNotifier> createState() =>
+      _BackendStatusNotifierState();
+}
+
+class _BackendStatusNotifierState
+    extends ConsumerState<_BackendStatusNotifier> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final status = ref.read(backendStatusProvider);
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(status),
+        backgroundColor: status.contains('HTTP 200 OK')
+            ? Colors.green.shade700
+            : Colors.red.shade700,
+        duration: const Duration(seconds: 5),
+      ));
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 // ─── Wrapper che richiede i permessi push al primo avvio ─────────────────
@@ -86,8 +120,7 @@ class _PermissionRequestWrapper extends StatefulWidget {
       _PermissionRequestWrapperState();
 }
 
-class _PermissionRequestWrapperState
-    extends State<_PermissionRequestWrapper> {
+class _PermissionRequestWrapperState extends State<_PermissionRequestWrapper> {
   @override
   void initState() {
     super.initState();
@@ -101,10 +134,3 @@ class _PermissionRequestWrapperState
   @override
   Widget build(BuildContext context) => widget.child;
 }
-
-
-
-
-
-
-

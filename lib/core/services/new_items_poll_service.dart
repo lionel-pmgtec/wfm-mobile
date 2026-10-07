@@ -94,6 +94,7 @@ class NewItemsPollService {
         ref.invalidate(workOrdersProvider);
         ref.invalidate(dashboardStatsProvider);
         ref.invalidate(avvisiProvider);
+        ref.invalidate(prontoInterventoAvvisiProvider);
       } else {
         debugPrint('[poll] nessuna novità (${orders.length} OdL, ${avvisi.length} avvisi)');
       }

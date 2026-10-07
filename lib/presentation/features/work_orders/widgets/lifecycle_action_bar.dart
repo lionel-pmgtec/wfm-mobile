@@ -54,7 +54,7 @@ class LifecycleActionBar extends ConsumerWidget {
       ));
     }
 
-    // Sospendi (invia al server, rimuove dal tablet)
+    // Sospendi (invia al server; l'OdL resta sul tablet, filtro "Sospeso")
     if (order.canSuspend) {
       buttons.add(WfmActionButton(
         icon: Icons.stop_circle_outlined,
@@ -129,16 +129,24 @@ class LifecycleActionBar extends ConsumerWidget {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(
-                  order.status == WorkOrderStatus.completato ||
+                  order.inviatoSap ||
+                          order.status == WorkOrderStatus.completato ||
                           order.status == WorkOrderStatus.inviatoSAP
                       ? Icons.check_circle
                       : Icons.cancel,
-                  color: order.status == WorkOrderStatus.annullato
+                  color: order.status == WorkOrderStatus.annullato &&
+                          !order.inviatoSap
                       ? AppColors.accentRed
                       : AppColors.accentGreen),
               const SizedBox(width: 8),
-              Text('OdL ${order.status.label.toLowerCase()}',
-                  style: AppTextStyles.headingSmall),
+              Flexible(
+                child: Text(
+                    order.inviatoSap
+                        ? 'OdL già inviato a SAP dal pianificatore: sola lettura'
+                        : 'OdL ${order.status.label.toLowerCase()}',
+                    textAlign: TextAlign.center,
+                    style: AppTextStyles.headingSmall),
+              ),
             ],
           ),
         ),
@@ -195,8 +203,9 @@ class LifecycleActionBar extends ConsumerWidget {
       if (context.mounted) {
         res.when(
           success: (_) {
-            showSapToast(context, 'OdL sospeso — restituito al Cruscotto');
-            context.pop(); // rimuove dal tablet e torna alla lista
+            showSapToast(context,
+                'OdL sospeso — lo ritrovi nel filtro "Sospeso" per riprenderlo');
+            context.pop(); // torna alla lista
           },
           // Mostra il messaggio vero del backend, non un generico "Errore".
           failure: (f) => showSapToast(
@@ -279,7 +288,9 @@ class _SospendiSheetState extends ConsumerState<_SospendiSheet> {
           TextField(
             controller: _noteCtrl,
             maxLines: 3,
-            decoration: const InputDecoration(labelText: 'Note (facoltative)'),
+            decoration: InputDecoration(
+                labelText: 'Note (facoltative)',
+                suffixIcon: VoiceSuffixIcons(controller: _noteCtrl)),
           ),
           const SizedBox(height: 16),
           SizedBox(

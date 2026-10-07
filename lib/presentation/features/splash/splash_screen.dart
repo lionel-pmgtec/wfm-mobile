@@ -15,7 +15,7 @@ import '../../../core/theme/app_theme.dart';
 import '../../providers/core_providers.dart';
 
 /// Durata dello splash prima di aprire il login.
-const Duration kSplashDuration = Duration(seconds: 6);
+const Duration kSplashDuration = Duration(seconds: 2);
 
 class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
@@ -117,7 +117,7 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
                     ),
                   ),
                   const Spacer(),
-                  // Barra di avanzamento sincronizzata con i 6 secondi.
+                  // Barra di avanzamento sincronizzata con i 2 secondi.
                   SizedBox(
                     width: 200,
                     child: ClipRRect(

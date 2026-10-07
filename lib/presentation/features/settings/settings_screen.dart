@@ -7,6 +7,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/constants/app_constants.dart';
 import '../../../core/router/app_routes.dart';
 import '../../../core/services/excel_export_service.dart';
+import '../../../core/services/lettura_vocale_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/formatters.dart';
 import '../../../core/widgets/widgets.dart';
@@ -113,6 +114,8 @@ class SettingsScreen extends ConsumerWidget {
               ),
             ]),
           ),
+          const SectionHeader(title: 'VOCE DI LETTURA'),
+          WfmCard(child: _VoceLettura(settings: settings, ctrl: ctrl)),
           const SectionHeader(title: 'STRUTTURA ORGANIZZATIVA'),
           WfmCard(
             child: Column(children: [
@@ -293,4 +296,163 @@ class _ScaleTile extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Voce dell'altoparlante ("Leggi a voce alta") dei campi di testo: quale voce
+/// italiana del tablet, più grave o più acuta, più lenta o più veloce.
+class _VoceLettura extends StatefulWidget {
+  final AppSettings settings;
+  final SettingsController ctrl;
+  const _VoceLettura({required this.settings, required this.ctrl});
+
+  @override
+  State<_VoceLettura> createState() => _VoceLetturaState();
+}
+
+class _VoceLetturaState extends State<_VoceLettura> {
+  late final Future<List<VoceDisponibile>> _voci =
+      LetturaVocale.instance.vociItaliane();
+
+  Future<void> _prova() async {
+    final s = widget.settings;
+    final tts = LetturaVocale.instance;
+    await tts.ferma();
+    await tts.applica(
+        voce: s.voceLettura, tono: s.vocePitch, velocita: s.voceVelocita);
+    try {
+      await tts.parla(LetturaVocale.fraseProva);
+    } catch (_) {/* nessun motore vocale: niente da fare */}
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = widget.settings;
+    final ctrl = widget.ctrl;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        FutureBuilder<List<VoceDisponibile>>(
+          future: _voci,
+          builder: (context, snap) {
+            final voci = snap.data ?? const <VoceDisponibile>[];
+            // Una voce salvata ma non più installata: si torna alla predefinita.
+            final scelta = voci.any((v) => v.nome == s.voceLettura)
+                ? s.voceLettura
+                : '';
+            return ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.record_voice_over_outlined),
+              title: const Text('Voce'),
+              subtitle: Text(
+                snap.connectionState != ConnectionState.done
+                    ? 'Ricerca delle voci installate…'
+                    : voci.isEmpty
+                        ? 'Nessuna voce italiana trovata sul dispositivo'
+                        : '${voci.length} voci italiane installate',
+              ),
+              trailing: voci.isEmpty
+                  ? null
+                  : DropdownButton<String>(
+                      value: scelta,
+                      underline: const SizedBox.shrink(),
+                      items: [
+                        const DropdownMenuItem(
+                            value: '', child: Text('Predefinita')),
+                        for (var i = 0; i < voci.length; i++)
+                          DropdownMenuItem(
+                              value: voci[i].nome,
+                              child: Text('Voce ${i + 1} · ${voci[i].nome}',
+                                  overflow: TextOverflow.ellipsis)),
+                      ],
+                      onChanged: (v) => ctrl.setVoceLettura(v ?? ''),
+                    ),
+            );
+          },
+        ),
+        const Divider(height: 1),
+        _Regolatore(
+          icon: Icons.graphic_eq,
+          titolo: 'Tono',
+          minEtichetta: 'Grave',
+          maxEtichetta: 'Acuto',
+          valore: s.vocePitch,
+          min: AppSettings.minPitch,
+          max: AppSettings.maxPitch,
+          onChanged: ctrl.setVocePitch,
+        ),
+        _Regolatore(
+          icon: Icons.speed,
+          titolo: 'Velocità',
+          minEtichetta: 'Lenta',
+          maxEtichetta: 'Veloce',
+          valore: s.voceVelocita,
+          min: AppSettings.minVelocita,
+          max: AppSettings.maxVelocita,
+          onChanged: ctrl.setVoceVelocita,
+        ),
+        const SizedBox(height: 4),
+        Row(children: [
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: _prova,
+              icon: const Icon(Icons.volume_up_outlined),
+              label: const Text('Prova la voce'),
+            ),
+          ),
+          const SizedBox(width: 12),
+          TextButton(
+            onPressed: ctrl.ripristinaVoce,
+            child: const Text('Ripristina'),
+          ),
+        ]),
+      ],
+    );
+  }
+}
+
+class _Regolatore extends StatelessWidget {
+  final IconData icon;
+  final String titolo;
+  final String minEtichetta;
+  final String maxEtichetta;
+  final double valore;
+  final double min;
+  final double max;
+  final ValueChanged<double> onChanged;
+  const _Regolatore({
+    required this.icon,
+    required this.titolo,
+    required this.minEtichetta,
+    required this.maxEtichetta,
+    required this.valore,
+    required this.min,
+    required this.max,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) => Padding(
+        padding: const EdgeInsets.only(top: 6),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            Icon(icon),
+            const SizedBox(width: 16),
+            Text(titolo, style: AppTextStyles.bodyLarge),
+          ]),
+          Row(children: [
+            Text(minEtichetta, style: AppTextStyles.bodyMedium),
+            Expanded(
+              child: Slider(
+                value: valore.clamp(min, max).toDouble(),
+                min: min,
+                max: max,
+                divisions: 10,
+                semanticFormatterCallback: (v) => '$titolo ${v.toStringAsFixed(1)}',
+                onChanged: onChanged,
+              ),
+            ),
+            Text(maxEtichetta, style: AppTextStyles.bodyMedium),
+          ]),
+        ]),
+      );
 }

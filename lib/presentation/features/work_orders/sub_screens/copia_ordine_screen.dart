@@ -109,7 +109,9 @@ class _CopiaOrdineScreenState extends ConsumerState<CopiaOrdineScreen> {
         const SizedBox(height: 12),
         TextField(
           controller: _descCtrl,
-          decoration: const InputDecoration(labelText: 'Descrizione'),
+          decoration: InputDecoration(
+              labelText: 'Descrizione',
+              suffixIcon: VoiceSuffixIcons(controller: _descCtrl)),
           maxLines: 2,
         ),
         const SectionHeader(title: 'DATI PRE-COMPILATI (da OdL origine)'),
@@ -136,8 +138,10 @@ class _CopiaOrdineScreenState extends ConsumerState<CopiaOrdineScreen> {
         TextField(
           controller: _noteCtrl,
           maxLines: 3,
-          decoration: const InputDecoration(
-              labelText: 'Note', alignLabelWithHint: true),
+          decoration: InputDecoration(
+              labelText: 'Note',
+              alignLabelWithHint: true,
+              suffixIcon: VoiceSuffixIcons(controller: _noteCtrl)),
         ),
         const SizedBox(height: 24),
         ElevatedButton.icon(

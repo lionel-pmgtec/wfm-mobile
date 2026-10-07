@@ -11,6 +11,7 @@ import '../../../core/constants/app_constants.dart';
 import '../../../core/router/app_routes.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../core/services/arrival_store.dart';
 import '../../../core/widgets/widgets.dart';
 import '../../../domain/entities/entities.dart';
 import '../../providers/avviso_extension_provider.dart';
@@ -397,7 +398,7 @@ Future<bool> _confirmAndDeleteAvviso(
   final ok = await showWfmConfirmDialog(
     context: context,
     title: 'Eliminare l\'avviso?',
-    message: 'L\'avviso $numero sarà eliminato definitivamente.',
+    message: "L'avviso $numero sarà eliminato da questo tablet.",
     confirmLabel: 'Elimina',
     tone: WfmDialogTone.danger,
   );
@@ -592,6 +593,17 @@ class _AvvisoItem extends ConsumerWidget {
                         overflow: TextOverflow.ellipsis,
                         style: AppTextStyles.bodySmall),
                     ),
+                    // Da quanto è arrivato sul tablet ("2 min fa").
+                    if (ArrivalStore.of('avv', avviso.numeroAvviso) != null) ...[
+                      const SizedBox(width: 8),
+                      const Icon(Icons.schedule,
+                          size: 13, color: AppColors.textHint),
+                      const SizedBox(width: 3),
+                      TempoFa(
+                          since:
+                              ArrivalStore.of('avv', avviso.numeroAvviso)!,
+                          style: AppTextStyles.bodySmall),
+                    ],
                   ]),
                   // Sede tecnica SAP: distingue avvisi con descrizione identica
                   // (es. i batch di manutenzione programmata sullo stesso oggetto).

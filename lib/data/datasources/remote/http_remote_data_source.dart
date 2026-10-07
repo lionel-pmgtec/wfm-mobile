@@ -2,6 +2,7 @@
 // /api/v1. Il tablet vede SOLO gli oggetti assegnati al CID del token.
 
 import 'package:dio/dio.dart';
+import 'package:image_picker/image_picker.dart' show XFile;
 import '../../../core/config/capabilities.dart';
 import '../../../core/network/dio_client.dart';
 import '../../../domain/entities/entities.dart';
@@ -34,6 +35,8 @@ class HttpRemoteDataSource implements WfmRemoteDataSource {
   static const _tecnici = '/anagrafica/tecnici';
   static const _woTypes = '/anagrafica/wo-types'; // tipi OdL selezionabili
   static const _woFields = '/anagrafica/wo-fields'; // campi dinamici per tipo
+  static const _woTemplates =
+      '/anagrafica/wo-templates'; // tipo attività/ciclo/settore per tipo
   static const _lookups = '/anagrafica/lookups'; // lookup generico per kind
 
   @override
@@ -141,6 +144,15 @@ class HttpRemoteDataSource implements WfmRemoteDataSource {
   }
 
   @override
+  Future<void> reassignWorkOrder(String code, String technicianCid,
+      {String? note}) async {
+    await _dio.post('$_workOrders/$code/reassign', data: {
+      'technicianCID': technicianCid,
+      if (note != null && note.trim().isNotEmpty) 'note': note.trim(),
+    });
+  }
+
+  @override
   Future<List<NotificationAvviso>> getAvvisi({String? query}) async {
     final r = await _dio.get(_avvisi, queryParameters: {if (query != null) 'q': query});
     final list = (r.data['notifications'] as List? ?? r.data as List);
@@ -193,7 +205,8 @@ class HttpRemoteDataSource implements WfmRemoteDataSource {
       return Attachment(
         id: j['id']?.toString() ?? '',
         workOrderCode: workOrderCode,
-        type: AttachmentType.documento,
+        // Il tipo lo decide il backend (FOTO_PRIMA/FOTO_DOPO/FIRMA/DOCUMENTO).
+        type: AttachmentType.fromCode(j['type']?.toString()),
         filePath: fullUrl,
         fileName: j['fileName'] ?? '',
         mimeType: (j['mimeType'] ?? 'image/jpeg').toString(),
@@ -212,11 +225,18 @@ class HttpRemoteDataSource implements WfmRemoteDataSource {
   @override
   Future<Attachment> uploadAttachment(Attachment attachment) async {
     // -> inviaEsitoAllegato
+    // Si leggono i byte con XFile (non con dart:io): funziona su Android/iOS
+    // (percorso file) e sul web (blob del browser), dove MultipartFile.fromFile
+    // non è supportato e l'upload falliva sempre in silenzio.
+    final bytes = await XFile(attachment.filePath).readAsBytes();
     final form = FormData.fromMap({
       'workOrderCode': attachment.workOrderCode,
       'type': attachment.type.sapCode,
-      'file': await MultipartFile.fromFile(attachment.filePath,
-          filename: attachment.fileName),
+      'file': MultipartFile.fromBytes(
+        bytes,
+        filename: attachment.fileName,
+        contentType: DioMediaType.parse(attachment.mimeType),
+      ),
     });
     final r = await _dio.post('$_esiti/attachments', data: form);
     // Adotta l'id assegnato dal middleware così la copia locale e quella remota
@@ -265,11 +285,13 @@ class HttpRemoteDataSource implements WfmRemoteDataSource {
   }
 
   @override
-  Future<List<CodeLabel>> getPriorities({String? schema}) async {
+  Future<List<CodeLabel>> getPriorities({String? schema, String? type}) async {
     // Il backend restituisce [{code, description}] per lo schema (default WO
-    // per gli ordini): mappiamo `description` sull'etichetta.
+    // per gli ordini). `?type=SOST` sceglie lo schema del tipo (ZS per le
+    // sostituzioni); `?schema=` resta per chi lo conosce già.
     final r = await _dio.get(_priorities, queryParameters: {
       if (schema != null && schema.isNotEmpty) 'schema': schema,
+      if (type != null && type.isNotEmpty) 'type': type,
     });
     return (r.data as List).map((e) {
       final m = e as Map<String, dynamic>;
@@ -293,6 +315,16 @@ class HttpRemoteDataSource implements WfmRemoteDataSource {
     final r = await _dio.get(_woFields, queryParameters: {'type': woType});
     return (r.data as List)
         .map((e) => dynFieldSpecFromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  @override
+  Future<List<WorkOrderActivityTemplate>> getWorkOrderActivityTemplates({String? type}) async {
+    final r = await _dio.get(_woTemplates, queryParameters: {
+      if (type != null && type.isNotEmpty) 'type': type,
+    });
+    return (r.data as List)
+        .map((e) => workOrderActivityTemplateFromJson(e as Map<String, dynamic>))
         .toList();
   }
 

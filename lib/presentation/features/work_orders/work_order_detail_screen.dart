@@ -10,17 +10,23 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../../core/config/capabilities.dart';
 import '../../../core/constants/app_constants.dart';
+import '../../../core/error/failures.dart';
 import '../../../core/router/app_routes.dart';
 import '../../../core/services/geolocation_service.dart';
 import '../../../core/services/image_compression_service.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/utils/formatters.dart';
+import '../../../core/utils/note_ordine.dart';
 import '../../../core/widgets/widgets.dart';
 import '../../../domain/entities/entities.dart';
 import '../../providers/attachments_provider.dart';
 import '../../providers/capabilities_provider.dart';
+import '../../providers/creation_provider.dart';
+import '../../providers/notifications_provider.dart';
 import '../../providers/odl_extension_provider.dart';
 import '../../providers/work_orders_provider.dart';
+import '../../providers/map_provider.dart' show indirizzoInterventoOrdine;
+import '../../widgets/naviga_button.dart';
 import '../../widgets/sync_widgets.dart';
 import '../esito/esito_screen.dart';
 import 'widgets/lifecycle_action_bar.dart';
@@ -33,6 +39,31 @@ class WorkOrderDetailScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    // OdL disassegnato dal pianificatore: lo notifichiamo al tecnico e torniamo
+    // alla lista, invece di lasciare aperto un dettaglio non più suo.
+    ref.listen(workOrderDetailProvider(code), (prev, next) {
+      final err = next.hasError ? next.error : null;
+      // OdL sparito dal backend (non più in SAP): messaggio chiaro, lista
+      // rinfrescata (la voce fantasma sparisce) e ritorno alla lista.
+      if (err is NonTrovatoFailure) {
+        ref.invalidate(workOrdersProvider);
+        ref.invalidate(dashboardStatsProvider);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!context.mounted) return;
+          showSapToast(context, err.message, isError: true);
+          context.go(AppRoutes.workOrders);
+        });
+        return;
+      }
+      if (err is! RevocatoFailure) return;
+      ref.read(notificationsProvider.notifier).add(notifOdlRevocato(code));
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!context.mounted) return;
+        showSapToast(context, err.message, isError: true);
+        context.go(AppRoutes.workOrders);
+      });
+    });
+
     final async = ref.watch(workOrderDetailProvider(code));
     return async.when(
       loading: () => Scaffold(
@@ -45,9 +76,12 @@ class WorkOrderDetailScreen extends ConsumerWidget {
         appBar: AppBar(
           title: Text('OdL $code'),
         ),
-        body: WfmErrorState(
-            message: e.toString(),
-            onRetry: () => ref.invalidate(workOrderDetailProvider(code))),
+        body: e is RevocatoFailure
+            // Revocato: niente "riprova" (l'OdL non è più suo).
+            ? WfmErrorState(message: e.message)
+            : WfmErrorState(
+                message: e is Failure ? e.message : e.toString(),
+                onRetry: () => ref.invalidate(workOrderDetailProvider(code))),
       ),
       data: (order) => _DetailView(order: order),
     );
@@ -130,7 +164,7 @@ class _DetailViewState extends ConsumerState<_DetailView>
                 _DettaglioTab(order: order),
                 _OperazioniTab(order: order),
                 _ComponentiTab(order: order),
-                _AllegatiTab(code: order.externalCode),
+                _AllegatiTab(code: order.externalCode, isClosed: order.isClosed),
                 _ChiusuraTab(order: order),
               ],
             ),
@@ -181,6 +215,11 @@ class _DettaglioTab extends ConsumerWidget {
     ];
   }
 
+  /// Descrizione SAP dell'ordine, ripulita da "Dati specifici: …" (residuo
+  /// delle versioni precedenti nelle note degli OdL creati sul tablet).
+  String get _descrizioneSapPulita => notaPulita(
+      order.noteSap.trim().isEmpty ? order.notes : order.noteSap);
+
   /// "gg/mm/aaaa hh:mm" — o solo la data se manca l'ora, o '' se manca tutto.
   String _fmtDataOra(DateTime? d, String? ora) {
     if (d == null) return '';
@@ -196,34 +235,76 @@ class _DettaglioTab extends ConsumerWidget {
     final nuovo = await showDialog<String>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Nota del campo'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          maxLines: 5,
-          minLines: 3,
-          decoration: const InputDecoration(
-            hintText: 'Inserisci la nota del tecnico…',
-          ),
+        shape:
+            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 8),
+        contentPadding: const EdgeInsets.fromLTRB(20, 0, 20, 8),
+        title: Row(children: const [
+          Icon(Icons.edit_note_rounded, color: AppColors.primary),
+          SizedBox(width: 8),
+          Text('Nota del campo'),
+        ]),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Annotazione del tecnico su questo intervento. Non modifica la descrizione SAP.',
+              style: TextStyle(fontSize: 12.5, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: ctrl,
+              autofocus: true,
+              maxLines: 6,
+              minLines: 4,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: InputDecoration(
+                hintText: 'Es. Contatore in pozzetto allagato, cliente assente…',
+                filled: true,
+                fillColor: AppColors.backgroundPage,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: AppColors.border),
+                ),
+                suffixIcon: VoiceSuffixIcons(controller: ctrl),
+              ),
+            ),
+          ],
         ),
+        actionsPadding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
         actions: [
           TextButton(
               onPressed: () => Navigator.pop(ctx),
               child: const Text('Annulla')),
-          ElevatedButton(
+          ElevatedButton.icon(
               onPressed: () => Navigator.pop(ctx, ctrl.text.trim()),
-              child: const Text('Salva')),
+              icon: const Icon(Icons.check_rounded, size: 18),
+              label: const Text('Salva')),
         ],
       ),
     );
     ctrl.dispose();
     if (nuovo == null || nuovo == order.noteAggiunte.trim()) return;
     if (!context.mounted) return;
+    final aggiornato = order.copyWith(notes: nuovo, noteAggiunte: nuovo);
+
+    // OdL creato sul tablet e non ancora sincronizzato: il backend NON lo
+    // conosce (PATCH → 404). La nota si salva nell'outbox locale; partirà con
+    // l'OdL alla sincronizzazione.
+    final pending =
+        await ref.read(isPendingCreationProvider(order.externalCode).future);
+    if (!context.mounted) return;
+    if (pending) {
+      await ref.read(creationControllerProvider).addWorkOrder(aggiornato);
+      ref.invalidate(workOrderDetailProvider(order.externalCode));
+      if (context.mounted) showSapToast(context, 'Nota salvata sul tablet');
+      return;
+    }
+
     // `notes` = ciò che il PATCH invia al backend (→ nota del campo `a.note`);
     // `noteAggiunte` aggiorna subito la visualizzazione locale.
-    final res = await ref
-        .read(workOrderActionsProvider)
-        .save(order.copyWith(notes: nuovo, noteAggiunte: nuovo));
+    final res = await ref.read(workOrderActionsProvider).save(aggiornato);
     if (!context.mounted) return;
     res.when(
       success: (_) => showSapToast(context, 'Nota aggiornata'),
@@ -299,6 +380,11 @@ class _DettaglioTab extends ConsumerWidget {
                   ? '${order.tipoAttivitaCodice} - ${order.tipoAttivitaNome ?? order.subTam}'
                   : order.subTam,
               hideIfEmpty: true),
+          // Ciclo di lavoro (GRUPPO_CICLI): lo decide il backend dal tipo attività.
+          FieldRow(
+              label: 'Ciclo di lavoro',
+              value: order.gruppoCicli ?? '',
+              hideIfEmpty: true),
           FieldRow(label: 'Stato ODL', value: order.status.label),
           // Stringa stato reale SAP (CO_STTXT): distingue RIL. (aperto) da
           // TECO (chiuso tecnicamente), info che lo status applicativo perde.
@@ -338,6 +424,11 @@ class _DettaglioTab extends ConsumerWidget {
                           .push(AppRoutes.cambioCidPath(order.externalCode)),
                     )
                   : null),
+          // OdL creato qui e non ancora inviato: il collega a cui passerà.
+          FieldRow(
+              label: "Da passare a (all'invio)",
+              value: order.assegnaA ?? '',
+              hideIfEmpty: true),
           FieldRow(
               label: 'Centro Pianificazione',
               value: order.centroPianificazione,
@@ -369,22 +460,39 @@ class _DettaglioTab extends ConsumerWidget {
         ..._section(
           enabled: caps.has(Cap.odlCliente),
           reason: reason,
-          hasData: !order.customer.isEmpty || (order.referente ?? '').isNotEmpty,
+          hasData: !order.customer.isEmpty ||
+              (order.referente ?? '').isNotEmpty ||
+              (order.customer.codBp ?? '').isNotEmpty,
           title: 'CLIENTE',
           child: FormGrid(children: [
+            // Cliente = il cliente di SAP (CLIENTE.NOME/COGNOME). Il nome
+            // che SAP ha sull'indirizzo (es. un condominio) non è il cliente:
+            // sta sotto INDIRIZZI come "Nome edificio".
             FieldRow(
-                label: 'Codice Cliente',
-                value: order.codiceCliente ?? order.customer.codCli ?? '',
-                hideIfEmpty: true),
-            FieldRow(
-                label: 'Ragione Sociale',
+                label: order.customer.isBusiness ? 'Ragione Sociale' : 'Cliente',
                 value: order.customer.isBusiness
                     ? (order.customer.ragioneSociale ?? '')
                     : order.customer.fullName,
                 hideIfEmpty: true),
+            // Il referente c'è solo se è un'altra persona: il backend ripete
+            // il nominativo nel campo `referente`.
             FieldRow(
                 label: 'Referente',
-                value: order.referente ?? '',
+                value: referenteDistinto(order.referente,
+                        order.customer.isBusiness
+                            ? (order.customer.ragioneSociale ?? '')
+                            : order.customer.fullName) ??
+                    '',
+                hideIfEmpty: true),
+            // Il numero cliente di SAP è il Business Partner: è un solo dato,
+            // si mostra una volta (come Cod. BP), non anche come "Codice
+            // Cliente".
+            FieldRow(
+                label: 'Codice Cliente',
+                value: (order.codiceCliente ?? order.customer.codCli ?? '') ==
+                        (order.customer.codBp ?? '')
+                    ? ''
+                    : (order.codiceCliente ?? order.customer.codCli ?? ''),
                 hideIfEmpty: true),
             FieldRow(
                 label: 'Telefono',
@@ -412,8 +520,22 @@ class _DettaglioTab extends ConsumerWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // Il nome che SAP ha sull'indirizzo di lavoro (ADRC-NAME1/NAME2):
+              // il nome del battimento/condominio.
+              if ((order.nomeIndirizzo ?? '').isNotEmpty) ...[
+                FieldRow(
+                    label: 'Nome edificio',
+                    value: order.nomeIndirizzo!,
+                    fullWidth: true),
+                const SizedBox(height: 8),
+              ],
+              // L'indirizzo "principale" del backend è quello di INTERVENTO
+              // (toMobile.ts: address = indirizzoLavoro ?? indirizzo): non è
+              // un indirizzo del cliente. Oggetto e intervento si mostrano
+              // solo se sono diversi da lui; un OdL creato sul tablet ha un
+              // solo indirizzo, che il backend ripete in tutti e tre i campi.
               FieldRow(
-                label: 'Indirizzo Cliente',
+                label: 'Indirizzo intervento',
                 value: order.address.full,
                 fullWidth: true,
                 trailing: order.address.hasCoordinates
@@ -423,17 +545,19 @@ class _DettaglioTab extends ConsumerWidget {
                         onPressed: () => context.go(AppRoutes.map))
                     : null,
               ),
-              if (order.indirizzoOggetto != null) ...[
+              if (order.indirizzoOggetto != null &&
+                  !stessoIndirizzo(order.indirizzoOggetto!, order.address)) ...[
                 const SizedBox(height: 8),
                 FieldRow(
-                    label: 'Indirizzo Oggetto',
+                    label: 'Indirizzo oggetto',
                     value: order.indirizzoOggetto!.full,
                     fullWidth: true),
               ],
-              if (order.indirizzoIntervento != null) ...[
+              if (order.indirizzoIntervento != null &&
+                  !stessoIndirizzo(order.indirizzoIntervento!, order.address)) ...[
                 const SizedBox(height: 8),
                 FieldRow(
-                  label: 'Indirizzo Intervento',
+                  label: 'Altro indirizzo di intervento',
                   value: order.indirizzoIntervento!.full,
                   fullWidth: true,
                   trailing: order.indirizzoIntervento!.hasCoordinates
@@ -452,6 +576,10 @@ class _DettaglioTab extends ConsumerWidget {
                         .gpsCoordinates,
                     hideIfEmpty: true),
               ]),
+              // Percorso verso lo stesso indirizzo su cui la mappa posiziona
+              // l'OdL (intervento, poi cliente, poi oggetto).
+              const SizedBox(height: 4),
+              NavigaButton(indirizzo: indirizzoInterventoOrdine(order)),
             ],
           ),
         ),
@@ -646,12 +774,14 @@ class _DettaglioTab extends ConsumerWidget {
         ),
 
         // ── 7. PIANIFICAZIONE ──────────────────────────────────────
-        // Data Esecuzione arriva da SAP (CO_GSTRP): la sezione è alimentata.
+        // Data Esecuzione = DATA_FINE di SAP (AFKO-GLTRP), che il backend manda
+        // come `dataEsec`: la sezione è alimentata.
         ..._section(
           enabled: caps.has(Cap.odlPianificazione),
           reason: reason,
           hasData: (order.ultimoCicloManutenzione ?? '').isNotEmpty ||
               (order.postManut ?? '').isNotEmpty ||
+              order.dataInizio != null ||
               order.dataEsec != null ||
               order.dataFine != null,
           title: 'PIANIFICAZIONE',
@@ -665,15 +795,22 @@ class _DettaglioTab extends ConsumerWidget {
                 label: 'Post. Manut.',
                 value: order.postManut ?? '',
                 hideIfEmpty: true),
+            // Inizio cardine: il giorno dell'assegnazione (OdL nati sul
+            // tablet o sul cruscotto) o la data di inizio SAP.
+            FieldRow(
+                label: 'Data Inizio',
+                value: order.dataInizio == null ? '' : Fmt.date(order.dataInizio),
+                hideIfEmpty: true),
             FieldRow(
                 label: 'Data Esecuzione',
-                value: Fmt.date(order.dataEsec),
+                value: order.dataEsec == null ? '' : Fmt.date(order.dataEsec),
                 hideIfEmpty: true),
-            // Data fine prevista SAP (CO_GLTRP): valorizzata al 100% e diversa
-            // dall'inizio in ~1 ordine su 3.
+            // Fine prevista = fine schedulata SAP (testata.date.fineSchedulato):
+            // il backend la manda quando l'estrazione SAP la seleziona, fino ad
+            // allora il campo non compare.
             FieldRow(
                 label: 'Data Fine Prevista',
-                value: Fmt.date(order.dataFine),
+                value: order.dataFine == null ? '' : Fmt.date(order.dataFine),
                 hideIfEmpty: true),
           ]),
         ),
@@ -686,9 +823,14 @@ class _DettaglioTab extends ConsumerWidget {
         // Nota SAP: descrizione dell'ordine, SOLA LETTURA (arriva da SAP).
         FieldRow(
             label: 'Descrizione ordine (SAP)',
-            value: order.noteSap.trim().isEmpty
-                ? (order.notes.trim().isEmpty ? '—' : order.notes)
-                : order.noteSap,
+            // notaPulita: toglie "Dati specifici: …" scritto dalle versioni
+            // precedenti nelle note degli OdL creati sul tablet.
+            value: _descrizioneSapPulita.isEmpty ? '—' : _descrizioneSapPulita,
+            // Sola lettura: solo l'altoparlante ha senso, niente microfono.
+            trailing: _descrizioneSapPulita.isEmpty
+                ? null
+                : VoiceSuffixIcons(
+                    text: _descrizioneSapPulita, enableSpeech: false),
             fullWidth: true,
             maxLines: 4),
         const SizedBox(height: 8),
@@ -704,16 +846,18 @@ class _DettaglioTab extends ConsumerWidget {
                       : order.noteAggiunte,
                   fullWidth: true,
                   maxLines: 4),
-              Align(
-                alignment: Alignment.centerRight,
-                child: TextButton.icon(
-                  onPressed: () => _editNota(context, ref),
-                  icon: const Icon(Icons.edit_outlined, size: 16),
-                  label: Text(order.noteAggiunte.trim().isEmpty
-                      ? 'Aggiungi nota'
-                      : 'Modifica nota'),
+              // OdL chiuso = sola lettura: la nota non si modifica più.
+              if (!order.isClosed)
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton.icon(
+                    onPressed: () => _editNota(context, ref),
+                    icon: const Icon(Icons.edit_outlined, size: 16),
+                    label: Text(order.noteAggiunte.trim().isEmpty
+                        ? 'Aggiungi nota'
+                        : 'Modifica nota'),
+                  ),
                 ),
-              ),
             ],
           )
         else
@@ -750,8 +894,11 @@ class _DettaglioTab extends ConsumerWidget {
             _QuickActionChip(
                 icon: Icons.history_rounded,
                 label: 'Storico',
-                enabled: caps.has(Cap.odlAppuntamento),
-                disabledReason: reason,
+                // Funzione non ancora implementata: resta visibile ma spenta.
+                // Per riattivarla basta togliere `enabled: false`.
+                enabled: false,
+                disabledReason:
+                    'Storico appuntamenti: funzione non ancora disponibile',
                 onTap: () => context.push(
                     AppRoutes.storicoAppuntamentiPath(order.externalCode))),
             _QuickActionChip(
@@ -762,17 +909,23 @@ class _DettaglioTab extends ConsumerWidget {
             _QuickActionChip(
                 icon: Icons.pause_circle_outline,
                 label: 'Sospensioni',
+                // OdL chiuso: non si sospende più.
+                enabled: !order.isClosed,
+                disabledReason: 'OdL chiuso',
                 onTap: () => context
                     .push(AppRoutes.sospensioniPath(order.externalCode))),
             _QuickActionChip(
                 icon: Icons.access_time_outlined,
                 label: 'Genera ore',
+                // OdL chiuso: le ore non si registrano più.
+                enabled: !order.isClosed,
+                disabledReason: 'OdL chiuso',
                 onTap: () =>
                     context.push(AppRoutes.genOrePath(order.externalCode))),
             _QuickActionChip(
                 icon: Icons.inventory_2_outlined,
                 label: 'Componente',
-                enabled: caps.has(Cap.odlMateriali),
+                enabled: caps.has(Cap.odlMateriali) && !order.isClosed,
                 disabledReason: reason,
                 onTap: () => context
                     .push(AppRoutes.addComponentePath(order.externalCode))),
@@ -1010,6 +1163,8 @@ class _OperazioniTabState extends ConsumerState<_OperazioniTab> {
                 isAutomezzo: auto,
                 computedHours: auto ? _lavoroSum() : null,
                 hoursCtrl: auto ? null : _hoursCtrl(op),
+                // OdL chiuso = sola lettura: ore e cancellazione bloccate.
+                enabled: !widget.order.isClosed,
                 onHoursChanged: (v) => _setHoursAt(i, v),
                 onDelete: () => _remove(op),
                 onToggleDone: () => _toggleDone(op),
@@ -1029,6 +1184,7 @@ class _OperazioneRow extends StatelessWidget {
   final ValueChanged<String>? onHoursChanged;
   final VoidCallback onDelete;
   final VoidCallback onToggleDone;
+  final bool enabled;
   const _OperazioneRow({
     required this.op,
     this.isAutomezzo = false,
@@ -1037,6 +1193,7 @@ class _OperazioneRow extends StatelessWidget {
     this.onHoursChanged,
     required this.onDelete,
     required this.onToggleDone,
+    this.enabled = true,
   });
 
   @override
@@ -1124,6 +1281,7 @@ class _OperazioneRow extends StatelessWidget {
                 width: 150,
                 child: TextField(
                   controller: hoursCtrl,
+                  enabled: enabled,
                   keyboardType:
                       const TextInputType.numberWithOptions(decimal: true),
                   decoration: const InputDecoration(
@@ -1135,13 +1293,14 @@ class _OperazioneRow extends StatelessWidget {
                 ),
               ),
             const SizedBox(width: 4),
-            IconButton(
-              visualDensity: VisualDensity.compact,
-              tooltip: 'Elimina',
-              icon: const Icon(Icons.delete_outline,
-                  size: 18, color: AppColors.accentRed),
-              onPressed: onDelete,
-            ),
+            if (enabled)
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                tooltip: 'Elimina',
+                icon: const Icon(Icons.delete_outline,
+                    size: 18, color: AppColors.accentRed),
+                onPressed: onDelete,
+              ),
           ]),
         ],
       ),
@@ -1165,13 +1324,17 @@ class _ComponentiTab extends ConsumerWidget {
     // sul tablet finché non partono con l'esito.
     final locali = ref.watch(odlExtensionProvider(order.externalCode)).materiali;
     final materiali = [...order.plannedMaterials, ...locali];
+    // Solo le righe prese sul tablet si possono togliere: quelle pianificate
+    // da SAP no.
+    bool eLocale(int i) => i >= order.plannedMaterials.length;
 
     final addButton = Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
       child: SizedBox(
         width: double.infinity,
         child: ElevatedButton.icon(
-          onPressed: materialiDisponibili
+          // OdL chiuso = sola lettura: niente aggiunta materiali dopo l'esito.
+          onPressed: (materialiDisponibili && !order.isClosed)
               ? () => context.push(AppRoutes.addComponentePath(order.externalCode))
               : null,
           icon: const Icon(Icons.add),
@@ -1229,6 +1392,32 @@ class _ComponentiTab extends ConsumerWidget {
                     child: Text(m.description.isEmpty ? m.materialCode : m.description,
                         style: AppTextStyles.headingSmall)),
                 Text(m.materialCode, style: AppTextStyles.bodySmall),
+                if (eLocale(i) && !order.isClosed)
+                  IconButton(
+                    tooltip: 'Elimina materiale',
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.delete_outline,
+                        color: AppColors.accentRed),
+                    onPressed: () async {
+                      final ok = await showWfmConfirmDialog(
+                        context: context,
+                        title: 'Eliminare il materiale?',
+                        message:
+                            '${m.description.isEmpty ? m.materialCode : m.description} '
+                            '(${Fmt.quantity(m.usedQuantity)} ${m.unitOfMeasure}) '
+                            "sarà tolto dall'OdL e la quantità tornerà nel magazzino "
+                            '${Fmt.orDash(m.warehouseCode)}.',
+                        confirmLabel: 'Elimina',
+                        tone: WfmDialogTone.danger,
+                      );
+                      if (ok == true) {
+                        await ref
+                            .read(odlExtensionProvider(order.externalCode)
+                                .notifier)
+                            .removeRiga(m.materialCode, m.warehouseCode);
+                      }
+                    },
+                  ),
               ]),
               const SizedBox(height: 8),
               Row(children: [
@@ -1264,7 +1453,8 @@ class _ComponentiTab extends ConsumerWidget {
 
 class _AllegatiTab extends ConsumerStatefulWidget {
   final String code;
-  const _AllegatiTab({required this.code});
+  final bool isClosed;
+  const _AllegatiTab({required this.code, this.isClosed = false});
 
   @override
   ConsumerState<_AllegatiTab> createState() => _AllegatiTabState();
@@ -1275,6 +1465,8 @@ class _AllegatiTabState extends ConsumerState<_AllegatiTab> {
   bool _uploading = false;
 
   String get _code => widget.code;
+  // OdL chiuso = sola lettura: si vedono gli allegati ma non se ne caricano.
+  bool get _canWrite => !widget.isClosed;
 
   // ─── Acquisizione foto (fotocamera o galleria) ────────────────────────────
 
@@ -1298,7 +1490,7 @@ class _AllegatiTabState extends ConsumerState<_AllegatiTab> {
       final compressed =
           await ImageCompressionService.instance.compress(xFile.path);
       final path = compressed?.path ?? xFile.path;
-      final size = compressed?.sizeBytes ?? await File(xFile.path).length();
+      final size = compressed?.sizeBytes ?? await xFile.length();
       final geo = await geoFuture;
 
       final attachment = Attachment(
@@ -1315,6 +1507,7 @@ class _AllegatiTabState extends ConsumerState<_AllegatiTab> {
       );
       await ref.read(attachmentActionsProvider).add(attachment);
     } catch (e) {
+      debugPrint('[allegati] acquisizione foto: $e');
       if (mounted) showSapToast(context, 'Errore acquisizione foto', isError: true);
     } finally {
       if (mounted) setState(() => _uploading = false);
@@ -1380,9 +1573,9 @@ class _AllegatiTabState extends ConsumerState<_AllegatiTab> {
         final compressed =
             await ImageCompressionService.instance.compress(xFile.path);
         path = compressed?.path ?? xFile.path;
-        size = compressed?.sizeBytes ?? await File(xFile.path).length();
+        size = compressed?.sizeBytes ?? await xFile.length();
       } else {
-        size = await File(xFile.path).length();
+        size = await xFile.length();
       }
       final newAttachment = Attachment(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
@@ -1498,7 +1691,8 @@ class _AllegatiTabState extends ConsumerState<_AllegatiTab> {
   // ─── Widget immagine (locale o remota) ───────────────────────────────────
 
   Widget _imageWidget(Attachment a) {
-    if (a.filePath.startsWith('http')) {
+    // http = file sul backend; blob: = file locale nel browser (web).
+    if (a.filePath.startsWith('http') || a.filePath.startsWith('blob:')) {
       return Image.network(
         a.filePath,
         fit: BoxFit.cover,
@@ -1535,7 +1729,21 @@ class _AllegatiTabState extends ConsumerState<_AllegatiTab> {
 
     return Column(
       children: [
-        // Barra azioni caricamento
+        // OdL chiuso: nessun caricamento, solo la lista in sola lettura.
+        if (!_canWrite)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+            child: Row(children: const [
+              Icon(Icons.lock_outline, size: 16, color: AppColors.textSecondary),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text('OdL chiuso: allegati in sola lettura.',
+                    style: TextStyle(fontSize: 12.5, color: AppColors.textSecondary)),
+              ),
+            ]),
+          ),
+        // Barra azioni caricamento (solo se l'OdL è ancora modificabile)
+        if (_canWrite)
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
           child: Column(

@@ -1,11 +1,13 @@
 // Aggiungi componenti all'OdL.
 //
-// UX semplificata :
-//   • Multi-select : seleziona piu materiali con un solo tap
-//   • Magazzino auto-recuperato dal materiale (defaultWarehouseCode)
-//   • Quantita modificabile per ogni materiale selezionato
-//   • Calcolo automatico dei pezzi disponibili rimanenti
-//   • Nessun campo "Operazione" (rimosso — non era necessario)
+// Selezione dei materiali e del magazzino:
+//   • Elenco a tendina con caselle da spuntare: più materiali in una volta
+//   • Per ogni materiale spuntato: i magazzini in cui è disponibile, con la
+//     quantità rimanente di ciascuno; il tecnico sceglie da quale prelevare
+//   • La giacenza è separata per magazzino: prelevare da un magazzino scala
+//     solo quello (StockImpegnatoStore), mai gli altri
+//   • Giacenze: `stockPerMagazzino` del backend se c'è; altrimenti lo stock
+//     unico nel magazzino predefinito del materiale (anagrafiche.json)
 //   • Pulsante "Aggiungi N all'OdL" che inserisce tutto in una volta
 
 import 'package:flutter/material.dart';
@@ -14,6 +16,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_constants.dart';
 import '../../../../core/router/app_routes.dart';
+import '../../../../core/services/stock_impegnato_store.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/widgets.dart';
 import '../widgets/odl_actions_menu.dart';
@@ -31,19 +34,42 @@ class AddComponenteScreen extends ConsumerStatefulWidget {
       _AddComponenteScreenState();
 }
 
-/// Riga del carrello : 1 materiale con la sua quantita richiesta.
+/// Riga del carrello : 1 materiale, il magazzino scelto e la quantita richiesta.
 class _CartLine {
   final MaterialItem material;
+  String magazzino;
   num quantita;
   final TextEditingController qtaCtrl;
   _CartLine({required this.material})
-      : quantita = 1,
+      : magazzino = _magazzinoIniziale(material),
+        quantita = 1,
         qtaCtrl = TextEditingController(text: '1');
 
-  num get disponibileResiduo =>
-      (material.stockDisponibile - quantita).clamp(0, double.infinity);
+  /// Giacenza residua di un magazzino per questo materiale (backend meno i
+  /// prelievi già fatti da QUEL magazzino).
+  num residuoDi(String codice) => StockImpegnatoStore.residuo(
+      material.giacenze[codice] ?? 0, material.materialCode, codice);
 
-  bool get isOverstock => quantita > material.stockDisponibile;
+  /// Residuo del magazzino scelto, prima di questo prelievo.
+  num get disponibile => residuoDi(magazzino);
+
+  /// Quanto resterebbe nel magazzino scelto dopo il prelievo.
+  num get disponibileResiduo =>
+      (disponibile - quantita).clamp(0, double.infinity);
+
+  bool get isOverstock => quantita > disponibile;
+
+  /// Magazzino da proporre: quello predefinito se ha ancora materiale,
+  /// altrimenti il primo che ne ha.
+  static String _magazzinoIniziale(MaterialItem m) {
+    num r(String c) => StockImpegnatoStore.residuo(
+        m.giacenze[c] ?? 0, m.materialCode, c);
+    if (r(m.defaultWarehouseCode) > 0) return m.defaultWarehouseCode;
+    for (final c in m.giacenze.keys) {
+      if (r(c) > 0) return c;
+    }
+    return m.defaultWarehouseCode;
+  }
 
   void dispose() {
     qtaCtrl.dispose();
@@ -77,12 +103,25 @@ class _AddComponenteScreenState extends ConsumerState<AddComponenteScreen> {
     });
   }
 
+  void _setMagazzino(String code, String magazzino) =>
+      setState(() => _cart[code]!.magazzino = magazzino);
+
   void _setQta(String code, String v) {
     final n = num.tryParse(v.replaceAll(',', '.')) ?? 0;
     setState(() => _cart[code]!.quantita = n);
   }
 
   String _fmtQta(num n) => n % 1 == 0 ? n.toInt().toString() : n.toString();
+
+  /// Nome del magazzino dall'anagrafica (`/anagrafica/warehouses`); il codice
+  /// finché non è caricata.
+  String _nomeMagazzino(String codice) {
+    final lista = ref.read(warehousesProvider).valueOrNull ?? const [];
+    for (final w in lista) {
+      if (w.code == codice) return w.name.isEmpty ? codice : w.name;
+    }
+    return codice;
+  }
 
   void _incrementQta(String code) {
     final line = _cart[code];
@@ -115,8 +154,7 @@ class _AddComponenteScreenState extends ConsumerState<AddComponenteScreen> {
       showSapToast(context, 'Seleziona almeno un materiale', isError: true);
       return;
     }
-    final invalid =
-        _cart.values.where((l) => l.quantita <= 0).toList();
+    final invalid = _cart.values.where((l) => l.quantita <= 0).toList();
     if (invalid.isNotEmpty) {
       showSapToast(context, 'Quantita non valida per alcuni materiali',
           isError: true);
@@ -128,14 +166,15 @@ class _AddComponenteScreenState extends ConsumerState<AddComponenteScreen> {
     if (overstock.isNotEmpty) {
       final elenco = overstock
           .map((l) =>
-              '• ${l.material.description}: richiesti ${_fmtQta(l.quantita)}, '
-              'disponibili ${_fmtQta(l.material.stockDisponibile)}')
+              '• ${l.material.description} (${_nomeMagazzino(l.magazzino)}): '
+              'richiesti ${_fmtQta(l.quantita)}, '
+              'disponibili ${_fmtQta(l.disponibile)}')
           .join('\n');
       await showWfmInfoDialog(
         context: context,
         title: 'Stock insufficiente',
-        message: 'Non è possibile impegnare più di quanto disponibile a '
-            'magazzino:\n\n$elenco',
+        message: 'Non è possibile prelevare più di quanto disponibile nel '
+            'magazzino scelto:\n\n$elenco',
         confirmLabel: 'Ho capito',
         tone: WfmDialogTone.danger,
         icon: Icons.block_rounded,
@@ -155,13 +194,17 @@ class _AddComponenteScreenState extends ConsumerState<AddComponenteScreen> {
               plannedQuantity: l.quantita,
               usedQuantity: l.quantita,
               unitOfMeasure: l.material.unitOfMeasure,
-              warehouseCode: l.material.defaultWarehouseCode,
+              warehouseCode: l.magazzino,
             ))
         .toList();
 
-    final notifier =
-        ref.read(odlExtensionProvider(widget.code).notifier);
+    final notifier = ref.read(odlExtensionProvider(widget.code).notifier);
     await notifier.addMateriali(nuovi);
+    // Il prelievo scala SOLO il magazzino scelto per ogni materiale.
+    for (final l in _cart.values) {
+      await StockImpegnatoStore.impegna(
+          l.material.materialCode, l.magazzino, l.quantita);
+    }
 
     if (!mounted) return;
     setState(() => _saving = false);
@@ -174,10 +217,15 @@ class _AddComponenteScreenState extends ConsumerState<AddComponenteScreen> {
   Widget build(BuildContext context) {
     final orderAsync = ref.watch(workOrderDetailProvider(widget.code));
     final materials = ref.watch(materialSearchProvider(_query));
+    // I nomi dei magazzini (anagrafica): si osserva perché la schermata si
+    // ridisegni quando la lista arriva.
+    ref.watch(warehousesProvider);
     return Scaffold(
       appBar: AppBar(
         title: const Text('Aggiungi componenti'),
-        actions: [OdlActionsMenu(code: widget.code, scope: OdlMenuScope.addComponente)],
+        actions: [
+          OdlActionsMenu(code: widget.code, scope: OdlMenuScope.addComponente)
+        ],
       ),
       body: orderAsync.when(
         loading: () => const WfmLoading(),
@@ -207,30 +255,54 @@ class _AddComponenteScreenState extends ConsumerState<AddComponenteScreen> {
               ]),
             ),
             const Divider(height: 1),
-            // Catalogo materiali (checkbox multi-select)
+            // Elenco a tendina dei materiali, con caselle da spuntare. I
+            // materiali spuntati compaiono sotto, ciascuno con i suoi magazzini.
             Expanded(
               child: materials.when(
-                loading: () =>
-                    const Center(child: CircularProgressIndicator()),
+                loading: () => const Center(child: CircularProgressIndicator()),
                 error: (e, _) => Center(child: Text('Errore: $e')),
                 data: (list) => list.isEmpty
                     ? const EmptyState(
                         title: 'Nessun materiale',
-                        subtitle:
-                            'Affina la ricerca o scansiona un barcode.',
+                        subtitle: 'Affina la ricerca o scansiona un barcode.',
                         icon: Icons.inventory_2_outlined,
                       )
-                    : ListView.separated(
+                    : SingleChildScrollView(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 12, vertical: 8),
-                        itemCount: list.length,
-                        separatorBuilder: (_, __) =>
-                            const SizedBox(height: 6),
-                        itemBuilder: (_, i) =>
-                            _MaterialeRow(
-                          material: list[i],
-                          cartLine: _cart[list[i].materialCode],
-                          onToggle: () => _toggle(list[i]),
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: AppColors.surface,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: AppColors.borderLight),
+                          ),
+                          child: Theme(
+                            data: Theme.of(context)
+                                .copyWith(dividerColor: Colors.transparent),
+                            child: ExpansionTile(
+                              key: const PageStorageKey('tendina-materiali'),
+                              initiallyExpanded: true,
+                              leading: const Icon(Icons.inventory_2_outlined,
+                                  color: AppColors.primary),
+                              title: Text('Materiali disponibili',
+                                  style: AppTextStyles.headingSmall),
+                              subtitle: Text(
+                                  _cart.isEmpty
+                                      ? '${list.length} materiali'
+                                      : '${_cart.length} selezionati su ${list.length}',
+                                  style: AppTextStyles.bodySmall),
+                              childrenPadding: const EdgeInsets.fromLTRB(
+                                  8, 0, 8, 8),
+                              children: [
+                                for (final m in list)
+                                  _MaterialeRow(
+                                    material: m,
+                                    cartLine: _cart[m.materialCode],
+                                    onToggle: () => _toggle(m),
+                                  ),
+                              ],
+                            ),
+                          ),
                         ),
                       ),
               ),
@@ -244,72 +316,104 @@ class _AddComponenteScreenState extends ConsumerState<AddComponenteScreen> {
   }
 
   Widget _cartEditor() {
-    return Material(
-      elevation: 6,
-      color: AppColors.backgroundPage,
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(
-            12, 12, 12, MediaQuery.of(context).viewInsets.bottom + 12),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(children: [
-              const Icon(Icons.shopping_cart_outlined,
-                  color: AppColors.primary),
-              const SizedBox(width: 8),
-              Text(
-                  '${_cart.length} '
-                  '${_cart.length == 1 ? "materiale selezionato" : "materiali selezionati"}',
-                  style: AppTextStyles.headingSmall
-                      .copyWith(color: AppColors.primary)),
-            ]),
-            const SizedBox(height: 8),
-            // Lista delle righe carrello
-            ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 320),
-              child: ListView(
-                shrinkWrap: true,
-                children: [
-                  for (final line in _cart.values)
-                    _CartLineRow(
-                      line: line,
-                      onSetQta: (v) =>
-                          _setQta(line.material.materialCode, v),
-                      onRemove: () => _toggle(line.material),
-                      onIncrement: () =>
-                          _incrementQta(line.material.materialCode),
-                      onDecrement: () =>
-                          _decrementQta(line.material.materialCode),
-                    ),
-                ],
+    return ClipRRect(
+      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      child: Material(
+        elevation: 10,
+        color: AppColors.backgroundPage,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+              14, 10, 14, MediaQuery.of(context).viewInsets.bottom + 14),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Maniglia visiva: richiama i pannelli a comparsa dell'app.
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 10),
+                  decoration: BoxDecoration(
+                      color: AppColors.border,
+                      borderRadius: BorderRadius.circular(2)),
+                ),
               ),
-            ),
-            const SizedBox(height: 10),
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _saving ? null : _confirm,
-                icon: _saving
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: Colors.white))
-                    : const Icon(Icons.check_circle_outline),
-                label: Text(_saving
-                    ? 'Invio…'
-                    : 'Aggiungi ${_cart.length} all\'OdL'),
+              Row(children: [
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                      color: AppColors.primarySurface,
+                      borderRadius: BorderRadius.circular(20)),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    const Icon(Icons.shopping_cart_outlined,
+                        size: 16, color: AppColors.primary),
+                    const SizedBox(width: 6),
+                    Text('${_cart.length}',
+                        style: AppTextStyles.labelSmall.copyWith(
+                            color: AppColors.primary,
+                            fontWeight: FontWeight.w800)),
+                  ]),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                      _cart.length == 1
+                          ? 'materiale selezionato'
+                          : 'materiali selezionati',
+                      style: AppTextStyles.headingSmall
+                          .copyWith(color: AppColors.primary)),
+                ),
+              ]),
+              const SizedBox(height: 10),
+              // Lista delle righe carrello
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxHeight: 420),
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    for (final line in _cart.values)
+                      _CartLineRow(
+                        line: line,
+                        nomeMagazzino: _nomeMagazzino,
+                        onMagazzino: (c) =>
+                            _setMagazzino(line.material.materialCode, c),
+                        onSetQta: (v) => _setQta(line.material.materialCode, v),
+                        onRemove: () => _toggle(line.material),
+                        onIncrement: () =>
+                            _incrementQta(line.material.materialCode),
+                        onDecrement: () =>
+                            _decrementQta(line.material.materialCode),
+                      ),
+                  ],
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: 10),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _saving ? null : _confirm,
+                  icon: _saving
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                              strokeWidth: 2, color: Colors.white))
+                      : const Icon(Icons.check_circle_outline),
+                  label: Text(
+                      _saving ? 'Invio…' : 'Aggiungi ${_cart.length} all\'OdL'),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-/// Riga del catalogo : checkbox + descrizione + stock disponibile + barcode.
+/// Riga dell'elenco : casella da spuntare + descrizione + giacenza + barcode.
 class _MaterialeRow extends StatelessWidget {
   final MaterialItem material;
   final _CartLine? cartLine;
@@ -324,31 +428,37 @@ class _MaterialeRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final selected = cartLine != null;
-    final residuo = cartLine?.disponibileResiduo ?? material.stockDisponibile;
-    final overstock = cartLine?.isOverstock == true;
+    // Giacenza totale rimasta (somma dei magazzini, al netto dei prelievi).
+    num totale = 0;
+    for (final e in material.giacenze.entries) {
+      totale += StockImpegnatoStore.residuo(
+          e.value, material.materialCode, e.key);
+    }
+    // Meno quanto è già nel carrello per questo materiale.
+    totale -= cartLine?.quantita ?? 0;
+    if (totale < 0) totale = 0;
+    final colore = totale <= 0
+        ? AppColors.accentRed
+        : (totale < 5 ? AppColors.accentOrange : AppColors.accentGreen);
     return InkWell(
       onTap: onToggle,
       borderRadius: BorderRadius.circular(10),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        margin: const EdgeInsets.only(top: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
         decoration: BoxDecoration(
           color: selected ? AppColors.primarySurface : AppColors.surface,
           borderRadius: BorderRadius.circular(10),
           border: Border.all(
-              color: selected
-                  ? AppColors.primary
-                  : AppColors.borderLight,
+              color: selected ? AppColors.primary : AppColors.borderLight,
               width: selected ? 1.5 : 1),
         ),
         child: Row(children: [
-          Icon(
-              selected
-                  ? Icons.check_circle
-                  : Icons.radio_button_unchecked,
-              color: selected
-                  ? AppColors.accentGreen
-                  : AppColors.textHint),
-          const SizedBox(width: 10),
+          Checkbox(
+            value: selected,
+            onChanged: (_) => onToggle(),
+            activeColor: AppColors.primary,
+          ),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -358,61 +468,44 @@ class _MaterialeRow extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: AppTextStyles.headingSmall),
                 const SizedBox(height: 2),
-                Text(
-                    '${material.materialCode} · ${material.unitOfMeasure}',
+                Text('${material.materialCode} · ${material.unitOfMeasure}',
                     style: AppTextStyles.bodySmall),
               ],
             ),
           ),
-          // Badge stock disponibile (verde / arancio / rosso)
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
             decoration: BoxDecoration(
-              color: overstock
-                  ? AppColors.accentRed.withValues(alpha: 0.14)
-                  : (residuo < 5
-                      ? AppColors.accentOrange.withValues(alpha: 0.14)
-                      : AppColors.accentGreen.withValues(alpha: 0.14)),
+              color: colore.withValues(alpha: 0.14),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Icon(
-                  overstock
-                      ? Icons.warning_amber_rounded
-                      : Icons.inventory_2_outlined,
-                  size: 12,
-                  color: overstock
-                      ? AppColors.accentRed
-                      : (residuo < 5
-                          ? AppColors.accentOrange
-                          : AppColors.accentGreen)),
+              Icon(Icons.inventory_2_outlined, size: 12, color: colore),
               const SizedBox(width: 4),
-              Text(
-                  '${residuo.toStringAsFixed(0)} ${material.unitOfMeasure}',
+              Text('${totale.toStringAsFixed(0)} ${material.unitOfMeasure}',
                   style: TextStyle(
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
-                      color: overstock
-                          ? AppColors.accentRed
-                          : (residuo < 5
-                              ? AppColors.accentOrange
-                              : AppColors.accentGreen))),
+                      color: colore)),
             ]),
           ),
           if (material.barcode != null && material.barcode!.isNotEmpty) ...[
             const SizedBox(width: 6),
             const Icon(Icons.qr_code, size: 16, color: AppColors.primary),
           ],
+          const SizedBox(width: 8),
         ]),
       ),
     );
   }
 }
 
-/// Riga del carrello : material + stepper quantita (−/+) + stock residuo.
+/// Riga del carrello : materiale, magazzini in cui è disponibile (con la
+/// quantità rimanente di ciascuno) e quantità da prelevare.
 class _CartLineRow extends StatelessWidget {
   final _CartLine line;
+  final String Function(String codice) nomeMagazzino;
+  final void Function(String codice) onMagazzino;
   final void Function(String v) onSetQta;
   final VoidCallback onRemove;
   final VoidCallback onIncrement;
@@ -420,21 +513,24 @@ class _CartLineRow extends StatelessWidget {
 
   const _CartLineRow({
     required this.line,
+    required this.nomeMagazzino,
+    required this.onMagazzino,
     required this.onSetQta,
     required this.onRemove,
     required this.onIncrement,
     required this.onDecrement,
   });
 
+  String _fmt(num n) => n % 1 == 0 ? n.toInt().toString() : n.toString();
+
   @override
   Widget build(BuildContext context) {
     final m = line.material;
-    final residuo = line.disponibileResiduo;
     final overstock = line.isOverstock;
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
         decoration: BoxDecoration(
           color: AppColors.surface,
           borderRadius: BorderRadius.circular(12),
@@ -442,75 +538,181 @@ class _CartLineRow extends StatelessWidget {
               color: overstock ? AppColors.accentRed : AppColors.borderLight,
               width: overstock ? 1.5 : 1),
         ),
-        child: Row(children: [
-          const Icon(Icons.inventory_2_outlined,
-              size: 24, color: AppColors.primary),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(m.description,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: AppTextStyles.bodyLarge
-                        .copyWith(fontWeight: FontWeight.w700)),
-                const SizedBox(height: 2),
-                Text('${m.materialCode} · Magazz.: ${m.defaultWarehouseCode}',
-                    style: AppTextStyles.bodySmall),
-                const SizedBox(height: 3),
-                Text(
-                    overstock
-                        ? 'Stock insufficiente'
-                        : 'Residuo: ${residuo.toStringAsFixed(0)} ${m.unitOfMeasure}',
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(m.description,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: AppTextStyles.bodyLarge
+                            .copyWith(fontWeight: FontWeight.w700)),
+                    Text(m.materialCode, style: AppTextStyles.bodySmall),
+                  ],
+                ),
+              ),
+              _QtyStepper(
+                controller: line.qtaCtrl,
+                onSetQta: onSetQta,
+                onIncrement: onIncrement,
+                onDecrement: onDecrement,
+              ),
+              const SizedBox(width: 4),
+              // Rimuovi: tono rosso tenue, coerente con le altre azioni distruttive.
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                style: IconButton.styleFrom(
+                  backgroundColor: AppColors.accentRed.withValues(alpha: 0.10),
+                  foregroundColor: AppColors.accentRed,
+                  shape: const CircleBorder(),
+                ),
+                icon: const Icon(Icons.close_rounded, size: 18),
+                onPressed: onRemove,
+                tooltip: 'Rimuovi',
+              ),
+            ]),
+            const SizedBox(height: 6),
+            // Magazzini in cui il materiale è disponibile: si sceglie da quale
+            // prelevare. Il prelievo scala solo il magazzino scelto.
+            for (final codice in m.giacenze.keys)
+              _MagazzinoRiga(
+                nome: nomeMagazzino(codice),
+                // Il magazzino scelto mostra quanto resterà dopo questo
+                // prelievo: il numero scende insieme alla quantità.
+                rimanenti: codice == line.magazzino
+                    ? line.disponibileResiduo
+                    : line.residuoDi(codice),
+                unita: m.unitOfMeasure,
+                scelto: codice == line.magazzino,
+                abilitato: line.residuoDi(codice) > 0,
+                fmt: _fmt,
+                onTap: () => onMagazzino(codice),
+              ),
+            if (overstock)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text('Stock insufficiente in questo magazzino',
                     style: AppTextStyles.labelSmall.copyWith(
                         fontWeight: FontWeight.w700,
-                        color: overstock
-                            ? AppColors.accentRed
-                            : AppColors.textSecondary)),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          // Stepper −  qty  +
-          _stepBtn(Icons.remove, onDecrement),
-          SizedBox(
-            width: 58,
-            child: TextField(
-              controller: line.qtaCtrl,
-              textAlign: TextAlign.center,
-              keyboardType:
-                  const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(
-                isDense: true,
-                contentPadding:
-                    EdgeInsets.symmetric(horizontal: 4, vertical: 12),
+                        color: AppColors.accentRed)),
               ),
-              style: AppTextStyles.headingSmall,
-              onChanged: onSetQta,
-            ),
-          ),
-          _stepBtn(Icons.add, onIncrement),
-          const SizedBox(width: 2),
-          IconButton(
-            visualDensity: VisualDensity.compact,
-            icon: const Icon(Icons.close, size: 22),
-            onPressed: onRemove,
-            tooltip: 'Rimuovi',
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Un magazzino del materiale: "Nome (rimanenti: 30)" con la scelta.
+class _MagazzinoRiga extends StatelessWidget {
+  final String nome;
+  final num rimanenti;
+  final String unita;
+  final bool scelto;
+  final bool abilitato;
+  final String Function(num) fmt;
+  final VoidCallback onTap;
+
+  const _MagazzinoRiga({
+    required this.nome,
+    required this.rimanenti,
+    required this.unita,
+    required this.scelto,
+    required this.abilitato,
+    required this.fmt,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final colore = abilitato ? AppColors.textPrimary : AppColors.textHint;
+    return InkWell(
+      onTap: abilitato ? onTap : null,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4),
+        child: Row(children: [
+          Icon(
+              scelto ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+              size: 20,
+              color: scelto
+                  ? AppColors.primary
+                  : (abilitato ? AppColors.textSecondary : AppColors.textHint)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+                unita == 'PZ'
+                    ? '$nome (pezzi rimanenti: ${fmt(rimanenti)})'
+                    : '$nome (rimanenti: ${fmt(rimanenti)} $unita)',
+                style: AppTextStyles.bodyMedium.copyWith(
+                    color: colore,
+                    fontWeight: scelto ? FontWeight.w700 : FontWeight.w400)),
           ),
         ]),
       ),
     );
   }
+}
 
-  Widget _stepBtn(IconData icon, VoidCallback onTap) => SizedBox(
-        width: 44,
-        height: 44,
-        child: IconButton.filledTonal(
-          padding: EdgeInsets.zero,
-          iconSize: 22,
-          onPressed: onTap,
-          icon: Icon(icon),
+/// Stepper compatto "− qty +" in un'unica pillola bordata, al posto di due
+/// pulsanti circolari pieni: meno pesante visivamente, più chiaro che le tre
+/// parti sono un solo controllo.
+class _QtyStepper extends StatelessWidget {
+  final TextEditingController controller;
+  final void Function(String v) onSetQta;
+  final VoidCallback onIncrement;
+  final VoidCallback onDecrement;
+
+  const _QtyStepper({
+    required this.controller,
+    required this.onSetQta,
+    required this.onIncrement,
+    required this.onDecrement,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 40,
+      decoration: BoxDecoration(
+        color: AppColors.backgroundPage,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        _step(Icons.remove_rounded, onDecrement),
+        Container(width: 1, height: 22, color: AppColors.border),
+        SizedBox(
+          width: 42,
+          child: TextField(
+            controller: controller,
+            textAlign: TextAlign.center,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(
+              isDense: true,
+              border: InputBorder.none,
+              contentPadding: EdgeInsets.zero,
+            ),
+            style: AppTextStyles.headingSmall,
+            onChanged: onSetQta,
+          ),
+        ),
+        Container(width: 1, height: 22, color: AppColors.border),
+        _step(Icons.add_rounded, onIncrement),
+      ]),
+    );
+  }
+
+  Widget _step(IconData icon, VoidCallback onTap) => InkWell(
+        onTap: onTap,
+        child: SizedBox(
+          width: 36,
+          height: 40,
+          child: Icon(icon, size: 18, color: AppColors.primary),
         ),
       );
 }

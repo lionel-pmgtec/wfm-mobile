@@ -1,11 +1,4 @@
 
-//
-// TODO(backend):  reintrodurre uno scheduler compatibile (workmanager >= 0.6 con embedding v2, oppure
-// android_alarm_manager_plus) e implementare il retry della coda offline:
-//   1. Apertura DB locale (Hive) sulla syncQueue
-//   2. POST/PUT verso il middleware con token da secure storage
-//   3. Rimozione dalla coda in caso di successo
-//
 // La sincronizzazione in FOREGROUND (al ritorno della connettività e via la
 // schermata "Coda di sincronizzazione" nelle Impostazioni) resta operativa.
 

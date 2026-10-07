@@ -5,11 +5,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../../core/constants/app_constants.dart';
+import '../../../../core/router/app_routes.dart';
 import '../../../../core/theme/app_theme.dart';
 import '../../../../core/widgets/widgets.dart';
 import '../widgets/odl_actions_menu.dart';
 import '../../../../domain/entities/entities.dart';
 import '../../../providers/anagrafica_provider.dart';
+import '../../../providers/creation_provider.dart';
 import '../../../providers/work_orders_provider.dart';
 
 class CambioCidScreen extends ConsumerStatefulWidget {
@@ -56,6 +58,12 @@ class _CambioCidScreenState extends ConsumerState<CambioCidScreen> {
             label: 'Descrizione', value: order.woTypeDescription, fullWidth: true),
         const SizedBox(height: 12),
         FieldRow(label: 'CID corrente', value: order.cidAssegnato ?? '—'),
+        // OdL non ancora inviato con un collega già scelto: passerà a lui.
+        if (order.assegnaA != null) ...[
+          const SizedBox(height: 12),
+          FieldRow(
+              label: "Da passare a (all'invio)", value: order.assegnaA!),
+        ],
         const SectionHeader(title: 'NUOVO CID'),
         TextField(
           controller: _cidCtrl,
@@ -84,7 +92,8 @@ class _CambioCidScreenState extends ConsumerState<CambioCidScreen> {
                 spacing: 8,
                 runSpacing: 8,
                 children: techs
-                    .where((t) => t.cid != order.cidAssegnato)
+                    .where((t) =>
+                        t.cid != (order.assegnaA ?? order.cidAssegnato))
                     .map((t) => ActionChip(
                           avatar: const Icon(Icons.person_outline, size: 16),
                           label: Text('${t.cid} — ${t.fullName}'),
@@ -98,10 +107,11 @@ class _CambioCidScreenState extends ConsumerState<CambioCidScreen> {
         TextField(
           controller: _motivoCtrl,
           maxLines: 3,
-          decoration: const InputDecoration(
+          decoration: InputDecoration(
               labelText: 'Motivo (facoltativo)',
               alignLabelWithHint: true,
-              hintText: 'Es. tecnico in ferie, competenza specifica…'),
+              hintText: 'Es. tecnico in ferie, competenza specifica…',
+              suffixIcon: VoiceSuffixIcons(controller: _motivoCtrl)),
         ),
         const SizedBox(height: 24),
         ElevatedButton.icon(
@@ -125,15 +135,23 @@ class _CambioCidScreenState extends ConsumerState<CambioCidScreen> {
       showSapToast(context, 'Inserire un CID valido', isError: true);
       return;
     }
-    if (newCid == order.cidAssegnato) {
+    // Per un OdL non ancora inviato con un collega già scelto, il "corrente"
+    // è il collega: si può tornare a sé stessi.
+    if (newCid == (order.assegnaA ?? order.cidAssegnato)) {
       showSapToast(context, 'CID identico al corrente', isError: true);
       return;
     }
+    // OdL creato qui e non ancora inviato: il passaggio avverrà all'invio.
+    final inAttesa =
+        await ref.read(isPendingCreationProvider(order.externalCode).future);
+    if (!mounted) return;
     final ok = await showWfmConfirmDialog(
       context: context,
       title: 'Conferma riassegnazione',
-      message:
-          'Riassegnare l\'OdL ${order.externalCode} a "$newCid"? L\'OdL non sarà più visibile su questo tablet.',
+      message: inAttesa
+          ? 'L\'OdL ${order.externalCode} non è ancora sul cruscotto: '
+              'passerà a "$newCid" appena lo invii.'
+          : 'Riassegnare l\'OdL ${order.externalCode} a "$newCid"? L\'OdL non sarà più visibile su questo tablet.',
       confirmLabel: 'Riassegna',
       cancelLabel: 'Annulla',
       tone: WfmDialogTone.warning,
@@ -141,11 +159,33 @@ class _CambioCidScreenState extends ConsumerState<CambioCidScreen> {
     );
     if (ok != true || !mounted) return;
     setState(() => _saving = true);
-    await Future<void>.delayed(const Duration(milliseconds: 400));
+    final motivo = _motivoCtrl.text.trim();
+    final res = await ref.read(workOrderActionsProvider).reassign(
+        order.externalCode, newCid,
+        note: motivo.isEmpty ? null : motivo);
     if (!mounted) return;
     setState(() => _saving = false);
-    showSapToast(context, 'OdL ${order.externalCode} riassegnato a $newCid');
-    // Navigazione: torna 2 livelli (cambio-cid + detail) → lista OdL.
-    context.go('/work-orders');
+    res.when(
+      success: (esito) {
+        switch (esito) {
+          case EsitoRiassegnazione.passato:
+            showSapToast(
+                context, 'OdL ${order.externalCode} riassegnato a $newCid');
+            // L'OdL non è più di questo tablet: si torna alla lista.
+            context.go(AppRoutes.workOrders);
+          case EsitoRiassegnazione.allInvio:
+            showSapToast(context,
+                'OdL ${order.externalCode}: passerà a $newCid appena inviato al cruscotto');
+            context.pop();
+          case EsitoRiassegnazione.resta:
+            showSapToast(
+                context, 'OdL ${order.externalCode}: resta assegnato a te');
+            context.pop();
+        }
+      },
+      // Messaggio del backend: tecnico inesistente, lavoro chiuso, già
+      // inviato a SAP, rete assente…
+      failure: (f) => showSapToast(context, f.message, isError: true),
+    );
   }
 }

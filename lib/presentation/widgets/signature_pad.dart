@@ -4,6 +4,9 @@
 // l'esito, senza cambiare schermata. Il controller espone i tratti, così la
 // pagina sa se una firma è stata davvero tracciata.
 
+import 'dart:typed_data';
+import 'dart:ui' as ui;
+
 import 'package:flutter/material.dart';
 
 import '../../core/theme/app_theme.dart';
@@ -16,6 +19,53 @@ class SignaturePadController extends ChangeNotifier {
 
   /// Un punto isolato (tocco involontario) non vale come firma.
   bool get hasSignature => _strokes.any((s) => s.length > 1);
+
+  /// Rasterizza la firma in PNG (sfondo bianco), ritagliata sui tratti con un
+  /// margine. `null` se non c'è firma. Serve alla chiusura per caricare la
+  /// firma come allegato (type FIRMA), non solo il flag `customerSigned`.
+  Future<Uint8List?> exportPng({double padding = 16, double strokeWidth = 2.5}) async {
+    if (!hasSignature) return null;
+    // Riquadro che contiene tutti i punti.
+    double minX = double.infinity, minY = double.infinity;
+    double maxX = -double.infinity, maxY = -double.infinity;
+    for (final s in _strokes) {
+      for (final p in s) {
+        if (p.dx < minX) minX = p.dx;
+        if (p.dy < minY) minY = p.dy;
+        if (p.dx > maxX) maxX = p.dx;
+        if (p.dy > maxY) maxY = p.dy;
+      }
+    }
+    final w = (maxX - minX) + padding * 2;
+    final h = (maxY - minY) + padding * 2;
+    if (w <= 0 || h <= 0) return null;
+
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    final bg = Paint()..color = Colors.white;
+    canvas.drawRect(Rect.fromLTWH(0, 0, w, h), bg);
+    final pen = Paint()
+      ..color = const Color(0xFF1A1A1A)
+      ..strokeWidth = strokeWidth
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..style = PaintingStyle.stroke;
+    final dx = padding - minX;
+    final dy = padding - minY;
+    for (final stroke in _strokes) {
+      if (stroke.length < 2) continue;
+      final path = Path()
+        ..moveTo(stroke.first.dx + dx, stroke.first.dy + dy);
+      for (final p in stroke.skip(1)) {
+        path.lineTo(p.dx + dx, p.dy + dy);
+      }
+      canvas.drawPath(path, pen);
+    }
+    final img =
+        await recorder.endRecording().toImage(w.ceil(), h.ceil());
+    final data = await img.toByteData(format: ui.ImageByteFormat.png);
+    return data?.buffer.asUint8List();
+  }
 
   void startStroke(Offset p) {
     _strokes.add([p]);

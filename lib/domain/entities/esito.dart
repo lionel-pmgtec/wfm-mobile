@@ -34,6 +34,15 @@ class HoursWorked {
   });
 }
 
+/// Oggetto del lavoro (mezzo o apparecchiatura impegnata), inviato in
+/// POST /esiti nel nodo `objects`. Per un automezzo [equipment] è la targa e la
+/// descrizione comincia col numero del mezzo, come nella lista oggetti di SAP.
+class EsitoObject {
+  final String equipment;
+  final String description;
+  const EsitoObject({required this.equipment, this.description = ''});
+}
+
 /// Esito dell'appuntamento/sopralluogo, inviato insieme all'esito finale
 /// (POST /esiti, nodo `appointment`). Campi allineati al backend.
 class EsitoAppuntamento {
@@ -76,10 +85,18 @@ class Esito {
   /// Esito appuntamento/sopralluogo, inviato col nodo `appointment`.
   final EsitoAppuntamento? appointment;
   final List<HoursWorked> hoursWorked;
+  /// Oggetti del lavoro (mezzi/apparecchiature), nodo `objects` di POST /esiti.
+  final List<EsitoObject> objects;
   /// Spostamento contatore deciso sul campo (nuova ubicazione). Inviato nel
   /// nodo `contatore` di POST /esiti. Vuoto = contatore non spostato.
   final String? newMeterLocation;
   final String? newMeterLocationAdditional;
+  final String? newMeterPosition; // posizione in batteria (contatore.newPosition)
+  /// NUOVO contatore posato (SOST): nodo `newMeter` di POST /esiti.
+  final String? newMeterSerial; // serialNumber
+  final String? newMeterManufacturer; // manufacturer (produttore)
+  final num? newMeterInstallReading; // installReading (lettura di posa)
+  final DateTime? newMeterInstallDate; // installDate (data di posa)
   final num? extraCosts; // km, pedaggi
   final Geolocation? geolocation;
   final bool customerSigned;
@@ -98,8 +115,14 @@ class Esito {
     this.materials = const [],
     this.appointment,
     this.hoursWorked = const [],
+    this.objects = const [],
     this.newMeterLocation,
     this.newMeterLocationAdditional,
+    this.newMeterPosition,
+    this.newMeterSerial,
+    this.newMeterManufacturer,
+    this.newMeterInstallReading,
+    this.newMeterInstallDate,
     this.extraCosts,
     this.geolocation,
     this.customerSigned = false,
@@ -116,6 +139,7 @@ class Esito {
     List<MaterialUsage>? materials,
     EsitoAppuntamento? appointment,
     List<HoursWorked>? hoursWorked,
+    List<EsitoObject>? objects,
     num? extraCosts,
     bool? customerSigned,
     LocalSyncStatus? localStatus,
@@ -133,8 +157,14 @@ class Esito {
       materials: materials ?? this.materials,
       appointment: appointment ?? this.appointment,
       hoursWorked: hoursWorked ?? this.hoursWorked,
+      objects: objects ?? this.objects,
       newMeterLocation: newMeterLocation,
       newMeterLocationAdditional: newMeterLocationAdditional,
+      newMeterPosition: newMeterPosition,
+      newMeterSerial: newMeterSerial,
+      newMeterManufacturer: newMeterManufacturer,
+      newMeterInstallReading: newMeterInstallReading,
+      newMeterInstallDate: newMeterInstallDate,
       extraCosts: extraCosts ?? this.extraCosts,
       geolocation: geolocation,
       customerSigned: customerSigned ?? this.customerSigned,

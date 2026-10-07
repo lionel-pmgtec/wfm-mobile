@@ -4,17 +4,23 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../core/theme/app_theme.dart';
+import '../../../../core/widgets/widgets.dart';
 import '../../../../domain/entities/user.dart';
 import '../../../../domain/entities/enums.dart';
 import '../../../providers/reassign_provider.dart';
+import '../../../providers/work_orders_provider.dart';
 
-/// Apre il foglio inferiore di riassegnazione.
-Future<void> showReassignSheet(
+/// Esito del foglio di riassegnazione: a chi e come.
+typedef RiassegnazioneFatta = ({String collega, EsitoRiassegnazione esito});
+
+/// Apre il foglio inferiore di riassegnazione. Restituisce collega ed esito
+/// se è andata a buon fine, altrimenti null.
+Future<RiassegnazioneFatta?> showReassignSheet(
   BuildContext context,
   WidgetRef ref,
   String orderCode,
 ) {
-  return showModalBottomSheet(
+  return showModalBottomSheet<RiassegnazioneFatta>(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
@@ -192,6 +198,7 @@ class _ReassignSheetState extends ConsumerState<_ReassignSheet> {
                           borderRadius: BorderRadius.circular(12),
                           borderSide: BorderSide.none,
                         ),
+                        suffixIcon: VoiceSuffixIcons(controller: _noteCtrl),
                       ),
                     ),
                     const SizedBox(height: 10),
@@ -237,19 +244,16 @@ class _ReassignSheetState extends ConsumerState<_ReassignSheet> {
     if (mounted) {
       final state = ref.read(reassignProvider);
       if (state.success) {
-        Navigator.pop(context);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('OdL riassegnato a ${_selected!.fullName}'),
-            backgroundColor: AppColors.accentGreen,
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+        final esito = state.esito ?? EsitoRiassegnazione.passato;
         ref.read(reassignProvider.notifier).reset();
+        Navigator.pop<RiassegnazioneFatta>(
+            context, (collega: _selected!.fullName, esito: esito));
       } else if (state.error != null) {
+        // Messaggio del backend (collega inesistente, lavoro chiuso o già
+        // inviato a SAP…), così com'è.
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Errore: ${state.error}'),
+            content: Text(state.error!),
             backgroundColor: AppColors.accentRed,
             behavior: SnackBarBehavior.floating,
           ),
