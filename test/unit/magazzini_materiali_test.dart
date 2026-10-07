@@ -151,16 +151,20 @@ void main() {
       }
     });
 
+    // Il backend è un altro repository: se non è accanto all'app il confronto
+    // non si può fare (e non è un errore dell'app).
+    final anagrafiche = File('Backend-WFM-VIVA/data/anagrafiche.json');
     test("nel magazzino predefinito c'è lo stock vero del backend", () async {
       final file = await GiacenzeMagazziniService().carica();
-      final anag = jsonDecode(File('Backend-WFM-VIVA/data/anagrafiche.json')
-          .readAsStringSync()) as Map;
+      final anag = jsonDecode(anagrafiche.readAsStringSync()) as Map;
       for (final m in (anag['materials'] as List).cast<Map>()) {
         expect(file[m['materialCode']]![m['defaultWarehouseCode']],
             m['stockDisponibile'],
             reason: '${m['materialCode']}');
       }
-    });
+    }, skip: !anagrafiche.existsSync()
+        ? "Backend-WFM-VIVA non presente accanto all'app"
+        : false);
   });
 
   group('registro dei prelievi per magazzino', () {

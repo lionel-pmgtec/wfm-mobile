@@ -1,297 +1,262 @@
 # WFM Mobile — Viva Servizi
 
-Applicazione **Flutter per tablet** per la gestione sul campo di **Ordini di
-Lavoro (OdL)** e **Avvisi** di manutenzione, connessa a SAP tramite il **backend
-unico del cruscotto** (Node/TypeScript). Il tecnico vede e lavora **solo gli
-oggetti a lui assegnati**.
+Applicazione **Flutter per tablet** per la gestione sul campo di **Ordini di Lavoro
+(OdL)** e **Avvisi** di manutenzione della rete idrica. Il tecnico vede e lavora
+**solo gli oggetti assegnati a lui**; l'app funziona anche senza rete (offline-first)
+e si sincronizza con il **backend del cruscotto**, che a sua volta dialoga con SAP.
 
 ```
-[App Flutter]  ◄── REST/JSON (/api/v1) + SSE (/api/stream) ──►  [Backend-WFM (Node, :4000)]  ◄── SOAP/XML ──►  [SAP DG1]
-   tablet            (login, ordini, avvisi, esiti,                 store su file:                     ZWFMT_SERVIZIO_PM
-                      stato, anagrafiche, realtime)                 state / assignments / tecnici
+┌──────────────┐   REST/JSON /api/v1 + SSE /api/stream   ┌──────────────────────┐   SOAP/XML   ┌─────────┐
+│ App Flutter  │ ◄─────────────────────────────────────► │ Backend WFM (Node)   │ ◄──────────► │   SAP   │
+│   (tablet)   │  login, ordini, avvisi, esiti, anagrafi │ store su file, SSE   │              │   DG1   │
+└──────────────┘  che, assegnazioni, realtime            └──────────────────────┘              └─────────┘
 ```
 
+Il **backend** e il **cruscotto** del pianificatore (web) sono repository separati e non
+fanno parte di questo progetto. L'app si limita a consumarne il contratto (vedi
+[Contratto con il backend](#contratto-con-il-backend)).
 
->  **Documentazione completa** — funzionalità per il tecnico + API del backend
+## Indice
 
-## Struttura del repo
+1. [Funzionalità](#funzionalità)
+2. [Architettura](#architettura)
+3. [Requisiti e avvio](#requisiti-e-avvio)
+4. [Configurazione](#configurazione)
+5. [Contratto con il backend](#contratto-con-il-backend)
+6. [Dati e strumenti di supporto](#dati-e-strumenti-di-supporto)
+7. [Test](#test)
+8. [Limiti noti](#limiti-noti)
+9. [Struttura del repository](#struttura-del-repository)
 
-```
-.
-├── lib/                  # App Flutter (core / data / domain / presentation)
-├── assets/               # Immagini e icone (logo Viva Servizi incluso)
-├── android/ ios/ web/ test/
-├── Backend-WFM-VIVA/     # Backend unico (Node): API tablet, assegnazioni, SSE
-├── Cruscotto-WFM/        # Frontend web del pianificatore (React/Vite)
-└── pubspec.yaml
-```
+---
 
-## Cosa fa l'app sul campo
+## Funzionalità
 
-Funzionalità **verificate sul dispositivo**, oltre a elenchi/dettaglio, ciclo di
-vita dell'intervento e realtime:
+### Home
+Riepilogo degli OdL per stato (Assegnato, In esecuzione, In pausa, Sospeso, Chiuso), banner dei **Pronto Intervento** (OdL e avvisi urgenti) e accessi rapidi:
+**Crea OdL**, **Crea avviso**, **Standalone**. Sincronizzazione e impostazioni sono
+nella barra laterale (con il contatore degli elementi da inviare).
+
+### Ordini di lavoro
+- **Elenco** con ricerca e filtri per stato (*Tutti, Assegnato, In esecuzione, In pausa,
+  Sospeso*). Un OdL sospeso **resta sul tablet** per poterlo riprendere.
+- **Dettaglio** a schede: *Dettaglio · Operazioni · Materiali · Allegati · Chiusura*.
+- **Ciclo di vita**: Avvia → Pausa/Riprendi → Sospendi → Concludi. La *pausa* è uno
+  stato solo locale (per il backend l'OdL resta in esecuzione).
+- **Operazioni**: ogni OdL ha le tre operazioni standard (0010 Trasferimento, 0040 Lavori
+  Idraulici, 0200 Automezzi, uguali a quelle del backend) quando il backend non ne manda
+  di proprie. Le ore si registrano per operazione; *Automezzi* è la somma delle altre.
+- **Assegnazione a un collega**, dal dettaglio o già in fase di creazione.
+- **Chiusura**: esito (*Riuscito / Rinviato / Impossibile*), motivo e soluzione
+  **facoltativi**, materiali, oggetti del lavoro, esito appuntamento, commenti e firma del
+  cliente. L'invio dell'esito chiude l'OdL.
+
+### Appuntamenti
+"Data e ora appuntamento" è **l'appuntamento preso con il cliente**, non la data di
+esecuzione. Compare solo se il cliente ne ha uno (ricavato dal record SAP); altrimenti
+l'elenco è vuoto e il pulsante **Nuovo** permette di fissarne uno. Un OdL senza
+appuntamento è datato e ordinato per **data di inizio** (giorno dell'assegnazione), con
+l'etichetta esplicita *Appuntamento / Inizio / Esecuzione / Creato*. L'inizio
+dell'intervento in chiusura è l'ora in cui il tecnico preme *Avvia*.
+
+### Avvisi
+Elenco con filtri per tipo, dettaglio (*Info · Lavoro · Allegati*), flusso
+Preventivo → Firma → PDF per le richieste di preventivo, sospensioni, permessi.
+Se un OdL è stato generato dall'avviso, la scheda *Lavoro* mostra **«OdL …» / Apri OdL**
+invece di *Genera OdL*.
 
 ### Creazione dal campo (local-first)
+Si creano **OdL**, **Avvisi** e **OdL da un avviso**. Per gli OdL sono selezionabili
+**SOST** e **ZA02**; gli altri tipi del catalogo restano visibili ma disattivati. Per gli
+avvisi i tipi proposti sono **IS** e **ZI**. L'oggetto nasce con un numero provvisorio
+`TMP-…`, resta sul tablet (sopravvive al riavvio), è marcato *Da sincronizzare* e viene
+inviato dal **Centro di sincronizzazione**. Data e ora di appuntamento si inviano **solo se
+scelte**: l'app non ne inventa.
 
-Il tecnico crea **Ordini**, **Avvisi** e **OdL a partire da un Avviso**. L'oggetto
-nasce con un numero provvisorio `TMP-…`, resta **sul tablet** (persistito, sopravvive
-al riavvio) ed è marcato **DA SINCRONIZZARE** finché non viene inviato.
-
-### Centro di sincronizzazione
-
-Schermata **«Da sincronizzare»** ([`sync_center_screen.dart`](lib/presentation/features/sync/sync_center_screen.dart))
-con due schede — *Ordini* e *Avvisi* — e, per ogni elemento, la scelta della
-destinazione:
-
-- **Cruscotto** → funzionante: il backend registra l'oggetto, **crea l'assegnazione
-  al CID** e pubblica l'evento SSE, quindi il pianificatore lo vede subito;
-- **SAP (diretto)** → dichiarato **non configurato**: il pulsante c'è, ma non
-  simula nulla (vedi *Limiti noti*).
-
-L'azione è raggiungibile ovunque serva — sidebar con contatore, AppBar delle liste
-e dei dettagli, banner sull'oggetto non ancora inviato, e proposta immediata subito
-dopo la creazione.
-
-### Tendine alimentate dal cruscotto
-
-Nessun catalogo è più scritto nel codice dell'app: tipi OdL, campi specifici per
-tipo, motivi di sospensione, stati e priorità degli avvisi, attività PM arrivano da
-`GET /anagrafica/wo-types`, `/anagrafica/wo-fields?type=`, `/anagrafica/lookups/:kind`.
-Se il cruscotto non serve un catalogo, la tendina lo dichiara invece di inventare valori.
-
-### Mappa degli interventi
-
-OdL **e** Avvisi sulla stessa mappa, posizionati sull'**indirizzo di intervento**
-(`INDIRIZZO_LAVORO`). Poiché SAP non trasmette le coordinate, l'indirizzo viene
-convertito da [`GeocodingService`](lib/core/services/geocoding_service.dart)
-(Nominatim/OpenStreetMap) con **cache persistente** e un massimo di una richiesta
-al secondo. Se un giorno SAP valorizzerà latitudine/longitudine, quelle avranno la
-precedenza senza modifiche all'app. Un contatore indica quanti oggetti **non sono
-localizzabili** (indirizzo assente o non trovato), invece di farli sparire.
-
-Fondo **ArcGIS (Esri)** pubblico — chiaro, stradale, topografico, satellite — con
-i colori di stato del cruscotto, ricerca di indirizzi (geocodificatore Esri),
-raggruppamento dei segnaposto, pulsante **Naviga** e elenco ordinato per distanza.
-
-**Rete idrica Viva Servizi (zona Ancona 60128).** Da zoom 16 la mappa disegna la rete
-come sulla mappa Viva: condotte di adduzione (rosse) e di distribuzione (verdi) lungo le
-vie con materiale e diametro, allacci tratteggiati rosa, contatori (pallini verdi) e
-riduttori di pressione (quadrati rossi, codice AN..). Ogni contatore ha un indirizzo
-reale (via, civico, CAP): toccandolo si apre la scheda con **Crea OdL** (SOST, la
-matricola la inserisce il tecnico), **Crea avviso** e **Naviga**; dal riduttore si crea
-uno ZA02 col ciclo CONRID1. Toccando "Avvicinati per vedere la rete" la mappa va sulla
-zona. Il file `assets/rete_viva/rete_viva_ancona.geojson` si rigenera con
-`python tools/rete_viva/genera_rete_viva.py` (vie ed edifici da OpenStreetMap, indirizzi
-da OSM o da Esri); per un'altra zona basta cambiare `BBOX` nello script.
-
-**Creare OdL e avvisi dalla mappa (senza chiave).**
-
-- *Contatori degli interventi*: il backend non ha un'anagrafica dei contatori, ogni
-  contatore arriva sull'OdL/avviso che lo riguarda. La mappa li mostra da vicino
-  (zoom ≥ 15) come pallini verdi accanto all'intervento, uno per matricola. La scheda
-  (matricola, marca, calibro, interventi) offre **Crea OdL SOST** (la "casetta" del
-  modulo completa i dati dal backend), **Crea avviso** e **Naviga**.
-- *Punto scelto*: **tenendo premuto** su un punto qualsiasi (o scegliendo un indirizzo
-  cercato) si ottiene l'indirizzo reale del punto (`reverseGeocode` Esri) e si crea
-  l'OdL o l'avviso già con via, civico, comune, CAP e posizione.
-
-Nessun punto inventato: contatori dal backend, indirizzi da Esri.
-
-**Rete Viva Servizi (contatori, riduttori di pressione).** I livelli del servizio
-`VIVA_SERVIZI_Ambito_Intervento_WFL1` sono **protetti** (499 *Token Required*):
-senza chiave la mappa non mostra né punti né interruttori (niente dati
-inventati); la sezione compare nel pannello *Fondo mappa* solo con la chiave. Con una chiave di accesso ArcGIS fornita da Viva
-Servizi si attivano in compilazione, senza toccare il codice:
-
-```bash
-flutter run --dart-define=ARCGIS_TOKEN=<chiave>
-```
-
-(opzionale `--dart-define=ARCGIS_RETE_URL=<FeatureServer>` se cambia il servizio).
-Da zoom 16 in su si caricano i punti della zona visibile; toccandone uno si apre la
-scheda con gli attributi del livello e le azioni **Naviga**, **Crea avviso**
-(matricola e posizione precompilate) e **Crea OdL** (contatore → SOST con la
-matricola; riduttore → ZA02 col ciclo CONRID1). La matricola si riconosce dal nome
-del campo ArcGIS: va verificata sul servizio reale appena c'è la chiave.
-
-
-
-### Chiusura dell'OdL e avviso associato
-
-L'invio dell'esito **chiude l'OdL** e lo toglie dal tablet; insieme all'OdL si toglie anche
-l'**avviso associato** (`avvisoOrigine`). Il backend non permette di eliminare un avviso
-(`DELETE /notifications/:id` risponde 501) e continua a elencarlo in `GET /notifications`:
-il tablet quindi ricorda gli avvisi rimossi ([`AvvisiRimossiStore`](lib/core/services/avvisi_rimossi_store.dart),
-su disco) e non li mostra più, nemmeno dopo un aggiornamento o un riavvio. Un avviso nato sul
-tablet e non ancora inviato si elimina dall'archivio locale. Vale anche con l'esito in coda
-offline. Se un altro OdL aperto è ancora associato allo stesso avviso, l'avviso resta.
-Lo stesso vale se l'OdL viene eliminato dall'app.
-
-**Eliminare sul tablet vale solo per il tablet.** Eliminare un OdL (glissata in lista o
-"Elimina Ordine") o un avviso non chiama il backend, che non cancella né ordini né avvisi
-(501): il tablet ricorda cosa è stato eliminato ([`OdlRimossiStore`](lib/core/services/odl_rimossi_store.dart),
-[`AvvisiRimossiStore`](lib/core/services/avvisi_rimossi_store.dart), su disco) e non lo mostra più,
-né in elenco, né in mappa, né nei contatori, anche dopo un aggiornamento o un riavvio. Sul
-cruscotto e per gli altri tecnici l'oggetto resta. Un oggetto nato sul tablet e non ancora
-inviato si elimina dall'archivio locale. Eliminando un OdL si elimina anche il suo avviso.
+### Mappa
+- Fondo **ArcGIS (Esri)** pubblico: chiaro, stradale, topografico, satellite.
+- OdL e avvisi come segnaposto colorati per stato (stessa legenda del cruscotto), raggruppati
+  quando vicini; ricerca di indirizzi, posizione del tecnico, **Naviga**, elenco ordinato per distanza.
+- **Rete idrica Viva Servizi** (zona Ancona 60128): condotte di adduzione e distribuzione,
+  allacci, contatori e riduttori di pressione. Da un contatore o da un riduttore si crea un
+  **OdL** (SOST / ZA02) o un **avviso** già con indirizzo e posizione.
+- **Tenendo premuto** su un punto qualsiasi si ottiene l'indirizzo reale (geocodifica inversa
+  Esri) e si crea un OdL o un avviso lì.
+- I contatori mostrati sono quelli che il backend manda sugli OdL/avvisi del tecnico.
 
 ### Materiali e magazzini
+*Aggiungi componenti* è un elenco a tendina con caselle. Per ogni materiale spuntato si
+vedono i **magazzini in cui è disponibile**, con i pezzi rimanenti di ciascuno, e si sceglie
+da quale prelevare. La giacenza è **separata per magazzino**: prelevare dal Magazzino 1 non
+tocca il Magazzino 2, e le quantità mostrate scendono in tempo reale. Lo stesso materiale
+nello stesso magazzino si somma nella stessa riga; un materiale preso sul tablet si può
+eliminare e la quantità torna al suo magazzino.
 
-"Aggiungi componenti": un elenco a tendina con caselle da spuntare. Per ogni materiale spuntato
-compaiono i **magazzini in cui è disponibile**, con la quantità rimanente di ciascuno
-(*Magazzino 1 (rimanenti: 30)*), e il tecnico sceglie da quale prelevare. La giacenza è
-**separata per magazzino**: prelevare 2 pezzi dal Magazzino 1 porta 30 → 28 e lascia il Magazzino 2
-a 20; poi 1 dal Magazzino 2 porta 20 → 19.
+### Eliminazione e chiusura
+Ciò che il tecnico **elimina sul tablet vale solo per il tablet** (il backend non cancella né
+ordini né avvisi). L'app ricorda gli oggetti eliminati e non li mostra più, in elenco, mappa e
+contatori, anche dopo un aggiornamento o un riavvio. La **chiusura** di un OdL (invio
+dell'esito) lo toglie dal tablet insieme all'**avviso associato**; se un altro OdL aperto usa
+lo stesso avviso, l'avviso resta.
 
-Dati: i magazzini sono quelli di `/anagrafica/warehouses`. Le giacenze per magazzino sono
-`stockPerMagazzino` del backend se lo manda (lista `[{warehouseCode, quantity}]` o mappa
-`{W01: 30}`). Oggi il backend manda UN solo stock per materiale, nel suo magazzino predefinito
-(`defaultWarehouseCode`): per far trovare ogni materiale in più magazzini, il file
-`assets/anagrafica/giacenze_magazzini.json` completa gli altri, generato dai dati di
-`anagrafiche.json` con `python tools/anagrafica/genera_giacenze.py` (nel magazzino predefinito
-resta lo stock vero del backend; negli altri due il 70% e il 40% di quello stock). Non appena il
-backend manda `stockPerMagazzino`, quello ha la precedenza e il file non serve più.
-Il backend non scala le giacenze quando arriva l'esito: il tablet tiene il conto dei prelievi per
-magazzino ([`StockImpegnatoStore`](lib/core/services/stock_impegnato_store.dart), su disco) e
-li sottrae dalla giacenza del backend; tolto un materiale o eliminato l'OdL, la quantità torna
-al suo magazzino. 
-### Impostazioni e voce di lettura
+### Impostazioni
+Tutte le impostazioni sono **persistenti**: tema, frequenza di sincronizzazione, qualità foto,
+dimensione di testo e icone. **Voce di lettura**: scelta fra le voci italiane installate sul
+tablet, tono e velocità, con prova dell'ascolto. Dettatura vocale e lettura a voce alta sono
+disponibili nei campi di testo.
 
-Le **impostazioni si salvano sul tablet** ([`ImpostazioniStore`](lib/core/services/impostazioni_store.dart))
-e tornano dopo il riavvio: tema, frequenza di sincronizzazione, qualità foto, dimensione
-di testo e icone, voce di lettura.
+### Altro
+Scanner barcode/QR nei campi matricola e materiale, modulo *Standalone* (equipaggiamenti,
+squadra, template), notifiche locali, esportazione Excel.
 
-**Voce di lettura** (Impostazioni → *Voce di lettura*): è la voce dell'altoparlante
-"Leggi a voce alta" dei campi di testo (la dettatura col microfono scrive soltanto, non ha
-una voce). Si sceglie fra le **voci italiane installate sul tablet**, si regolano **tono**
-(grave/acuto) e **velocità**, e "Prova la voce" la fa sentire. Android non indica se una
-voce è maschile o femminile: se serve una voce più maschile si prova una delle altre voci
-e si abbassa il tono; altre voci si installano da Impostazioni Android → Sintesi vocale.
+---
 
-### Chiusura intervento
+## Architettura
 
-La **firma del cliente** si raccoglie direttamente nella pagina di esito
-([`signature_pad.dart`](lib/presentation/widgets/signature_pad.dart)): si firma col
-dito o con la penna, si può cancellare e rifare.
-
-### Materiali
-
-I materiali impegnati sul campo sono **persistiti sul tablet** (in `OdlExtension`)
-e compaiono nella scheda *Materiali* insieme a quelli dell'ordine. Se la quantità
-richiesta **supera la disponibilità di magazzino l'impegno è rifiutato**, con
-l'elenco delle righe fuori stock: non è più un avviso ignorabile.
-
-## Architettura dell'app
-
-Clean Architecture su tre strati (`domain` / `data` / `presentation`), con
-inversione delle dipendenze centralizzata in
+Clean Architecture su tre strati — `domain` / `data` / `presentation` — con l'iniezione
+delle dipendenze centralizzata in
 [`core_providers.dart`](lib/presentation/providers/core_providers.dart).
 
-- **Navigazione** — guscio persistente
-  ([`AppShell`](lib/presentation/features/shell/app_shell.dart)) con
-  `StatefulShellRoute`: sidebar su tablet, `NavigationBar` su smartphone; quattro
-  destinazioni (Home, Ordini, Avvisi, Mappa). Dettagli e sotto-flussi a schermo intero.
-- **Offline-first** — cache locale + coda di sincronizzazione persistente, retry
-  in background (Workmanager).
-- **Realtime** — [`SseService`](lib/core/network/sse_service.dart) consuma
-  `GET /api/stream`: quando il pianificatore assegna/cambia stato dal cruscotto,
-  le liste del tablet si aggiornano da sole (evento `assegnazioni`).
-- **Sorgente dati remota** — **nessun mock**: unica implementazione
-  [`HttpRemoteDataSource`](lib/data/datasources/remote/http_remote_data_source.dart)
-  (Dio con interceptor Bearer + retry). Mapper manuali in
-  [`mappers.dart`](lib/data/models/mappers.dart), **nessun codegen** (`.g.dart`).
-- **Dati creati sul campo** — [`LocalCreationStore`](lib/data/local/local_creation_store.dart)
-  (box Hive) conserva OdL e avvisi creati finché non partono;
-  [`creation_provider.dart`](lib/presentation/providers/creation_provider.dart)
-  li fonde in cima agli elenchi e gestisce l'invio, per elemento o in blocco.
-  Un record illeggibile viene saltato senza compromettere la lista.
+| Aspetto | Scelta |
+|---|---|
+| Stato | Riverpod |
+| Navigazione | go_router, guscio persistente ([`AppShell`](lib/presentation/features/shell/app_shell.dart)): barra laterale su tablet, `NavigationBar` su smartphone |
+| Rete | Dio con interceptor (token Bearer, retry); sorgente dati [`HttpRemoteDataSource`](lib/data/datasources/remote/http_remote_data_source.dart) |
+| Modelli | mapper manuali in [`mappers.dart`](lib/data/models/mappers.dart), nessun codegen |
+| Offline-first | cache locale (Hive) + coda di sincronizzazione persistente + retry in background (Workmanager) |
+| Realtime | SSE (`GET /api/stream`): le liste si aggiornano quando il pianificatore assegna o cambia stato |
+| Mappa | flutter_map + tessere Esri, `flutter_map_marker_cluster` |
+| Voce | `speech_to_text` (dettatura), `flutter_tts` (lettura) |
 
+**Archivi locali** (box Hive di stringhe, con copia in memoria): oggetti creati sul campo,
+impostazioni, OdL e avvisi eliminati, giacenze prelevate per magazzino, arrivi sul tablet,
+bozze di esito. Un record illeggibile viene saltato senza compromettere gli altri.
 
-## Avviare l'app
+---
+
+## Requisiti e avvio
+
+- Flutter SDK ≥ 3 (Dart `>=3.0.0 <4.0.0`)
+- Un backend WFM raggiungibile dal dispositivo
+- Android: abilitare il traffico in chiaro verso il backend di sviluppo (già nel manifest)
 
 ```bash
 flutter pub get
 flutter run
 ```
 
-Poi imposta `backendBaseUrl` in [`app_config.dart`](lib/core/config/app_config.dart)
-secondo il target (tabella sopra). Non esiste più nessun flag `useMockData`: l'unica
-sorgente è il backend.
-
-## Avviare il backend
+Emulatore Android (il PC è raggiungibile come `10.0.2.2`):
 
 ```bash
-cd Backend-WFM-VIVA
-npm install
-npm run dev        # sviluppo con reload (tsx)
+flutter run -d emulator-5554 --dart-define=WFM_BASE_URL=http://10.0.2.2:4000/api/v1
 ```
 
-- **API tablet** : `http://localhost:4000/api/v1`
-- **Realtime SSE** : `http://localhost:4000/api/stream`
-- **Health** : `http://localhost:4000/api/health`
+---
 
-Prerequisiti: **VPN Vivaservizi** attiva (per `POST /api/refresh` verso SAP),
-`data/tecnici.json` con i CID di login.
+## Configurazione
 
-## Anagrafica tecnici e login
+### Indirizzo del backend
+All'avvio l'app prova in parallelo i server elencati in
+[`assets/backend_servers.json`](assets/backend_servers.json), interrogando `GET /api/health`,
+e usa il **primo che risponde 200**. Se nessuno risponde usa `WFM_BASE_URL`
+(`--dart-define`), con il valore predefinito di [`app_config.dart`](lib/core/config/app_config.dart).
+Per aggiungere un server basta aggiungerlo all'elenco.
 
-Il login accetta **solo CID presenti** in `Backend-WFM-VIVA/data/tecnici.json`
-(la password **non** è verificata: va bene qualsiasi). I CID sono allineati a quelli
-del cruscotto — `TEC001` … `TEC005`:
+### Rete Viva Servizi su ArcGIS (facoltativo)
+I livelli ArcGIS del servizio `VIVA_SERVIZI_Ambito_Intervento_WFL1` sono **protetti** e non
+fanno parte dei dati pubblici. Se si dispone di una chiave:
 
-```json
-[
-  { "cid": "TEC001", "nome": "Marco", "cognome": "Bianchi", "workCenter": "WC01", "squadra": "Squadra A", "email": "marco.bianchi@vivaservizi.local" },
-  { "cid": "TEC002", "nome": "Luca",  "cognome": "Rossi",   "workCenter": "WC01", "squadra": "Squadra A", "email": "luca.rossi@vivaservizi.local" }
-]
+```bash
+flutter run --dart-define=ARCGIS_TOKEN=<chiave>
 ```
 
-Il file viene letto **all'avvio**: dopo averlo modificato riavviare il backend.
+(opzionale `--dart-define=ARCGIS_RETE_URL=<FeatureServer>`). Senza chiave la mappa non mostra
+né livelli né interruttori e non fa chiamate. Il token **non va mai nel codice**.
+Richieste di esempio per provare i servizi in Postman: [`GUIDA_POSTMAN_ARCGIS.md`](GUIDA_POSTMAN_ARCGIS.md).
 
-> Il cruscotto web, al contrario, **non verifica nulla** al login (store locale):
-> qualsiasi utente vi entra. È normale che un CID accettato lì venga rifiutato dal
-> tablet se non è in `tecnici.json`.
+### Login
+Il backend accetta solo i CID presenti nella sua anagrafica tecnici (`TEC001` … `TEC005`);
+la password non è verificata in sviluppo.
 
-## Cataloghi (anagrafiche)
+---
 
-`Backend-WFM-VIVA/data/anagrafiche.json` alimenta tutte le tendine del tablet:
-tipi OdL, campi per tipo, lookup, cause/soluzioni, materiali (con `stockDisponibile`),
-magazzini, marche contatori. I valori sono **allineati al cruscotto**
-(`Cruscotto-WFM/src/types` e `src/mocks`), così i due strumenti usano gli stessi codici.
+## Contratto con il backend
 
-Anche questo file è letto **all'avvio**: dopo una modifica, riavviare il backend.
+Regole che l'app applica ai dati del backend, da conoscere per modificare o diagnosticare:
+
+| Tema | Regola |
+|---|---|
+| **Appuntamento** | Il backend manda `appointmentDate` a cascata (giorno pianificato, poi appuntamento SAP); l'app legge l'appuntamento **reale** da `datiSap.APPUNTAMENTO`. Se manca, nessun appuntamento. |
+| **Inizio cardine** | `testata.date.inizioCardine` = giorno dell'assegnazione per gli oggetti nati sul tablet o sul cruscotto. Serve a datare e ordinare un OdL senza appuntamento. |
+| **Date SAP vuote** | `0000-00-00`, `00000000`, `000000`: scartate (anno < 1900 e ora vuota non sono date). |
+| **Cliente** | Mostrato solo se SAP manda `CLIENTE.NOME/COGNOME`. Il nome sull'indirizzo (`INDIRIZZO.NOME/NOME2`) è il **nome dell'edificio** (*Nome edificio*), non un cliente. Il *referente* si mostra solo se diverso. |
+| **Indirizzi** | `address` è l'indirizzo di intervento; *oggetto* e *intervento* si mostrano solo se diversi. |
+| **Avviso ↔ OdL** | Per gli OdL nati sul tablet il legame sta sull'OdL (`avvisoOrigine`), non sull'avviso. |
+| **Operazioni** | Quelle del backend se presenti; altrimenti le tre standard. |
+| **Giacenze** | `stockPerMagazzino` se presente; altrimenti lo stock unico nel magazzino predefinito, completato da un file di supporto (vedi sotto). |
+| **Eliminazione** | `DELETE` su ordini e avvisi risponde `501`: l'app non lo chiama. |
+| **Coordinate GIS** | Il tablet manda latitudine/longitudine dell'indirizzo; X/Y (EPSG:7792) le calcola il backend. |
+
+---
+
+## Dati e strumenti di supporto
+
+| File / strumento | Scopo |
+|---|---|
+| `assets/rete_viva/rete_viva_ancona.geojson` | Rete idrica disegnata sulla mappa. Rigenerabile con `python tools/rete_viva/genera_rete_viva.py` (vie ed edifici da OpenStreetMap, indirizzi da OSM/Esri; per un'altra zona cambiare `BBOX`). Dati © OpenStreetMap contributors (ODbL). |
+| `assets/anagrafica/giacenze_magazzini.json` | Giacenze dei materiali per magazzino, **solo finché il backend non manda `stockPerMagazzino`**. Generato da `anagrafiche.json` con `python tools/anagrafica/genera_giacenze.py`: nel magazzino predefinito resta lo stock vero, negli altri il 70% e il 40%. |
+| `assets/backend_servers.json` | Candidati per la scoperta del backend. |
+
+---
 
 ## Test
 
 ```bash
-flutter test        # unit + widget (verdi)
+flutter analyze
+flutter test
 ```
+
+La suite copre mapper, regole di dominio, provider e schermate (unit e widget). Alcuni test
+verificano il comportamento con la **forma esatta dei payload reali** del backend.
+
+Stato noto: i due test di `test/widget_test.dart` (schermata di *Login*) non sono allineati
+alla schermata attuale e falliscono; non dipendono dalle funzionalità sopra descritte.
+
+---
 
 ## Limiti noti
 
-Dichiarati apposta, per non far credere che il flusso sia completo:
+- **Invio diretto a SAP**: non esiste; ogni oggetto viaggia tramite il cruscotto.
+- **Esito → SAP**: l'esito si ferma nel backend (Cruscotto).
+- **Giacenze**: il backend non le scala all'arrivo dell'esito; il tablet tiene il conto dei
+  prelievi **solo localmente**. Le quantità negli altri magazzini vengono dal file di supporto.
+- **Rete Viva**: i livelli ArcGIS richiedono una chiave; la rete disegnata è una ricostruzione
+  sulle strade reali (OpenStreetMap), non il tracciato effettivo delle tubazioni.
+- **Firma e allegati**: acquisizione sul dispositivo; l'upload dipende dal backend.
+- **Numero definitivo**: un oggetto inviato conserva l'id `TMP-…` finché SAP non assegna il
+  numero reale; non è un errore.
+- **Eliminazioni locali**: un oggetto eliminato non torna sul tablet finché non si cancellano
+  i dati dell'app; non esiste una schermata per ripristinarlo.
+- **Voce di lettura**: Android non indica se una voce è maschile o femminile; l'elenco
+  dipende dalle voci installate sul tablet.
+- **Push FCM** non attive: aggiornamento via SSE e polling.
+- **Sessioni in memoria** sul backend: al suo riavvio il tablet rifà il login.
 
-- **Invio diretto a SAP**: non configurato sul backend. Nel centro di
-  sincronizzazione il pulsante *SAP* risponde con un messaggio esplicito e **non
-  effettua alcuna chiamata**. Oggi la strada valida è *Cruscotto*.
-- **Esito → SAP**: l'esito si ferma nel backend, manca la scrittura SOAP
-  (`submitEsito`).
-- **Materiali → cruscotto**: sono salvati e mostrati sul tablet, ma l'entità
-  `Esito` dell'app non ha ancora un campo materiali, quindi `POST /esiti` li invia
-  vuoti anche se il backend saprebbe riceverli (`materialiUsati`).
-- **Firma**: viene tracciata e determina `customerSigned`, ma **non è archiviata**:
-  servirebbe l'upload allegati, che risponde `501`.
-- **Allegati (foto/documenti)**: acquisizione sul dispositivo sì, upload `501`.
-- **Numero definitivo**: un oggetto inviato conserva l'id `TMP-…` finché SAP non
-  assegna il numero reale. Non è un errore: l'invio è già avvenuto.
-- **Geocodifica**: richiede Internet (Nominatim). Gli indirizzi già risolti restano
-  in cache; la precisione è quella di OpenStreetMap.
-- **Push FCM** non attive: aggiornamento via SSE / polling.
-- **Sessioni in memoria**: al riavvio del backend i tablet rifanno login.
+---
 
-### Attenzione operativa
+## Struttura del repository
 
-Dopo un `POST /api/refresh` SAP può restituire un lotto diverso di oggetti: le
-assegnazioni che puntano a oggetti non più presenti diventano **orfane** e i relativi
-OdL/avvisi **non compaiono** né in elenco né in mappa. Si verificano con
-`GET /api/assegnazioni` (campo `orfane`).
+```
+.
+├── lib/
+│   ├── core/            # config, rete, router, servizi, tema, widget condivisi
+│   ├── data/            # sorgenti dati, repository, mapper, archivi locali
+│   ├── domain/          # entità e interfacce dei repository
+│   └── presentation/    # provider Riverpod e schermate (features/…)
+├── assets/              # immagini, icone, rete Viva, giacenze, server backend
+├── tools/               # generatori dei dati di supporto (Python)
+├── test/                # unit e widget test
+├── android/ ios/ web/ windows/ linux/ macos/
+├── GUIDA_POSTMAN_ARCGIS.md
+└── pubspec.yaml
+```
